@@ -1,0 +1,7 @@
+# Post-check-in redirect configuration
+# Update these values to change the sponsor redirect on check-in pages.
+# Set enabled to false to disable the redirect entirely.
+enabled: true
+name: "716.social"
+url: "https://www.716.social/"
+delay: 5  # seconds before redirect

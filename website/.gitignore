@@ -1,0 +1,35 @@
+
+# Jekyll Generated Site
+_site/
+.sass-cache/
+.jekyll-cache/
+jekyll-cache/
+.jekyll-metadata
+
+# Gem and Bundler Dependencies
+vendor/
+.bundle/
+Gemfile.lock
+
+# Log and Temp Files
+.log
+*.log
+*.tmp
+*.swp
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# VSCode and Editor Files
+.vscode/
+.idea/
+*.iml
+
+# TLS self-signed keys for local testing 
+ssl/*
+*.key
+*.cert
+
+# Claude
+.claude

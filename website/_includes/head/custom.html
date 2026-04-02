@@ -1,0 +1,106 @@
+<link rel="preconnect" href="https://www.eventbrite.com">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self';
+               script-src 'self' 'unsafe-inline' https://www.eventbrite.com https://www.eventbrite.com/static/;
+               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://use.fontawesome.com https://cdn.jsdelivr.net;
+               font-src 'self' https://fonts.gstatic.com https://use.fontawesome.com https://cdn.jsdelivr.net;
+               img-src 'self' data: https:;
+               frame-src https://www.eventbrite.com;
+               connect-src 'self' https://bocc-backend.netlify.app;
+               form-action 'self' https://docs.google.com;">
+
+<!-- Structured Data: Event + Organization -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "name": "Buffalo Open Coffee Club",
+  "description": "Free weekly networking event for Buffalo's entrepreneurs, small business owners, and startup founders. Open networking followed by community Gives and Asks.",
+  "url": "https://716coffee.club",
+  "image": "https://716coffee.club/assets/images/BOCC-header-image-coffee-background.png",
+  "eventStatus": "https://schema.org/EventScheduled",
+  "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+  "startDate": "2026-03-24T07:30:00-04:00",
+  "endDate": "2026-03-24T09:00:00-04:00",
+  "eventSchedule": {
+    "@type": "Schedule",
+    "repeatFrequency": "P1W",
+    "byDay": "https://schema.org/Tuesday",
+    "startTime": "07:30:00",
+    "endTime": "09:00:00",
+    "scheduleTimezone": "America/New_York"
+  },
+  "location": {
+    "@type": "Place",
+    "name": "Seneca One Tower",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "1 Seneca St",
+      "addressLocality": "Buffalo",
+      "addressRegion": "NY",
+      "postalCode": "14203",
+      "addressCountry": "US"
+    }
+  },
+  "organizer": {
+    "@type": "Organization",
+    "name": "BootSector",
+    "url": "https://joinbootsector.com/"
+  },
+  "performer": {
+    "@type": "Person",
+    "name": "Zack Glick",
+    "url": "https://www.linkedin.com/in/zglick/"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock",
+    "url": "https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761",
+    "validFrom": "2024-01-01"
+  },
+  "isAccessibleForFree": true
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Buffalo Open Coffee Club",
+  "alternateName": "BOCC",
+  "url": "https://716coffee.club",
+  "logo": "https://716coffee.club/assets/images/bocc-mug-logo.png",
+  "description": "Free weekly networking event for Buffalo's entrepreneurs, small business owners, and startup founders at Seneca One Tower.",
+  "parentOrganization": {
+    "@type": "Organization",
+    "name": "BootSector",
+    "url": "https://joinbootsector.com/"
+  },
+  "sameAs": [
+    "https://www.linkedin.com/showcase/buffalo-open-coffee",
+    "https://www.instagram.com/buffaloopencoffeeclub",
+    "https://www.facebook.com/buffaloopencoffeeclub"
+  ],
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "1 Seneca St",
+    "addressLocality": "Buffalo",
+    "addressRegion": "NY",
+    "postalCode": "14203",
+    "addressCountry": "US"
+  },
+  "areaServed": {
+    "@type": "City",
+    "name": "Buffalo",
+    "containedInPlace": {
+      "@type": "State",
+      "name": "New York"
+    }
+  }
+}
+</script>

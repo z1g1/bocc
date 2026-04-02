@@ -1,0 +1,9 @@
+main:
+  - title: "About"
+    url: /about/
+  - title: "Sponsorship"
+    url: /sponsorship/
+  - title: "Register Free"
+    url: "https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761"
+  - title: "Code of Conduct"
+    url: /code-of-conduct/

@@ -1,0 +1,320 @@
+---
+---
+
+@import "minimal-mistakes/skins/sunrise";
+@import "minimal-mistakes";
+
+/* ==========================================================================
+   BOCC Custom Styles
+   Buffalo Open Coffee Club - 716coffee.club
+   Built on top of Minimal Mistakes "sunrise" skin
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Check-in Form Styles
+   -------------------------------------------------------------------------- */
+
+#checkinForm {
+  max-width: 480px;
+
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #361b01;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"] {
+    display: block;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #333;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: #f2a63a;
+      box-shadow: 0 0 0 3px rgba(242, 166, 58, 0.25);
+    }
+  }
+
+  /* Checkbox row */
+  .checkbox-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+
+    input[type="checkbox"] {
+      margin-top: 0.25rem;
+      width: 1.1rem;
+      height: 1.1rem;
+      flex-shrink: 0;
+      accent-color: #f2a63a;
+    }
+
+    label {
+      display: inline;
+      font-weight: 400;
+      margin-bottom: 0;
+      cursor: pointer;
+    }
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid #e0d5c7;
+    margin: 1.5rem 0;
+  }
+
+  #checkinButton {
+    display: inline-block;
+    padding: 0.7rem 2rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #fff;
+    background-color: #361b01;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+
+    &:hover {
+      background-color: #5a3010;
+    }
+
+    &:focus-visible {
+      outline: 2px solid #f2a63a;
+      outline-offset: 2px;
+    }
+
+    &:active {
+      transform: translateY(1px);
+    }
+  }
+}
+
+/* Validation error message */
+#validationError {
+  background-color: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  padding: 0.6rem 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+/* Returning visitor greeting */
+#greeting {
+  max-width: 480px;
+
+  p {
+    font-size: 1.15rem;
+    margin-bottom: 1.25rem;
+    color: #333;
+  }
+
+  button {
+    display: inline-block;
+    padding: 0.7rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+
+    &:focus-visible {
+      outline: 2px solid #f2a63a;
+      outline-offset: 2px;
+    }
+
+    &:active {
+      transform: translateY(1px);
+    }
+  }
+
+  #confirmCheckinBtn {
+    color: #fff;
+    background-color: #361b01;
+    margin-right: 0.75rem;
+
+    &:hover {
+      background-color: #5a3010;
+    }
+  }
+
+  #notMeBtn {
+    color: #361b01;
+    background-color: #f5f0eb;
+    border: 1px solid #d4c5b3;
+
+    &:hover {
+      background-color: #ebe3d9;
+    }
+  }
+}
+
+/* Sponsor redirect countdown */
+#sponsorCountdown {
+  background-color: #fdf8f3;
+  border: 1px solid #e0d5c7;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+  margin-top: 1.25rem;
+  max-width: 480px;
+
+  p {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  #countdownTimer {
+    font-weight: 700;
+  }
+
+  #skipRedirect {
+    background: none;
+    border: none;
+    color: #b22030;
+    cursor: pointer;
+    font-size: 0.95rem;
+    padding: 0;
+    text-decoration: underline;
+
+    &:hover {
+      color: #361b01;
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Homepage Content Hierarchy
+   -------------------------------------------------------------------------- */
+
+/* Make the Eventbrite widget section stand out */
+.page__content {
+
+  /* Eventbrite widget container */
+  #eventbrite-widget-container-1983098086761 {
+    margin: 1rem 0 2rem;
+  }
+
+  /* Section spacing for homepage h2 elements */
+  h2 {
+    margin-top: 2rem;
+    padding-top: 1.25rem;
+
+    &:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+  }
+}
+
+/* Homepage section separators -- applied via class in index.md */
+.homepage-section {
+  padding: 1.5rem 0;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid #e0d5c7;
+  }
+}
+
+.homepage-cta {
+  background-color: #fdf8f3;
+  border: 1px solid #e0d5c7;
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin: 1.5rem 0;
+}
+
+/* Testimonial blockquotes */
+.homepage-section blockquote {
+  border-left: 3px solid #f2a63a;
+  background-color: #fdf8f3;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  border-radius: 0 4px 4px 0;
+  font-style: italic;
+  font-size: 0.95rem;
+  color: #333;
+
+  p {
+    margin-bottom: 0;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   General Refinements
+   -------------------------------------------------------------------------- */
+
+/* Fix link contrast: sunrise skin #e3344a on #e8d5b7 fails WCAG AA (3.1:1).
+   #b22030 achieves ~5.2:1 on the tan background. */
+a {
+  color: #b22030;
+}
+
+/* Universal focus visibility */
+:focus-visible {
+  outline: 3px solid #361b01;
+  outline-offset: 2px;
+}
+
+a:focus-visible {
+  border-radius: 2px;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Button loading/submitting state */
+.submitting {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Ensure honeypot stays hidden even if inline styles fail */
+.honeypot-field {
+  position: absolute;
+  left: -9999px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 480px) {
+  #checkinForm #checkinButton {
+    width: 100%;
+  }
+
+  .homepage-section {
+    padding: 1rem 0;
+  }
+
+  .homepage-cta {
+    padding: 1rem;
+  }
+}

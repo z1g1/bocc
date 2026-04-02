@@ -1,0 +1,58 @@
+---
+layout: single
+title: Welcome to BOCC Afternoon Edition
+permalink: /checkin/bocc-afternoon
+sitemap: false
+---
+
+
+<h2 id="checkinHeader">Please check in for BOCC Afternoon Edition</h2>
+<form id="checkinForm">
+    <input type="hidden" id="eventId" value="bocc-afternoon">
+
+    <div class="form-group">
+        <label for="name">Name (required):</label>
+        <input type="text" id="name" name="name" required autocomplete="name">
+    </div>
+
+    <div class="form-group">
+        <label for="email">Email (required):</label>
+        <input type="email" id="email" name="email" required autocomplete="email">
+    </div>
+
+    <div class="form-group">
+        <label for="phone">Phone (optional):</label>
+        <input type="tel" id="phone" name="phone" autocomplete="tel">
+    </div>
+
+    <div class="form-group">
+        <label for="businessName">Business Name (optional):</label>
+        <input type="text" id="businessName" name="businessName" autocomplete="organization">
+    </div>
+
+    <div class="checkbox-group">
+        <input type="checkbox" id="okToEmail" name="okToEmail">
+        <label for="okToEmail">Send me updates about future BOCC events</label>
+    </div>
+
+    <div class="honeypot-field" aria-hidden="true">
+        <label for="website">Leave this field empty</label>
+        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+    </div>
+    <hr aria-hidden="true">
+    <button type="submit" id="checkinButton">Check In</button>
+    <noscript><p>JavaScript is required for check-in. Please ask a host to check you in manually.</p></noscript>
+</form>
+
+<div id="greeting" role="status" aria-live="polite" style="display:none;">
+</div>
+
+{% if site.data.sponsor.enabled %}
+<div id="sponsorRedirect" style="display:none;"
+     data-sponsor-name="{{ site.data.sponsor.name }}"
+     data-sponsor-url="{{ site.data.sponsor.url }}"
+     data-sponsor-delay="{{ site.data.sponsor.delay }}">
+</div>
+{% endif %}
+
+<script src="/js/checkin.js" defer></script>
