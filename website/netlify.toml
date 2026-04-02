@@ -1,0 +1,16 @@
+[build]
+  command = "bundle exec jekyll build"
+  publish = "_site"
+
+# Redirect www to apex
+[[redirects]]
+  from = "https://www.716coffee.club/*"
+  to = "https://716coffee.club/:splat"
+  status = 301
+
+# Custom headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
