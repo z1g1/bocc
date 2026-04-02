@@ -1,0 +1,32 @@
+# Website (Jekyll)
+website/_site/
+website/.sass-cache/
+website/.jekyll-cache/
+website/.jekyll-metadata
+website/vendor/
+website/.bundle/
+website/Gemfile.lock
+website/ssl/
+
+# Backend (Node.js)
+backend/node_modules/
+backend/.env
+backend/.env.local
+backend/.netlify/
+
+# Common
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.key
+*.cert
+
+# Editors
+.vscode/
+.idea/
+*.iml
+
+# Claude
+.claude
