@@ -1,0 +1,28 @@
+# Netlify configuration
+# Note: CORS headers for the API are handled in the function code (checkin.js)
+# to allow environment-based configuration. These headers are kept for static assets.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+
+# Functions configuration
+# Exclude test files from deployment
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# Scheduled Functions
+# Profile Photo Enforcement - runs weekly on Mondays at 9:00 AM EST
+[functions."profile-photo-enforcement"]
+  schedule = "0 14 * * 1"  # Every Monday at 14:00 UTC (9:00 AM EST)
+
+# Environment variables to configure:
+# ALLOWED_ORIGIN - Set to your frontend domain in production (e.g., "https://bocc-website.netlify.app")
+#                  Defaults to "*" for development if not set
+# CIRCLE_API_TOKEN - Circle.so Admin API v2 token
+# CIRCLE_HEADLESS_API - Circle.so Headless Auth API token for bot user DMs
+# AIRTABLE_API_KEY - Airtable API key for "No Photo Warnings" table
+# AIRTABLE_BASE_ID - Airtable base ID for BOCC database

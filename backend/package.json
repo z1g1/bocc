@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "airtable": "^0.12.2",
+    "axios": "^1.13.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "scripts": {
+    "test": "jest",
+    "test:unit": "jest --testPathIgnorePatterns=integration",
+    "test:integration": "RUN_INTEGRATION_TESTS=true jest tests/integration",
+    "test:smoke-local": "bash tests/start-local-test.sh",
+    "test:smoke-prod": "API_URL=https://bocc-backend.netlify.app/.netlify/functions/checkin bash tests/smoke-test.sh"
+  }
+}

@@ -1,0 +1,21 @@
+{
+	"siteId": "15218033-68bb-4c14-b46f-bd1afbd8cbee",
+	"geolocation": {
+		"data": {
+			"city": "Buffalo",
+			"country": {
+				"code": "US",
+				"name": "United States"
+			},
+			"subdivision": {
+				"code": "NY",
+				"name": "New York"
+			},
+			"timezone": "America/New_York",
+			"latitude": 42.9685,
+			"longitude": -78.7492,
+			"postalCode": "14221"
+		},
+		"timestamp": 1770329260076
+	}
+}
