@@ -218,7 +218,8 @@ document.addEventListener('DOMContentLoaded', function() {
           var payload = Object.assign({}, data);
           delete payload.debug;
 
-          var response = await fetch('https://bocc-backend.netlify.app/.netlify/functions/checkin', {
+          // Same-origin API (website + functions served from one Netlify site)
+          var response = await fetch('/.netlify/functions/checkin', {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json'

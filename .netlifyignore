@@ -1,0 +1,3 @@
+# Keep test files out of the Functions deployment bundle.
+backend/netlify/functions/**/*.test.js
+backend/tests/
