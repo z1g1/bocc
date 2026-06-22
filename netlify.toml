@@ -1,0 +1,40 @@
+# Unified Netlify configuration for the BOCC monorepo.
+# A single Netlify site serves BOTH the Jekyll website (static) and the
+# backend Netlify Functions (API), so the API is same-origin with the site
+# (https://716coffee.club/.netlify/functions/...) and no CORS is required.
+
+[build]
+  # Base stays at the repo root so both website/ and backend/ are in scope.
+  base = ""
+  # Build the Jekyll site. Ruby deps (Gemfile) live in website/.
+  command = "cd website && bundle install && bundle exec jekyll build"
+  publish = "website/_site"
+
+[build.environment]
+  # Pin runtimes. Adjust RUBY_VERSION if the Netlify build image lacks it.
+  RUBY_VERSION = "3.3.10"
+  NODE_VERSION = "20"
+
+# Serverless functions (formerly the separate bocc-backend site).
+# Node deps (airtable, axios) are installed from the root package.json.
+[functions]
+  directory = "backend/netlify/functions"
+  node_bundler = "esbuild"
+
+# Scheduled function: profile photo enforcement.
+# Runs weekly on Mondays at 14:00 UTC (9:00 AM EST).
+[functions."profile-photo-enforcement"]
+  schedule = "0 14 * * 1"
+
+# Redirect www to apex.
+[[redirects]]
+  from = "https://www.716coffee.club/*"
+  to = "https://716coffee.club/:splat"
+  status = 301
+
+# Security headers for all static assets and pages.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
