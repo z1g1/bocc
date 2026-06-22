@@ -8,7 +8,7 @@ Monorepo for Buffalo Open Coffee Club (BOCC) — a weekly Tuesday morning networ
 
 **Production URLs:**
 - Website: https://716coffee.club
-- Backend API: https://bocc-backend.netlify.app
+- Backend API: https://716coffee.club/.netlify/functions/ (same-origin with the website)
 - Community: https://www.716.social
 
 ## Repository Structure
@@ -65,7 +65,7 @@ All Markdown with YAML front matter:
 - `checkin/bocc.html` and `checkin/bocc-afternoon.html` — HTML forms for event check-in
 - `js/checkin.js` — Client-side form handler (12KB)
   - Stores return visitor data in `localStorage` (30-day TTL)
-  - POSTs to `https://bocc-backend.netlify.app/.netlify/functions/checkin`
+  - POSTs to `/.netlify/functions/checkin` (same-origin)
   - URL parameters: `debug`, `token`, `eventId`, `local` (set `local=1` to skip API calls)
   - Input sanitization, honeypot spam detection, sponsor redirect countdown
 - `_data/sponsor.yml` — Sponsor redirect configuration
@@ -212,25 +212,25 @@ See `docs/backend/CIRCLE_PERMISSIONS.md` for detailed API permissions documentat
 
 ## Deployment
 
-Both sites deploy from `main` via Netlify with different base directories:
+A **single** Netlify site deploys from `main` and serves both the website and the
+backend functions (config in the root `netlify.toml`). The API is same-origin with
+the website, so no CORS is required.
 
-| Site | Base Dir | Build Command | Publish Dir |
-|------|----------|---------------|-------------|
-| Website | `website/` | `bundle exec jekyll build` | `_site` |
-| Backend | `backend/` | (auto npm install) | N/A (functions) |
+| Part | Source | Served at |
+|------|--------|-----------|
+| Website (Jekyll) | `website/` → `website/_site` | `https://716coffee.club` |
+| Functions (API) | `backend/netlify/functions/` | `https://716coffee.club/.netlify/functions/` |
 
-Each push to `main` triggers both sites = **30 credits** (15 each). Free tier = 300 credits/month. Limit pushes to `main` to 4-6/month by batching work on `dev`.
-
-Build ignore scripts (`netlify-build-ignore.sh`) in each directory skip rebuilds when only the other directory changed.
+Each push to `main` triggers one build = **15 credits**. Free tier = 300 credits/month. Limit pushes to `main` to batching work on `dev` (docs-only changes still rebuild the single site, so batch them too).
 
 ---
 
 ## Git Workflow
 
-- **`main`** — Production. Both sites auto-deploy.
+- **`main`** — Production. The single Netlify site auto-deploys.
 - **`dev`** — Active development. Test locally, then merge to `main`.
 
-Commit frequently on `dev`. Merge to `main` only when ready to deploy. Each merge = 30 credits.
+Commit frequently on `dev`. Merge to `main` only when ready to deploy. Each merge = 15 credits.
 
 Run `npm test` in `backend/` and verify Jekyll builds in `website/` before merging to `main`.
 

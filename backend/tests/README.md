@@ -55,7 +55,7 @@ Test the deployed API (creates test record in Airtable with debug flag):
 npm run test:smoke-prod
 ```
 
-This sends a test check-in to `https://bocc-backend.netlify.app` with `debug: "1"` flag.
+This sends a test check-in to `https://716coffee.club/.netlify/functions/checkin` with `debug: "1"` flag.
 
 ## Test Data
 

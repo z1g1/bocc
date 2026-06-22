@@ -31,7 +31,7 @@ For a detailed technical diagram, see [architecture.md](architecture.md).
 | Directory | What's In It | Deploy Target |
 |-----------|-------------|---------------|
 | `website/` | Jekyll static site (HTML, Markdown, JS, CSS) | Netlify → `716coffee.club` |
-| `backend/` | Netlify Functions (Node.js serverless) | Netlify → `bocc-backend.netlify.app` |
+| `backend/` | Netlify Functions (Node.js serverless) | Netlify → `716coffee.club/.netlify/functions/` |
 | `docs/` | All documentation (you're reading it) | Not deployed |
 
 ## Getting Started
@@ -81,7 +81,7 @@ In two terminals:
 1. `cd website && bundle exec jekyll serve`
 2. `cd backend && netlify dev`
 
-The website check-in form talks to the production backend by default (`bocc-backend.netlify.app`). To test against your local backend, add `?local=1` to the check-in URL.
+The website check-in form talks to the production backend by default (same-origin: `716coffee.club/.netlify/functions/`). To test against your local backend, add `?local=1` to the check-in URL.
 
 ## Environment Variables (Secrets)
 
@@ -112,15 +112,13 @@ If you need access to these services, ask the project maintainer (Zack Glick).
 
 ## Deployment
 
-Both sites auto-deploy when you push to `main`. Each push costs 30 Netlify credits (15 per site). The free tier gives 300 credits/month, so **limit pushes to main to ~4-6 per month**.
+A single Netlify site (serving both the website and the functions) auto-deploys when you push to `main`. Each push costs 15 Netlify credits (one build). The free tier gives 300 credits/month, so **limit pushes to main to ~4-6 per month**.
 
 **Workflow:**
 1. Work on the `dev` branch
 2. Test locally (website: `bundle exec jekyll serve`, backend: `npm test`)
 3. When ready, merge `dev` → `main` and push
-4. Both sites deploy automatically within 2-3 minutes
-
-Build ignore scripts in each directory prevent unnecessary rebuilds when only the other directory changed.
+4. The site deploys automatically within 2-3 minutes
 
 ## Key Files to Know
 
