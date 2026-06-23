@@ -68,6 +68,10 @@ const config = Object.freeze({
   enforcement: Object.freeze({
     adminMemberId: env.ADMIN_MEMBER_ID || '2d8e9215', // circle@zackglick.com
     testUserEmail: env.TEST_USER_EMAIL || 'zglicka@gmail.com',
+    // Shared secret required to trigger the manual enforcement endpoint over
+    // HTTP. Optional at boot; when unset the manual endpoint fails closed
+    // (rejects all calls). Not used by the scheduled cron run.
+    triggerToken: env.ENFORCEMENT_TRIGGER_TOKEN || null,
     // Safety guards are deliberately NOT env-overridable: raising the cap should
     // require a reviewed code change. See docs/backend/SAFETY_LIMITS_SPECIFICATION.md.
     warnThreshold: 500, // log alert but continue

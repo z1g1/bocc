@@ -10,6 +10,7 @@
  * Configured in netlify.toml
  */
 
+const crypto = require('crypto');
 const { getAllMembers } = require('./utils/circle');
 const { findWarningByEmail, getActiveWarnings } = require('./utils/airtable-warnings');
 const {
@@ -255,21 +256,50 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
 };
 
 /**
+ * Constant-time comparison of a request-supplied token against the configured
+ * secret. Returns false on any missing value or length mismatch.
+ */
+const tokenMatches = (provided, expected) => {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(String(expected));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+
+/**
  * Build a Netlify function handler around runEnforcement.
  *
- * Both entry points share this shell; they differ only in `filterEmail`:
- * the scheduled (cron) handler runs unfiltered; the manual handler is
- * hard-wired to the test user as a safety affordance.
+ * Both entry points share this shell; they differ only in configuration:
+ * the scheduled (cron) handler runs unfiltered and ungated; the manual handler
+ * is hard-wired to the test user AND requires a shared-secret token, so it can
+ * never run unfiltered enforcement and can't be triggered anonymously.
+ *
+ * No CORS header is emitted: these endpoints are server/cron-invoked, not
+ * called from a browser. Client error responses are generic; details are
+ * logged server-side only.
  *
  * @param {object} [opts]
  * @param {string|null} [opts.filterEmail] - restrict the run to one email
+ * @param {boolean} [opts.requireToken] - require a valid x-enforcement-token header
  * @returns {Function} Netlify handler
  */
-const makeEnforcementHandler = ({ filterEmail = null } = {}) => async (event) => {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*'
-  };
+const makeEnforcementHandler = ({ filterEmail = null, requireToken = false } = {}) => async (event) => {
+  const headers = { 'Content-Type': 'application/json' };
+
+  // Fail closed: reject if a token is required but missing/invalid (this also
+  // rejects when ENFORCEMENT_TRIGGER_TOKEN is unset, since expected is null).
+  if (requireToken) {
+    const provided = (event.headers || {})['x-enforcement-token'];
+    if (!tokenMatches(provided, config.enforcement.triggerToken)) {
+      console.warn('Enforcement trigger rejected: missing or invalid x-enforcement-token');
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ success: false, error: 'Unauthorized' })
+      };
+    }
+  }
 
   try {
     console.log('Enforcement function triggered', { filterEmail: filterEmail || 'none (all members)' });
@@ -292,15 +322,16 @@ const makeEnforcementHandler = ({ filterEmail = null } = {}) => async (event) =>
     };
 
   } catch (error) {
-    console.error('Enforcement function error:', error);
+    // Log full detail server-side; return a generic message to the client.
+    console.error('Enforcement function error:', error.message);
+    console.error('Error stack:', error.stack);
 
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         success: false,
-        error: error.message,
-        stack: config.isDev ? error.stack : undefined
+        error: 'An error occurred while processing the request'
       }, null, 2)
     };
   }
