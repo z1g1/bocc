@@ -16,6 +16,66 @@ const {
   determineEnforcementAction,
   processEnforcementAction
 } = require('./utils/enforcement-logic');
+const config = require('./utils/config');
+
+/**
+ * Enforce the photo policy for a single member: decide the action, then execute
+ * it. This is the shared per-member step used by both passes of the run (the
+ * no-photo pass and the photo-added pass).
+ *
+ * @param {object} member - Circle member
+ * @param {object|null} existingWarning - the member's current warning record
+ * @param {boolean} dryRun
+ * @returns {Promise<{action: object, result: object}>}
+ */
+const enforceMember = async (member, existingWarning, dryRun) => {
+  const action = determineEnforcementAction(member, existingWarning);
+
+  console.log(`  Action: ${action.action} (Level ${action.warningLevel})`);
+  console.log(`  Reason: ${action.reason}`);
+
+  const result = await processEnforcementAction(member, existingWarning, action, dryRun);
+
+  return { action, result };
+};
+
+/**
+ * Fold a single member's enforcement outcome into the run summary.
+ *
+ * @param {object} summary - the run summary (mutated)
+ * @param {object} member - Circle member
+ * @param {object} action - the decided action
+ * @param {object} result - the execution result from processEnforcementAction
+ */
+const recordOutcome = (summary, member, action, result) => {
+  if (result.success) {
+    summary.processed++;
+    summary.actions[action.action]++;
+
+    // Track final warnings and deactivations separately
+    if (action.warningLevel === 4 && action.shouldNotifyAdmin) {
+      summary.finalWarnings++;
+    }
+    if (action.action === 'DEACTIVATE') {
+      summary.deactivations++;
+    }
+
+    console.log(`  ✓ Success: ${result.executedActions.join(', ')}`);
+
+    if (result.errors.length > 0) {
+      console.log(`  ⚠ Non-blocking errors: ${result.errors.join(', ')}`);
+    }
+  } else {
+    summary.errors++;
+    summary.errorDetails.push({
+      member: member.email,
+      action: action.action,
+      errors: result.errors
+    });
+
+    console.log(`  ✗ Failed: ${result.errors.join(', ')}`);
+  }
+};
 
 /**
  * Main enforcement orchestrator
@@ -81,55 +141,14 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
 
     console.log(`Found ${filteredMembers.length} members to process\n`);
 
-    // Step 2: Process each member without a photo (existing warning loop)
+    // Step 2: Process each member without a photo (no-photo pass)
     for (const member of filteredMembers) {
       try {
         console.log(`\nProcessing: ${member.name} (${member.email})`);
 
-        // Step 2a: Check for existing warning record in Airtable
         const existingWarning = await findWarningByEmail(member.email);
-
-        // Step 2b: Determine what action to take
-        const action = determineEnforcementAction(member, existingWarning);
-
-        console.log(`  Action: ${action.action} (Level ${action.warningLevel})`);
-        console.log(`  Reason: ${action.reason}`);
-
-        // Step 2c: Execute the enforcement action
-        const result = await processEnforcementAction(
-          member,
-          existingWarning,
-          action,
-          dryRun
-        );
-
-        if (result.success) {
-          summary.processed++;
-          summary.actions[action.action]++;
-
-          // Track final warnings and deactivations separately
-          if (action.warningLevel === 4 && action.shouldNotifyAdmin) {
-            summary.finalWarnings++;
-          }
-          if (action.action === 'DEACTIVATE') {
-            summary.deactivations++;
-          }
-
-          console.log(`  ✓ Success: ${result.executedActions.join(', ')}`);
-
-          if (result.errors.length > 0) {
-            console.log(`  ⚠ Non-blocking errors: ${result.errors.join(', ')}`);
-          }
-        } else {
-          summary.errors++;
-          summary.errorDetails.push({
-            member: member.email,
-            action: action.action,
-            errors: result.errors
-          });
-
-          console.log(`  ✗ Failed: ${result.errors.join(', ')}`);
-        }
+        const { action, result } = await enforceMember(member, existingWarning, dryRun);
+        recordOutcome(summary, member, action, result);
 
       } catch (memberError) {
         summary.errors++;
@@ -181,31 +200,8 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
           // Set has_profile_picture so determineEnforcementAction returns PHOTO_ADDED
           member.has_profile_picture = true;
 
-          const action = determineEnforcementAction(member, warning);
-
-          console.log(`  Action: ${action.action} (Level ${action.warningLevel})`);
-          console.log(`  Reason: ${action.reason}`);
-
-          const result = await processEnforcementAction(
-            member,
-            warning,
-            action,
-            dryRun
-          );
-
-          if (result.success) {
-            summary.processed++;
-            summary.actions[action.action]++;
-            console.log(`  ✓ Success: ${result.executedActions.join(', ')}`);
-          } else {
-            summary.errors++;
-            summary.errorDetails.push({
-              member: member.email,
-              action: action.action,
-              errors: result.errors
-            });
-            console.log(`  ✗ Failed: ${result.errors.join(', ')}`);
-          }
+          const { action, result } = await enforceMember(member, warning, dryRun);
+          recordOutcome(summary, member, action, result);
 
         } catch (photoAddedError) {
           summary.errors++;
@@ -259,50 +255,62 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
 };
 
 /**
- * Netlify Scheduled Function Handler
- * Triggered by cron schedule defined in netlify.toml
+ * Build a Netlify function handler around runEnforcement.
  *
- * @param {object} event - Netlify event object
- * @returns {Promise<object>} Response with status and summary
+ * Both entry points share this shell; they differ only in `filterEmail`:
+ * the scheduled (cron) handler runs unfiltered; the manual handler is
+ * hard-wired to the test user as a safety affordance.
+ *
+ * @param {object} [opts]
+ * @param {string|null} [opts.filterEmail] - restrict the run to one email
+ * @returns {Function} Netlify handler
  */
-exports.handler = async (event) => {
-  try {
-    console.log('Scheduled function triggered:', event);
+const makeEnforcementHandler = ({ filterEmail = null } = {}) => async (event) => {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*'
+  };
 
-    // Check if this is a manual invocation with dryRun parameter
+  try {
+    console.log('Enforcement function triggered', { filterEmail: filterEmail || 'none (all members)' });
+
     const queryParams = event.queryStringParameters || {};
     const dryRun = queryParams.dryRun === 'true' || queryParams.dryRun === '1';
 
-    // Run enforcement
-    const summary = await runEnforcement(dryRun);
+    const summary = await runEnforcement(dryRun, filterEmail);
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({
         success: true,
         message: 'Profile photo enforcement completed',
-        summary: summary
-      })
+        mode: dryRun ? 'DRY RUN' : 'PRODUCTION',
+        filterEmail: filterEmail || null,
+        summary
+      }, null, 2)
     };
 
   } catch (error) {
-    console.error('Scheduled function error:', error);
+    console.error('Enforcement function error:', error);
 
     return {
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({
         success: false,
-        error: error.message
-      })
+        error: error.message,
+        stack: config.isDev ? error.stack : undefined
+      }, null, 2)
     };
   }
 };
 
-// Export runEnforcement for testing
+// Scheduled (cron) handler — unfiltered. Schedule defined in netlify.toml.
+exports.handler = makeEnforcementHandler();
+
+// Exports for the manual endpoint and for testing
+exports.makeEnforcementHandler = makeEnforcementHandler;
 exports.runEnforcement = runEnforcement;
+exports.enforceMember = enforceMember;
+exports.recordOutcome = recordOutcome;
