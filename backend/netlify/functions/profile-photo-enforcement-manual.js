@@ -10,9 +10,10 @@
 
 // Import the shared enforcement logic
 const { runEnforcement } = require('./profile-photo-enforcement');
+const config = require('./utils/config');
 
 // Manual endpoint only processes this test user to prevent accidental mass-processing
-const TEST_USER_EMAIL = 'zglicka@gmail.com';
+const TEST_USER_EMAIL = config.enforcement.testUserEmail;
 
 /**
  * Netlify Function Handler (HTTP-accessible)
@@ -59,7 +60,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         success: false,
         error: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        stack: config.isDev ? error.stack : undefined
       }, null, 2)
     };
   }

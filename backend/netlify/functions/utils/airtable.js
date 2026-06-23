@@ -1,15 +1,13 @@
 const Airtable = require('airtable');
 const { escapeAirtableFormula, isValidEmail } = require('./validation');
-
-console.log('Airtable API Key:', process.env.AIRTABLE_API_KEY ? 'Exists' : 'Not set');
-console.log('Airtable Base ID:', process.env.AIRTABLE_BASE_ID ? 'Exists' : 'Not set');
+const config = require('./config');
 
 Airtable.configure({
-    endpointUrl: 'https://api.airtable.com',
-    apiKey: process.env.AIRTABLE_API_KEY
+    endpointUrl: config.airtable.endpointUrl,
+    apiKey: config.airtable.apiKey
 });
 
-const base = Airtable.base(process.env.AIRTABLE_BASE_ID);
+const base = Airtable.base(config.airtable.baseId);
 
 const fetchAttendeeByEmail = async (email) => {
     const sanitizedEmail = escapeAirtableFormula(email);

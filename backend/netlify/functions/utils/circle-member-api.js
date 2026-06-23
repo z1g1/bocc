@@ -10,18 +10,17 @@
  */
 
 const axios = require('axios');
+const config = require('./config');
 
 // Circle.so API configuration
-const HEADLESS_API_BASE_URL = 'https://app.circle.so';
-const AUTH_API_BASE_URL = 'https://app.circle.so/api/v1/headless';
-const CIRCLE_HEADLESS_API_TOKEN = process.env.CIRCLE_HEADLESS_API;
-
-console.log('Circle Headless API Token:', CIRCLE_HEADLESS_API_TOKEN ? 'Exists' : 'Not set');
+const HEADLESS_API_BASE_URL = config.circle.headlessBaseUrl;
+const AUTH_API_BASE_URL = config.circle.authBaseUrl;
+const CIRCLE_HEADLESS_API_TOKEN = config.circle.headlessToken;
 
 // Bot user configuration
-const BOT_USER_ID = '73e5a590'; // 716.social Bot URL slug
-const BOT_USER_EMAIL = 'bocc-bot@zackglick.com'; // Used for Auth API (JWT generation)
-const BOT_USER_NAME = '716.social Bot';
+const BOT_USER_ID = config.bot.id; // 716.social Bot URL slug
+const BOT_USER_EMAIL = config.bot.email; // Used for Auth API (JWT generation)
+const BOT_USER_NAME = config.bot.name;
 
 /**
  * Create Auth API axios instance

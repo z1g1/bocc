@@ -13,12 +13,11 @@
  */
 
 const axios = require('axios');
+const config = require('./config');
 
 // Circle.so Admin API v2 configuration
-const CIRCLE_API_BASE_URL = 'https://app.circle.so/api/admin/v2';
-const CIRCLE_API_TOKEN = process.env.CIRCLE_API_TOKEN;
-
-console.log('Circle API Token:', CIRCLE_API_TOKEN ? 'Exists' : 'Not set');
+const CIRCLE_API_BASE_URL = config.circle.adminBaseUrl;
+const CIRCLE_API_TOKEN = config.circle.adminToken;
 
 /**
  * Safety Limits for Member Processing
@@ -47,11 +46,12 @@ console.log('Circle API Token:', CIRCLE_API_TOKEN ? 'Exists' : 'Not set');
  * See full spec: docs/SAFETY_LIMITS_SPECIFICATION.md
  */
 
-// Warning threshold: Log alert but continue processing
-const WARNING_THRESHOLD_MEMBERS = 500;
+// Safety limits (centralized in config; deliberately not env-overridable).
+// Warning threshold: Log alert but continue processing.
+const WARNING_THRESHOLD_MEMBERS = config.enforcement.warnThreshold;
 
-// Hard limit: Throw error and stop processing
-const HARD_LIMIT_MAX_MEMBERS = 1000;
+// Hard limit: Throw error and stop processing.
+const HARD_LIMIT_MAX_MEMBERS = config.enforcement.hardLimit;
 
 // Create axios instance with default configuration
 const circleApi = axios.create({

@@ -1,10 +1,10 @@
 const { fetchAttendeeByEmail, createAttendee, createCheckinEntry, findExistingCheckin } = require('./utils/airtable');
 const { validateCheckinInput } = require('./utils/validation');
 const { ensureMember, incrementCheckinCount } = require('./utils/circle');
+const config = require('./utils/config');
 
-// CORS configuration - use environment variable for production security
-// Set ALLOWED_ORIGIN in Netlify environment variables to your frontend domain
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*';
+// CORS configuration — centralized in config (env-overridable, defaults to '*').
+const ALLOWED_ORIGIN = config.http.allowedOrigin;
 
 exports.handler = async (event) => {
     console.log('Received event:', event);
