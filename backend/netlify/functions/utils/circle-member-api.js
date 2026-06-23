@@ -9,8 +9,8 @@
  * Auth SDK: https://api.circle.so/apis/headless/auth-sdk
  */
 
-const axios = require('axios');
 const config = require('./config');
+const { createCircleClient, logCircleError } = require('./circle-http');
 
 // Circle.so API configuration
 const HEADLESS_API_BASE_URL = config.circle.headlessBaseUrl;
@@ -23,42 +23,43 @@ const BOT_USER_EMAIL = config.bot.email; // Used for Auth API (JWT generation)
 const BOT_USER_NAME = config.bot.name;
 
 /**
- * Create Auth API axios instance
- * @returns {object} Axios instance configured for Auth API
+ * Create Auth API client (uses the headless service token)
+ * @returns {object} axios instance configured for the Auth API
  */
-const createAuthApi = () => {
-  return axios.create({
-    baseURL: AUTH_API_BASE_URL,
-    headers: {
-      'Authorization': `Bearer ${CIRCLE_HEADLESS_API_TOKEN}`,
-      'Content-Type': 'application/json'
-    }
-  });
-};
+const createAuthApi = () =>
+  createCircleClient({ baseURL: AUTH_API_BASE_URL, token: CIRCLE_HEADLESS_API_TOKEN });
 
 /**
- * Create Member API axios instance
+ * Create Member API client (uses the bot's JWT)
  * @param {string} jwtToken - JWT access token
- * @returns {object} Axios instance configured for Member API
+ * @returns {object} axios instance configured for the Member API
  */
-const createMemberApi = (jwtToken) => {
-  return axios.create({
-    baseURL: HEADLESS_API_BASE_URL,
-    headers: {
-      'Authorization': `Bearer ${jwtToken}`,
-      'Content-Type': 'application/json'
-    }
-  });
+const createMemberApi = (jwtToken) =>
+  createCircleClient({ baseURL: HEADLESS_API_BASE_URL, token: jwtToken });
+
+// Bot JWT, memoized for the lifetime of the function process. Enforcement runs
+// send many DMs in one invocation; without this each one re-authenticates.
+let cachedBotJWT = null;
+
+/**
+ * Clear the memoized bot JWT. For tests only.
+ */
+const _resetAuthCache = () => {
+  cachedBotJWT = null;
 };
 
 /**
- * Generate JWT token for bot user
- * Uses Auth API to get member-specific JWT token
+ * Generate (or reuse) the JWT token for the bot user.
+ * Uses the Auth API to get a member-specific JWT, cached per process.
  *
  * @returns {Promise<string>} JWT access token
  * @throws {Error} If token generation fails
  */
 const getBotUserJWT = async () => {
+  if (cachedBotJWT) {
+    return cachedBotJWT;
+  }
+
   try {
     console.log('Generating JWT token for bot user:', BOT_USER_EMAIL);
 
@@ -75,13 +76,10 @@ const getBotUserJWT = async () => {
     }
 
     console.log('Successfully generated JWT token for bot user');
-    return response.data.access_token;
+    cachedBotJWT = response.data.access_token;
+    return cachedBotJWT;
   } catch (error) {
-    console.error('Error generating bot user JWT:', error.message);
-    if (error.response) {
-      console.error('Auth API response status:', error.response.status);
-      console.error('Auth API response data:', JSON.stringify(error.response.data));
-    }
+    logCircleError('Error generating bot user JWT', error);
     throw error;
   }
 };
@@ -139,11 +137,7 @@ const findDMChatRoom = async (jwtToken, targetMemberId) => {
     console.log('No existing DM chat room found with member:', targetMemberId);
     return null;
   } catch (error) {
-    console.error('Error finding DM chat room:', error.message);
-    if (error.response) {
-      console.error('Member API response status:', error.response.status);
-      console.error('Member API response data:', JSON.stringify(error.response.data));
-    }
+    logCircleError('Error finding DM chat room', error);
     throw error;
   }
 };
@@ -178,11 +172,7 @@ const createDMChatRoom = async (jwtToken, targetMemberId) => {
     console.log('Successfully created DM chat room:', response.data.chat_room.uuid);
     return response.data.chat_room.uuid;
   } catch (error) {
-    console.error('Error creating DM chat room:', error.message);
-    if (error.response) {
-      console.error('Member API response status:', error.response.status);
-      console.error('Member API response data:', JSON.stringify(error.response.data));
-    }
+    logCircleError('Error creating DM chat room', error);
     throw error;
   }
 };
@@ -235,11 +225,7 @@ const sendChatMessage = async (jwtToken, chatRoomId, messageBody) => {
     console.log('Successfully sent message to chat room:', chatRoomId);
     return response.data;
   } catch (error) {
-    console.error('Error sending chat message:', error.message);
-    if (error.response) {
-      console.error('Member API response status:', error.response.status);
-      console.error('Member API response data:', JSON.stringify(error.response.data));
-    }
+    logCircleError('Error sending chat message', error);
     throw error;
   }
 };
@@ -308,6 +294,8 @@ module.exports = {
   findOrCreateDMChatRoom,
   sendChatMessage,
   sendDirectMessage,
+  // Test helper: clear the memoized bot JWT
+  _resetAuthCache,
   // Export constants for testing
   BOT_USER_ID,
   BOT_USER_EMAIL,

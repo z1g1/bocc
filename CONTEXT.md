@@ -108,12 +108,13 @@ returns a plain discriminated result (`invalid` / `duplicate` / `created`), thro
 unexpected infrastructure failures. Lets the handler shrink to an HTTP **adapter** and makes
 the whole flow testable by calling one function.
 
-### Circle transport (planned) — `utils/circle-http.js`
+### Circle transport (live) — `utils/circle-http.js`
 The shared transport beneath the two Circle domain modules (`circle.js` for Admin v2,
-`circle-member-api.js` for Headless DMs). Owns authed-request construction, **Bot JWT
-caching**, and translating raw axios errors into named domain errors
-(`CircleNotFound`, `CircleAuthError`, `CircleUnavailable`) so callers stop reading
-`error.response.status`.
+`circle-member-api.js` for Headless DMs). Owns authed axios-client construction and
+consistent Circle API error logging, so neither domain module hand-rolls its own
+transport. The **Bot JWT** is memoized here for the function-process lifetime, so an
+enforcement run authenticates once rather than per DM. (Named domain error classes were
+considered and declined — only `getAllMembers` branches on an error status.)
 
 ---
 

@@ -32,6 +32,7 @@ const {
   findOrCreateDMChatRoom,
   sendChatMessage,
   sendDirectMessage,
+  _resetAuthCache,
   BOT_USER_ID,
   BOT_USER_EMAIL
 } = require('../netlify/functions/utils/circle-member-api');
@@ -42,6 +43,9 @@ describe('Circle Member API - DM Integration', () => {
     mockAuthPost = jest.fn();
     mockMemberGet = jest.fn();
     mockMemberPost = jest.fn();
+
+    // Clear the memoized bot JWT so caching doesn't leak across tests
+    _resetAuthCache();
 
     jest.clearAllMocks();
     jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -71,6 +75,20 @@ describe('Circle Member API - DM Integration', () => {
       expect(mockAuthPost).toHaveBeenCalledWith('/auth_token', {
         email: BOT_USER_EMAIL
       });
+    });
+
+    it('should cache the JWT and not re-authenticate on subsequent calls', async () => {
+      const mockJWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.cached';
+
+      mockAuthPost.mockResolvedValue({ data: { access_token: mockJWT } });
+
+      const first = await getBotUserJWT();
+      const second = await getBotUserJWT();
+
+      expect(first).toBe(mockJWT);
+      expect(second).toBe(mockJWT);
+      // Cached: the Auth API is hit only once across both calls
+      expect(mockAuthPost).toHaveBeenCalledTimes(1);
     });
 
     it('should throw error if access_token missing from response', async () => {

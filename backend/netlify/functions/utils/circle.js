@@ -12,8 +12,8 @@
  * Epic 5: Refactored from segment-based to client-side filtering (Feb 2026)
  */
 
-const axios = require('axios');
 const config = require('./config');
+const { createCircleClient, logCircleError } = require('./circle-http');
 
 // Circle.so Admin API v2 configuration
 const CIRCLE_API_BASE_URL = config.circle.adminBaseUrl;
@@ -53,14 +53,8 @@ const WARNING_THRESHOLD_MEMBERS = config.enforcement.warnThreshold;
 // Hard limit: Throw error and stop processing.
 const HARD_LIMIT_MAX_MEMBERS = config.enforcement.hardLimit;
 
-// Create axios instance with default configuration
-const circleApi = axios.create({
-    baseURL: CIRCLE_API_BASE_URL,
-    headers: {
-        'Authorization': `Bearer ${CIRCLE_API_TOKEN}`,
-        'Content-Type': 'application/json'
-    }
-});
+// Create authed Admin API client via the shared Circle transport
+const circleApi = createCircleClient({ baseURL: CIRCLE_API_BASE_URL, token: CIRCLE_API_TOKEN });
 
 /**
  * Search for a community member by email
@@ -94,11 +88,7 @@ const findMemberByEmail = async (email) => {
         console.log('No Circle member found with email:', email);
         return null;
     } catch (error) {
-        console.error('Error searching for Circle member:', error.message);
-        if (error.response) {
-            console.error('Response status:', error.response.status);
-            console.error('Response data:', error.response.data);
-        }
+        logCircleError('Error searching for Circle member', error);
         throw error;
     }
 };
@@ -122,11 +112,7 @@ const createMember = async (email, name) => {
         console.log('Successfully created Circle member:', response.data);
         return response.data;
     } catch (error) {
-        console.error('Error creating Circle member:', error.message);
-        if (error.response) {
-            console.error('Response status:', error.response.status);
-            console.error('Response data:', error.response.data);
-        }
+        logCircleError('Error creating Circle member', error);
         throw error;
     }
 };
@@ -151,11 +137,7 @@ const updateMemberCustomField = async (memberId, fieldName, value) => {
         console.log('Successfully updated member custom field:', response.data);
         return response.data;
     } catch (error) {
-        console.error('Error updating member custom field:', error.message);
-        if (error.response) {
-            console.error('Response status:', error.response.status);
-            console.error('Response data:', error.response.data);
-        }
+        logCircleError('Error updating member custom field', error);
         throw error;
     }
 };
@@ -294,16 +276,11 @@ const getAllMembers = async () => {
         return allMembers;
 
     } catch (error) {
-        console.error('CRITICAL ERROR: Failed to fetch members:', error.message);
+        logCircleError('CRITICAL ERROR: Failed to fetch members', error);
 
-        if (error.response) {
-            console.error('Circle API response status:', error.response.status);
-            console.error('Circle API response data:', JSON.stringify(error.response.data));
-
-            // Provide helpful error messages for common failures
-            if (error.response.status === 401) {
-                throw new Error(`Circle API authentication failed. Check that CIRCLE_API_TOKEN is set correctly.`);
-            }
+        // Provide a helpful message for the one failure callers care about
+        if (error.response && error.response.status === 401) {
+            throw new Error(`Circle API authentication failed. Check that CIRCLE_API_TOKEN is set correctly.`);
         }
 
         throw error;
@@ -384,11 +361,7 @@ const deactivateMember = async (memberId) => {
 
     console.log('Successfully deactivated Circle member:', memberId);
   } catch (error) {
-    console.error('Error deactivating Circle member:', error.message);
-    if (error.response) {
-      console.error('Circle API response status:', error.response.status);
-      console.error('Circle API response data:', JSON.stringify(error.response.data));
-    }
+    logCircleError('Error deactivating Circle member', error);
     throw error;
   }
 };
