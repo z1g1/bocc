@@ -101,11 +101,12 @@ identity, admin identity, API base URLs, safety-limit thresholds). Fails fast at
 one clear message if anything required is missing. Every other module imports from it and
 never touches `process.env`. *Decision recorded in `docs/adr/0001-config-fail-fast-at-import.md`.*
 
-### Check-in use-case (planned) — `utils/check-in.js`
+### Check-in use-case (live) — `utils/check-in.js`
 The deep module behind the check-in HTTP handler: `checkInAttendee(input) → result`. Owns
-the find-or-create Attendee → dedup → record Check-in → Circle sync sequence and returns a
-plain result. Lets the handler shrink to an HTTP **adapter** and makes the whole flow
-testable by calling one function.
+the validate → find-or-create Attendee → dedup → record Check-in → Circle sync sequence and
+returns a plain discriminated result (`invalid` / `duplicate` / `created`), throwing only on
+unexpected infrastructure failures. Lets the handler shrink to an HTTP **adapter** and makes
+the whole flow testable by calling one function.
 
 ### Circle transport (planned) — `utils/circle-http.js`
 The shared transport beneath the two Circle domain modules (`circle.js` for Admin v2,
