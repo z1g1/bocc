@@ -20,9 +20,10 @@ const {
   adminAlert
 } = require('./message-templates');
 const { deactivateMember: deactivateCircleMember } = require('./circle');
+const config = require('./config');
 
 // Admin member ID for notifications
-const ADMIN_MEMBER_ID = '2d8e9215'; // circle@zackglick.com
+const ADMIN_MEMBER_ID = config.enforcement.adminMemberId; // circle@zackglick.com
 
 /**
  * Send warning DM to member

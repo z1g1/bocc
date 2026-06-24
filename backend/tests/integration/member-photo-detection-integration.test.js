@@ -15,14 +15,14 @@
 const { getMembersWithoutPhotos } = require('../../netlify/functions/utils/circle');
 
 describe('getMembersWithoutPhotos Integration Test', () => {
-  // Skip this test in CI/CD or if no API token available
-  // Set RUN_INTEGRATION_TESTS=true to run manually
-  // Requires CIRCLE_API_TOKEN environment variable
-  const hasToken = !!process.env.CIRCLE_API_TOKEN;
-  const shouldRunIntegration = hasToken && (process.env.RUN_INTEGRATION_TESTS === 'true' || !process.env.CI);
+  // Run only on explicit opt-in. Token presence is no longer a usable signal:
+  // tests/jest.setup.js always seeds a (dummy) CIRCLE_API_TOKEN so config.js can
+  // import, so this test must gate on RUN_INTEGRATION_TESTS (set by
+  // `npm run test:integration`) plus the real token supplied alongside it.
+  const shouldRunIntegration = process.env.RUN_INTEGRATION_TESTS === 'true';
 
-  if (!hasToken) {
-    console.log('ℹ️  Skipping integration tests (CIRCLE_API_TOKEN not set)');
+  if (!shouldRunIntegration) {
+    console.log('ℹ️  Skipping integration tests (set RUN_INTEGRATION_TESTS=true to run)');
   }
 
   (shouldRunIntegration ? it : it.skip)(

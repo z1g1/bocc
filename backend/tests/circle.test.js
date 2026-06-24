@@ -128,8 +128,9 @@ describe('Circle.so API Integration', () => {
                 createMember('invalid-email', 'Test')
             ).rejects.toThrow('API Error');
 
-            expect(consoleErrorSpy).toHaveBeenCalledWith('Response status:', 400);
-            expect(consoleErrorSpy).toHaveBeenCalledWith('Response data:', { message: 'Invalid email' });
+            // Error logging is now standardized via circle-http.logCircleError
+            expect(consoleErrorSpy).toHaveBeenCalledWith('Circle API response status:', 400);
+            expect(consoleErrorSpy).toHaveBeenCalledWith('Circle API response data:', JSON.stringify({ message: 'Invalid email' }));
 
             consoleErrorSpy.mockRestore();
         });

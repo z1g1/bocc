@@ -17,7 +17,7 @@ fi
 
 # Test 1: Make a check-in that should trigger Circle invitation
 echo "📝 Test 1: Check-in with Circle invitation"
-echo "Testing against: https://bocc-backend.netlify.app/.netlify/functions/checkin"
+echo "Testing against: https://716coffee.club/.netlify/functions/checkin"
 echo ""
 
 TIMESTAMP=$(date +%s)
@@ -26,7 +26,7 @@ TEST_EMAIL="circle-test-${TIMESTAMP}@example.com"
 echo "Test email: ${TEST_EMAIL}"
 echo ""
 
-RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://bocc-backend.netlify.app/.netlify/functions/checkin" \
+RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://716coffee.club/.netlify/functions/checkin" \
   -H "Content-Type: application/json" \
   -d "{
     \"email\": \"${TEST_EMAIL}\",

@@ -6,6 +6,11 @@
   "devDependencies": {
     "jest": "^29.7.0"
   },
+  "jest": {
+    "setupFiles": [
+      "<rootDir>/tests/jest.setup.js"
+    ]
+  },
   "scripts": {
     "test": "jest",
     "test:unit": "jest --testPathIgnorePatterns=integration",

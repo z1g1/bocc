@@ -10,12 +10,73 @@
  * Configured in netlify.toml
  */
 
+const crypto = require('crypto');
 const { getAllMembers } = require('./utils/circle');
 const { findWarningByEmail, getActiveWarnings } = require('./utils/airtable-warnings');
 const {
   determineEnforcementAction,
   processEnforcementAction
 } = require('./utils/enforcement-logic');
+const config = require('./utils/config');
+
+/**
+ * Enforce the photo policy for a single member: decide the action, then execute
+ * it. This is the shared per-member step used by both passes of the run (the
+ * no-photo pass and the photo-added pass).
+ *
+ * @param {object} member - Circle member
+ * @param {object|null} existingWarning - the member's current warning record
+ * @param {boolean} dryRun
+ * @returns {Promise<{action: object, result: object}>}
+ */
+const enforceMember = async (member, existingWarning, dryRun) => {
+  const action = determineEnforcementAction(member, existingWarning);
+
+  console.log(`  Action: ${action.action} (Level ${action.warningLevel})`);
+  console.log(`  Reason: ${action.reason}`);
+
+  const result = await processEnforcementAction(member, existingWarning, action, dryRun);
+
+  return { action, result };
+};
+
+/**
+ * Fold a single member's enforcement outcome into the run summary.
+ *
+ * @param {object} summary - the run summary (mutated)
+ * @param {object} member - Circle member
+ * @param {object} action - the decided action
+ * @param {object} result - the execution result from processEnforcementAction
+ */
+const recordOutcome = (summary, member, action, result) => {
+  if (result.success) {
+    summary.processed++;
+    summary.actions[action.action]++;
+
+    // Track final warnings and deactivations separately
+    if (action.warningLevel === 4 && action.shouldNotifyAdmin) {
+      summary.finalWarnings++;
+    }
+    if (action.action === 'DEACTIVATE') {
+      summary.deactivations++;
+    }
+
+    console.log(`  ✓ Success: ${result.executedActions.join(', ')}`);
+
+    if (result.errors.length > 0) {
+      console.log(`  ⚠ Non-blocking errors: ${result.errors.join(', ')}`);
+    }
+  } else {
+    summary.errors++;
+    summary.errorDetails.push({
+      member: member.email,
+      action: action.action,
+      errors: result.errors
+    });
+
+    console.log(`  ✗ Failed: ${result.errors.join(', ')}`);
+  }
+};
 
 /**
  * Main enforcement orchestrator
@@ -81,55 +142,14 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
 
     console.log(`Found ${filteredMembers.length} members to process\n`);
 
-    // Step 2: Process each member without a photo (existing warning loop)
+    // Step 2: Process each member without a photo (no-photo pass)
     for (const member of filteredMembers) {
       try {
         console.log(`\nProcessing: ${member.name} (${member.email})`);
 
-        // Step 2a: Check for existing warning record in Airtable
         const existingWarning = await findWarningByEmail(member.email);
-
-        // Step 2b: Determine what action to take
-        const action = determineEnforcementAction(member, existingWarning);
-
-        console.log(`  Action: ${action.action} (Level ${action.warningLevel})`);
-        console.log(`  Reason: ${action.reason}`);
-
-        // Step 2c: Execute the enforcement action
-        const result = await processEnforcementAction(
-          member,
-          existingWarning,
-          action,
-          dryRun
-        );
-
-        if (result.success) {
-          summary.processed++;
-          summary.actions[action.action]++;
-
-          // Track final warnings and deactivations separately
-          if (action.warningLevel === 4 && action.shouldNotifyAdmin) {
-            summary.finalWarnings++;
-          }
-          if (action.action === 'DEACTIVATE') {
-            summary.deactivations++;
-          }
-
-          console.log(`  ✓ Success: ${result.executedActions.join(', ')}`);
-
-          if (result.errors.length > 0) {
-            console.log(`  ⚠ Non-blocking errors: ${result.errors.join(', ')}`);
-          }
-        } else {
-          summary.errors++;
-          summary.errorDetails.push({
-            member: member.email,
-            action: action.action,
-            errors: result.errors
-          });
-
-          console.log(`  ✗ Failed: ${result.errors.join(', ')}`);
-        }
+        const { action, result } = await enforceMember(member, existingWarning, dryRun);
+        recordOutcome(summary, member, action, result);
 
       } catch (memberError) {
         summary.errors++;
@@ -181,31 +201,8 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
           // Set has_profile_picture so determineEnforcementAction returns PHOTO_ADDED
           member.has_profile_picture = true;
 
-          const action = determineEnforcementAction(member, warning);
-
-          console.log(`  Action: ${action.action} (Level ${action.warningLevel})`);
-          console.log(`  Reason: ${action.reason}`);
-
-          const result = await processEnforcementAction(
-            member,
-            warning,
-            action,
-            dryRun
-          );
-
-          if (result.success) {
-            summary.processed++;
-            summary.actions[action.action]++;
-            console.log(`  ✓ Success: ${result.executedActions.join(', ')}`);
-          } else {
-            summary.errors++;
-            summary.errorDetails.push({
-              member: member.email,
-              action: action.action,
-              errors: result.errors
-            });
-            console.log(`  ✗ Failed: ${result.errors.join(', ')}`);
-          }
+          const { action, result } = await enforceMember(member, warning, dryRun);
+          recordOutcome(summary, member, action, result);
 
         } catch (photoAddedError) {
           summary.errors++;
@@ -259,50 +256,116 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
 };
 
 /**
- * Netlify Scheduled Function Handler
- * Triggered by cron schedule defined in netlify.toml
- *
- * @param {object} event - Netlify event object
- * @returns {Promise<object>} Response with status and summary
+ * Case-insensitive header lookup against a Netlify function event.
  */
-exports.handler = async (event) => {
-  try {
-    console.log('Scheduled function triggered:', event);
+const getHeader = (event, name) => {
+  const headers = (event && event.headers) || {};
+  const target = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === target) return headers[key];
+  }
+  return undefined;
+};
 
-    // Check if this is a manual invocation with dryRun parameter
+/**
+ * True only for a genuine Netlify scheduled (cron) invocation. Netlify sets
+ * `X-NF-Event: schedule` on these and STRIPS any client-supplied X-Nf-* headers
+ * (since 2022-03), so this signal cannot be spoofed by a public request.
+ */
+const isNetlifyScheduled = (event) =>
+  String(getHeader(event, 'x-nf-event') || '').toLowerCase() === 'schedule';
+
+/**
+ * Constant-time comparison of a request-supplied token against the configured
+ * secret. Returns false on any missing value or length mismatch.
+ */
+const tokenMatches = (provided, expected) => {
+  if (!expected || !provided) return false;
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(String(expected));
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+};
+
+/**
+ * Build a Netlify function handler around runEnforcement.
+ *
+ * Both entry points share this shell and the same authorization gate: a request
+ * may run enforcement ONLY if it is a genuine Netlify scheduled invocation
+ * (unspoofable X-NF-Event header) OR it carries a valid x-enforcement-token.
+ * Anonymous public requests get 401. This closes the publicly-invocable
+ * enforcement endpoint (cron still works; operators trigger with the token).
+ *
+ * Handlers differ only in `filterEmail`: the scheduled handler runs unfiltered
+ * (authorized by the cron signal); the manual handler is hard-wired to the test
+ * user and, being a normal HTTP function, is only ever authorized by the token.
+ *
+ * No CORS header is emitted (server/cron-invoked, not browser-called). Client
+ * error responses are generic; details are logged server-side only.
+ *
+ * @param {object} [opts]
+ * @param {string|null} [opts.filterEmail] - restrict the run to one email
+ * @returns {Function} Netlify handler
+ */
+const makeEnforcementHandler = ({ filterEmail = null } = {}) => async (event) => {
+  const headers = { 'Content-Type': 'application/json' };
+
+  // Authorize: genuine cron invocation OR a valid token. Fails closed (also
+  // rejects when ENFORCEMENT_TRIGGER_TOKEN is unset, since expected is null).
+  const authorized =
+    isNetlifyScheduled(event) ||
+    tokenMatches(getHeader(event, 'x-enforcement-token'), config.enforcement.triggerToken);
+
+  if (!authorized) {
+    console.warn('Enforcement trigger rejected: not a scheduled invocation and no valid token');
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ success: false, error: 'Unauthorized' })
+    };
+  }
+
+  try {
+    console.log('Enforcement function triggered', { filterEmail: filterEmail || 'none (all members)' });
+
     const queryParams = event.queryStringParameters || {};
     const dryRun = queryParams.dryRun === 'true' || queryParams.dryRun === '1';
 
-    // Run enforcement
-    const summary = await runEnforcement(dryRun);
+    const summary = await runEnforcement(dryRun, filterEmail);
 
     return {
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({
         success: true,
         message: 'Profile photo enforcement completed',
-        summary: summary
-      })
+        mode: dryRun ? 'DRY RUN' : 'PRODUCTION',
+        filterEmail: filterEmail || null,
+        summary
+      }, null, 2)
     };
 
   } catch (error) {
-    console.error('Scheduled function error:', error);
+    // Log full detail server-side; return a generic message to the client.
+    console.error('Enforcement function error:', error.message);
+    console.error('Error stack:', error.stack);
 
     return {
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers,
       body: JSON.stringify({
         success: false,
-        error: error.message
-      })
+        error: 'An error occurred while processing the request'
+      }, null, 2)
     };
   }
 };
 
-// Export runEnforcement for testing
+// Scheduled (cron) handler — unfiltered. Schedule defined in netlify.toml.
+exports.handler = makeEnforcementHandler();
+
+// Exports for the manual endpoint and for testing
+exports.makeEnforcementHandler = makeEnforcementHandler;
 exports.runEnforcement = runEnforcement;
+exports.enforceMember = enforceMember;
+exports.recordOutcome = recordOutcome;

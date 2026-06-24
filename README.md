@@ -10,8 +10,8 @@ Monorepo for the Buffalo Open Coffee Club — a weekly Tuesday morning networkin
 
 ```
 bocc/
-├── website/        Jekyll static site → deployed to 716coffee.club via Netlify
-├── backend/        Netlify Functions API → deployed to bocc-backend.netlify.app
+├── website/        Jekyll static site → served at 716coffee.club via Netlify
+├── backend/        Netlify Functions API → served at 716coffee.club/.netlify/functions/
 └── docs/           All project documentation
     ├── onboarding.md       Start here if you're new
     ├── architecture.md     System overview and data flows
@@ -67,18 +67,20 @@ See `backend/.env.example` for the template.
 
 ## Deployment
 
-Both sites deploy automatically from `main` via Netlify:
+A single Netlify site deploys from `main` and serves both the website and the
+backend functions (config in the root `netlify.toml`). The API is same-origin
+with the website, so no CORS is required.
 
-| Site | URL | Netlify Base Directory |
-|------|-----|----------------------|
+| Part | URL | Source |
+|------|-----|--------|
 | Website | `716coffee.club` | `website/` |
-| Backend API | `bocc-backend.netlify.app` | `backend/` |
+| Backend API | `716coffee.club/.netlify/functions/` | `backend/netlify/functions/` |
 
-Each push to `main` costs 30 Netlify credits (15 per site). The free tier provides 300 credits/month. **Batch changes and merge to `main` infrequently** (aim for 4-6 pushes/month). Build ignore scripts prevent unnecessary rebuilds when only docs or the other site changed.
+Each push to `main` costs 15 Netlify credits (one build). The free tier provides 300 credits/month. **Batch changes and merge to `main` infrequently** — every push, including docs-only changes, rebuilds the site.
 
 ## Git Workflow
 
-- **`main`** — Production. Both sites auto-deploy from here.
+- **`main`** — Production. The single Netlify site auto-deploys from here.
 - **`dev`** — Active development. Work here, test locally, then merge to `main` when ready.
 
 ```bash

@@ -20,7 +20,7 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
                                         │ POST /checkin
                                         ▼
 ┌─────────────────────────────────────────────────────────┐
-│              bocc-backend.netlify.app                    │
+│         716coffee.club/.netlify/functions/ (same-origin) │
 │              (Netlify Functions - Serverless)            │
 │                                                         │
 │  ┌──────────────────────────────────────────────────┐   │
@@ -64,7 +64,7 @@ The QR code URL contains the event token: `https://716coffee.club/checkin/bocc?t
 - If returning: shows "Welcome back!" quick-confirm flow
 - If new: shows full form (name, email, phone, business)
 - Validates inputs client-side (email format, honeypot bot detection)
-- POSTs JSON to `https://bocc-backend.netlify.app/.netlify/functions/checkin`
+- POSTs JSON to `/.netlify/functions/checkin` (same-origin)
 
 ### 3. Backend validation (`utils/validation.js`)
 - Email: RFC 5322 format + dangerous character rejection
