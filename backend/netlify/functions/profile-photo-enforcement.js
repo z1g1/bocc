@@ -256,6 +256,26 @@ const runEnforcement = async (dryRun = false, filterEmail = null) => {
 };
 
 /**
+ * Case-insensitive header lookup against a Netlify function event.
+ */
+const getHeader = (event, name) => {
+  const headers = (event && event.headers) || {};
+  const target = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === target) return headers[key];
+  }
+  return undefined;
+};
+
+/**
+ * True only for a genuine Netlify scheduled (cron) invocation. Netlify sets
+ * `X-NF-Event: schedule` on these and STRIPS any client-supplied X-Nf-* headers
+ * (since 2022-03), so this signal cannot be spoofed by a public request.
+ */
+const isNetlifyScheduled = (event) =>
+  String(getHeader(event, 'x-nf-event') || '').toLowerCase() === 'schedule';
+
+/**
  * Constant-time comparison of a request-supplied token against the configured
  * secret. Returns false on any missing value or length mismatch.
  */
@@ -270,35 +290,39 @@ const tokenMatches = (provided, expected) => {
 /**
  * Build a Netlify function handler around runEnforcement.
  *
- * Both entry points share this shell; they differ only in configuration:
- * the scheduled (cron) handler runs unfiltered and ungated; the manual handler
- * is hard-wired to the test user AND requires a shared-secret token, so it can
- * never run unfiltered enforcement and can't be triggered anonymously.
+ * Both entry points share this shell and the same authorization gate: a request
+ * may run enforcement ONLY if it is a genuine Netlify scheduled invocation
+ * (unspoofable X-NF-Event header) OR it carries a valid x-enforcement-token.
+ * Anonymous public requests get 401. This closes the publicly-invocable
+ * enforcement endpoint (cron still works; operators trigger with the token).
  *
- * No CORS header is emitted: these endpoints are server/cron-invoked, not
- * called from a browser. Client error responses are generic; details are
- * logged server-side only.
+ * Handlers differ only in `filterEmail`: the scheduled handler runs unfiltered
+ * (authorized by the cron signal); the manual handler is hard-wired to the test
+ * user and, being a normal HTTP function, is only ever authorized by the token.
+ *
+ * No CORS header is emitted (server/cron-invoked, not browser-called). Client
+ * error responses are generic; details are logged server-side only.
  *
  * @param {object} [opts]
  * @param {string|null} [opts.filterEmail] - restrict the run to one email
- * @param {boolean} [opts.requireToken] - require a valid x-enforcement-token header
  * @returns {Function} Netlify handler
  */
-const makeEnforcementHandler = ({ filterEmail = null, requireToken = false } = {}) => async (event) => {
+const makeEnforcementHandler = ({ filterEmail = null } = {}) => async (event) => {
   const headers = { 'Content-Type': 'application/json' };
 
-  // Fail closed: reject if a token is required but missing/invalid (this also
+  // Authorize: genuine cron invocation OR a valid token. Fails closed (also
   // rejects when ENFORCEMENT_TRIGGER_TOKEN is unset, since expected is null).
-  if (requireToken) {
-    const provided = (event.headers || {})['x-enforcement-token'];
-    if (!tokenMatches(provided, config.enforcement.triggerToken)) {
-      console.warn('Enforcement trigger rejected: missing or invalid x-enforcement-token');
-      return {
-        statusCode: 401,
-        headers,
-        body: JSON.stringify({ success: false, error: 'Unauthorized' })
-      };
-    }
+  const authorized =
+    isNetlifyScheduled(event) ||
+    tokenMatches(getHeader(event, 'x-enforcement-token'), config.enforcement.triggerToken);
+
+  if (!authorized) {
+    console.warn('Enforcement trigger rejected: not a scheduled invocation and no valid token');
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ success: false, error: 'Unauthorized' })
+    };
   }
 
   try {
