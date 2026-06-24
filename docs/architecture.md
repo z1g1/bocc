@@ -54,6 +54,13 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 └──────────────────────┘  └──────────────────────────┘
 ```
 
+> **Module layer (June 2026 refactor):** the `checkin.js` function is now a thin
+> HTTP adapter; the check-in business flow lives in `utils/check-in.js`
+> (`checkInAttendee`). Configuration is centralized in `utils/config.js`, and
+> Circle HTTP transport in `utils/circle-http.js`. See
+> [architecture-review-2026-06.md](architecture-review-2026-06.md) and
+> [`CONTEXT.md`](../CONTEXT.md) for the module seams.
+
 ## Check-in Flow (Detailed)
 
 ### 1. User scans QR code at event
@@ -192,10 +199,21 @@ Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`
 - Backend `ALLOWED_ORIGIN` env var controls allowed origins
 - Defaults to `*` in development, should be `https://716coffee.club` in production
 
+### Enforcement endpoint authorization
+- Both enforcement functions share an authorization gate (`makeEnforcementHandler`):
+  a run is allowed only for a genuine Netlify scheduled invocation
+  (unspoofable `X-NF-Event: schedule`) **or** a valid `x-enforcement-token`.
+  Anonymous requests get `401` (fail-closed). See
+  [ADR-0002](adr/0002-enforcement-endpoint-authorization.md).
+- The manual endpoint additionally restricts processing to the test user.
+
 ### Secrets Management
-- All API keys in Netlify environment variables (never in code)
+- All API keys in Netlify environment variables (never in code), read and
+  validated once in `utils/config.js` (fails fast at import; see
+  [ADR-0001](adr/0001-config-fail-fast-at-import.md))
 - Website has zero secrets (static site)
-- Backend has 5 env vars (4 required, 1 optional)
+- Backend env vars: 4 required secrets + optional `ALLOWED_ORIGIN`,
+  `ENFORCEMENT_TRIGGER_TOKEN`, and identity overrides (see `.env.example`)
 - Principle of least privilege for all API tokens
 
 ### Content Security Policy
