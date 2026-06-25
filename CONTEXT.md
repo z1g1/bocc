@@ -76,6 +76,30 @@ Headless Auth API to obtain a per-bot JWT, then sends messages as itself.
 After a successful check-in the web form may count down and redirect the Attendee to a
 sponsor's link (configured in `website/_data/sponsor.yml`). Frontend-only concern.
 
+### Occurrence
+One weekly instance of an Event series. Identified **today** by `(eventId, ISO week)` where
+the week is computed in **Eastern time** (`America/New_York`), because the QR **Token** is
+reused week-to-week and so cannot identify an occurrence. An occurrence is **held** iff at
+least one non-debug Check-in exists for it; a week with zero check-ins (e.g. a snow-day
+cancellation) is simply **not an occurrence** and creates no gap.
+
+### Occurrence calendar
+The ordered set of held Occurrences for one eventId — the answer to "when did this event
+actually meet?". A **derived, rebuildable projection**, not a source of truth: on Postgres
+it is a SQL query/view (`SELECT DISTINCT date_trunc('week', …)` over non-debug check-ins),
+not a maintained table. It is the single **seam** a future authoritative schedule (the
+volunteers' Google Sheets calendar) would slot behind without touching the streak math.
+
+### Streak
+A per-`(Attendee, eventId)` run of **consecutive held Occurrences attended**, counted in
+occurrences — never in calendar days or raw check-ins. A streak **breaks** only when a held
+Occurrence is missed; a non-occurrence (snow-day) is skipped, not a break. A streak is
+**active** if the Attendee attended the most recent held Occurrence. The **personal best**
+is the longest such run the Attendee has ever achieved for that event. Like the occurrence
+calendar, a streak is a **recomputable projection** of the check-in history, materialised for
+fast reads and celebration — it must always be rebuildable from scratch, never only
+incremented. Debug check-ins never affect streaks (same rule as Circle sync).
+
 ---
 
 ## Seams & deep modules
@@ -117,6 +141,22 @@ enforcement run authenticates once rather than per DM. (Named domain error class
 considered and declined — only `getAllMembers` branches on an error status.)
 
 ---
+
+### Streak engine (planned) — Postgres view/function
+Computes a Streak's `currentStreak`, `longestStreak`, and `isPersonalBest` from check-in
+history via a **gaps-and-islands** query over the per-`(Attendee, eventId)` attended weeks
+measured against the Occurrence calendar. **Recompute-on-read, no drift, no maintained
+counter** — the same query powers the live celebration, the one-time backport, and (later)
+reminder targeting. Lives behind the storage seam; see ADR 0004.
+
+### Datastore migration (planned) — Airtable → Supabase Postgres
+The transactional store (`attendees`, `checkins`, derived occurrences/streaks) is moving to
+Supabase Postgres to escape Airtable's 1,000-record/base cap and make streaks a recomputable
+SQL projection. Google Sheets remains the human-edited event **schedule**; `No Photo
+Warnings` stays in Airtable. Access is via a **least-privilege** Postgres role (deny-by-default
+RLS, no `service_role`), server-only. Phased: migrate check-ins → streaks → reminders.
+See ADR 0003. *Until Phase 1 lands, the "Airtable `attendees`/`checkins` table" wording above
+still describes today's storage.*
 
 ## Naming conventions
 

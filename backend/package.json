@@ -1,7 +1,8 @@
 {
   "dependencies": {
     "airtable": "^0.12.2",
-    "axios": "^1.13.4"
+    "axios": "^1.13.4",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "jest": "^29.7.0"
@@ -16,6 +17,8 @@
     "test:unit": "jest --testPathIgnorePatterns=integration",
     "test:integration": "RUN_INTEGRATION_TESTS=true jest tests/integration",
     "test:smoke-local": "bash tests/start-local-test.sh",
-    "test:smoke-prod": "API_URL=https://716coffee.club/.netlify/functions/checkin bash tests/smoke-test.sh"
+    "test:smoke-prod": "API_URL=https://716coffee.club/.netlify/functions/checkin bash tests/smoke-test.sh",
+    "backfill": "node scripts/backfill-from-airtable.js",
+    "backfill:dry": "node scripts/backfill-from-airtable.js --dry-run"
   }
 }

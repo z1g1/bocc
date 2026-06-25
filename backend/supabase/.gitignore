@@ -1,0 +1,4 @@
+# Supabase CLI scratch / local-only artifacts
+.branches
+.temp
+.env

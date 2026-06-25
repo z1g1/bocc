@@ -46,6 +46,17 @@ const config = Object.freeze({
     endpointUrl: 'https://api.airtable.com', // stable vendor endpoint
   }),
 
+  // Supabase Postgres — the post-migration transactional store (ADR 0003).
+  // OPTIONAL at boot: the Supabase path is opt-in until Phase 1 cutover, so a
+  // missing connection string does not fail config. utils/supabase-store.js
+  // throws a clear error if asked to connect without it. The connection string
+  // points at the least-privilege `checkin_writer` role via the transaction
+  // pooler — never service_role. See docs/backend/SUPABASE_PERMISSIONS.md.
+  supabase: Object.freeze({
+    connectionString: env.SUPABASE_CHECKIN_WRITER_URL || null,
+    poolMax: Number(env.SUPABASE_POOL_MAX || 1), // serverless: one conn per instance
+  }),
+
   circle: Object.freeze({
     adminToken: REQUIRED_SECRETS.CIRCLE_API_TOKEN,
     headlessToken: REQUIRED_SECRETS.CIRCLE_HEADLESS_API,
