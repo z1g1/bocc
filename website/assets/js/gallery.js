@@ -12,6 +12,7 @@
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   function initGallery(root) {
+    var viewport = root.querySelector('.gallery__viewport');
     var track = root.querySelector('[data-gallery-track]');
     var slides = Array.prototype.slice.call(root.querySelectorAll('[data-gallery-slide]'));
     var prev = root.querySelector('[data-gallery-prev]');
@@ -45,8 +46,16 @@
       return best;
     }
 
+    // Match the viewport height to the active slide so wide posts don't float
+    // inside a tall frame. Slides are top-aligned in CSS; we just clip to height.
+    function fitHeight() {
+      if (!viewport) return;
+      viewport.style.height = slides[index].offsetHeight + 'px';
+    }
+
     function sync() {
       index = nearestIndex();
+      fitHeight();
       dots.forEach(function (d, i) {
         var on = i === index;
         d.classList.toggle('is-active', on);
@@ -77,6 +86,13 @@
     });
 
     window.addEventListener('resize', sync);
+
+    // Lazy-loaded images change a slide's height once they arrive — refit then.
+    root.querySelectorAll('.gallery__img').forEach(function (img) {
+      if (img.complete) return;
+      img.addEventListener('load', fitHeight, { once: true });
+    });
+
     sync();
   }
 

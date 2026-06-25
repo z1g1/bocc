@@ -5,6 +5,7 @@ brand:
   name: Buffalo Open Coffee Club
   wordmark: Open Coffee Club          # shown beside the logo in the header/footer
   tagline: The first stop for Buffalo's startup community. Built by neighbors, for neighbors.
+  funding: Buffalo Open Coffee Club is made possible through the Springboard Prize Competition, supported by the Ralph C. Wilson, Jr. Foundation.
 
 # Primary header nav. `url` may be a path (/about/) or an in-page anchor (/#stories).
 primary:

@@ -107,33 +107,39 @@
   line-height: var(--lh-tight); margin: 0;
 }
 .section-head__lead { font-size: var(--t-lg); color: var(--mocha); margin: 14px auto 0; max-width: 44ch; }
+.wall .section-head { margin-bottom: 32px; }
 // ---- Gallery carousel ---------------------------------------
 // Native scroll-snap track (swipe/scroll works without JS); assets/js/gallery.js
 // adds prev/next buttons + dots and tracks the active slide. Screenshots are
 // shown uncropped (object-fit: contain) inside a fixed-height frame.
 .gallery { position: relative; max-width: 820px; margin-inline: auto; }
-.gallery__viewport { overflow: hidden; }
+// The viewport height tracks the active slide (set by gallery.js) so wide posts
+// don't float inside a frame sized for the tallest one. Slides are top-aligned
+// (align-items:flex-start) so each takes its natural height instead of being
+// stretched to the tallest, and the viewport clips the rest.
+.gallery__viewport { overflow: hidden; transition: height 0.35s ease; }
 .gallery__track {
-  display: flex; margin: 0; padding: 0; list-style: none;
-  overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  display: flex; align-items: flex-start; margin: 0; padding: 0; list-style: none;
+  overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none; -ms-overflow-style: none;
 }
+.no-js .gallery__viewport { transition: none; }
 .gallery__track::-webkit-scrollbar { display: none; }
 .gallery__slide {
   flex: 0 0 100%; scroll-snap-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: var(--sp-4);
-  padding: var(--sp-2) var(--sp-2) 0;
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
+  padding: 0 var(--sp-2);
 }
 .gallery__link {
   display: flex; align-items: center; justify-content: center;
-  height: clamp(300px, 46vh, 460px); width: 100%;
-  border-radius: var(--r-md); text-decoration: none;
+  width: 100%; border-radius: var(--r-md); text-decoration: none;
 }
-// Uncropped: the image scales to fit the frame, preserving its aspect ratio.
-// Wide posts fill the width; tall posts are capped by the frame height.
+// Uncropped: the image scales to its natural size, capped so tall (portrait)
+// posts don't tower. The slide sizes to the image; the viewport follows.
 .gallery__img {
-  max-height: 100%; max-width: min(580px, 86vw); width: auto; height: auto;
+  max-height: clamp(280px, 50vh, 440px); max-width: min(580px, 86vw);
+  width: auto; height: auto;
   border-radius: var(--r-md); border: 1px solid var(--sand);
   box-shadow: var(--shadow-lg); background: var(--white);
 }
@@ -165,7 +171,7 @@
 .gallery__nav--next { right: -8px; }
 .no-js .gallery__nav { display: none; }
 
-.gallery__dots { display: flex; justify-content: center; gap: 8px; margin-top: var(--sp-5); }
+.gallery__dots { display: flex; justify-content: center; gap: 8px; margin-top: var(--sp-4); }
 .gallery__dot {
   width: 8px; height: 8px; border-radius: var(--r-pill); border: 0; padding: 0;
   cursor: pointer; background: var(--sand);

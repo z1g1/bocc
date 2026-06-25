@@ -13,6 +13,7 @@
         <span>{{ nav.brand.wordmark }}</span>
       </a>
       <p>{{ nav.brand.tagline }}</p>
+      {%- if nav.brand.funding %}<p class="site-footer__funding">{{ nav.brand.funding }}</p>{% endif -%}
     </div>
 
     <div class="site-footer__cols">

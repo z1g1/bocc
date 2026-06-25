@@ -32,7 +32,6 @@ stats:
 # JS carousel (one uncropped screenshot at a time, links to the source post).
 # Add/remove posts here; no markup edits needed.
 wall:
-  eyebrow: Straight from LinkedIn
   heading: Don't take our word for it.
   lead: Real posts from real neighbors, the morning after.
   posts:

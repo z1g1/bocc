@@ -118,6 +118,7 @@
 .site-footer__legal { border-top: 1px solid var(--border-ink); padding-block: var(--sp-5); color: var(--fg3); }
 .site-footer__brand .site-header__logo { margin-bottom: var(--sp-4); }
 .site-footer__brand p { margin: 0; font-size: var(--t-sm); line-height: 1.6; }
+.site-footer__brand .site-footer__funding { margin-top: var(--sp-4); }
 
 .site-footer__cols { display: flex; gap: var(--sp-7); flex-wrap: wrap; }
 .site-footer__meta p { margin: 12px 0 0; color: var(--fg-on-ink); font-size: var(--t-sm); line-height: 1.9; }
