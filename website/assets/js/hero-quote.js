@@ -24,12 +24,14 @@
     if (next === index) return;
     items[index].classList.remove('is-active');
     items[index].setAttribute('aria-hidden', 'true');
+    items[index].setAttribute('inert', '');
     if (dots[index]) dots[index].classList.remove('is-active');
 
     index = (next + items.length) % items.length;
 
     items[index].classList.add('is-active');
     items[index].removeAttribute('aria-hidden');
+    items[index].removeAttribute('inert');
     if (dots[index]) dots[index].classList.add('is-active');
   }
 

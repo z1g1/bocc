@@ -44,19 +44,20 @@
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: var(--sp-3);
-  // visibility:hidden keeps inactive quotes (and their links) out of the
-  // tab order + a11y tree; delayed so it fades out first.
-  opacity: 0; visibility: hidden; transform: translateY(8px);
-  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 0.5s;
+  // Inactive quotes stay painted (opacity:0, not visibility/display:none) so the
+  // web font is applied to them: a hidden subtree misses the font-swap relayout
+  // and gets stuck on the fallback. The `inert` attribute (set in markup/JS)
+  // keeps them out of the tab order + a11y tree instead.
+  opacity: 0; pointer-events: none; transform: translateY(8px);
+  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .rquote__item.is-active {
-  opacity: 1; visibility: visible; transform: translateY(0);
-  transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s;
+  opacity: 1; pointer-events: auto; transform: translateY(0);
 }
 // No-JS fallback: show only the first quote, drop the rest entirely.
 .no-js .rquote__item { display: none; }
 .no-js .rquote__item:first-child {
-  display: flex; position: relative; opacity: 1; visibility: visible; transform: none;
+  display: flex; position: relative; opacity: 1; transform: none;
 }
 
 // The whole quote is a link to its LinkedIn source.

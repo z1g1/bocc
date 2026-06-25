@@ -18,7 +18,7 @@
          role="group" aria-roledescription="carousel" aria-label="Attendee quotes">
       {%- for q in site.data.home.pull_quotes -%}
         <figure class="rquote__item{% if forloop.first %} is-active{% endif %}"
-                data-rquote-item{% unless forloop.first %} aria-hidden="true"{% endunless %}>
+                data-rquote-item{% unless forloop.first %} aria-hidden="true" inert{% endunless %}>
           {%- if q.url -%}
           <a class="rquote__link" href="{{ q.url }}" target="_blank" rel="noopener"
              aria-label="Read {{ q.who }}'s post about Buffalo Open Coffee Club on LinkedIn (opens in a new tab)">
