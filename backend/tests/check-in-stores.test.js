@@ -22,6 +22,13 @@ const validInput = (overrides = {}) => ({
 function loadWithStore(store) {
     let api;
     jest.isolateModules(() => {
+        // config reads env at import and fail-fasts on a Supabase mode with no
+        // URL. Set the env, let the FRESH config (required transitively below)
+        // capture it synchronously, then restore immediately — so CHECKIN_STORE
+        // never persists past this synchronous block into another suite sharing
+        // this worker (the env mutation is the whole point of isolating here).
+        const prevStore = process.env.CHECKIN_STORE;
+        const prevUrl = process.env.SUPABASE_CHECKIN_WRITER_URL;
         process.env.CHECKIN_STORE = store;
         process.env.SUPABASE_CHECKIN_WRITER_URL = 'postgres://checkin_writer@pooler/test';
 
@@ -42,20 +49,18 @@ function loadWithStore(store) {
         }));
 
         api = {
-            checkInAttendee: require(CHECKIN).checkInAttendee,
+            checkInAttendee: require(CHECKIN).checkInAttendee, // imports config NOW, reading the env above
             airtable: require(AIRTABLE),
             circle: require(CIRCLE),
             supa: require(SUPA),
         };
+
+        // Restore so no other suite in this worker ever sees these.
+        if (prevStore === undefined) delete process.env.CHECKIN_STORE; else process.env.CHECKIN_STORE = prevStore;
+        if (prevUrl === undefined) delete process.env.SUPABASE_CHECKIN_WRITER_URL; else process.env.SUPABASE_CHECKIN_WRITER_URL = prevUrl;
     });
     return api;
 }
-
-afterEach(() => {
-    // Don't leak the mode to other test files sharing this worker.
-    delete process.env.CHECKIN_STORE;
-    delete process.env.SUPABASE_CHECKIN_WRITER_URL;
-});
 
 describe('store mode: airtable (default)', () => {
     test('writes only Airtable, no Supabase, streak null', async () => {

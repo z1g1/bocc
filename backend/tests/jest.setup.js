@@ -21,3 +21,9 @@ for (const [key, value] of Object.entries(dummySecrets)) {
     process.env[key] = value;
   }
 }
+
+// Pin the check-in store mode to the default for every test file. setupFiles runs
+// before each file's config import, so this guarantees a clean 'airtable' baseline
+// even if a prior file in the same worker mutated CHECKIN_STORE. Suites that test
+// other modes (check-in-stores.test.js) override it locally via jest.isolateModules.
+process.env.CHECKIN_STORE = 'airtable';
