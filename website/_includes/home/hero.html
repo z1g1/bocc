@@ -21,7 +21,7 @@
                 data-rquote-item{% unless forloop.first %} aria-hidden="true"{% endunless %}>
           <blockquote class="rquote__line">
             <span class="rquote__mark" aria-hidden="true">&ldquo;</span>
-            <span class="rquote__text">{{ q.text }}</span>
+            <span class="rquote__text">{{ q.text }}<span class="rquote__close" aria-hidden="true">&rdquo;</span></span>
           </blockquote>
           <figcaption class="rquote__who">&mdash; {{ q.who }}</figcaption>
         </figure>
