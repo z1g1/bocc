@@ -19,11 +19,18 @@
       {%- for q in site.data.home.pull_quotes -%}
         <figure class="rquote__item{% if forloop.first %} is-active{% endif %}"
                 data-rquote-item{% unless forloop.first %} aria-hidden="true"{% endunless %}>
-          <blockquote class="rquote__line">
-            <span class="rquote__mark" aria-hidden="true">&ldquo;</span>
-            <span class="rquote__text">{{ q.text }}<span class="rquote__close" aria-hidden="true">&rdquo;</span></span>
-          </blockquote>
-          <figcaption class="rquote__who">&mdash; {{ q.who }}</figcaption>
+          {%- if q.url -%}
+          <a class="rquote__link" href="{{ q.url }}" target="_blank" rel="noopener"
+             aria-label="Read {{ q.who }}'s post about Buffalo Open Coffee Club on LinkedIn (opens in a new tab)">
+          {%- endif -%}
+            <blockquote class="rquote__line">
+              <span class="rquote__mark" aria-hidden="true">&ldquo;</span>
+              <span class="rquote__text">{{ q.text }}<span class="rquote__close" aria-hidden="true">&rdquo;</span></span>
+            </blockquote>
+            <figcaption class="rquote__who">
+              &mdash; {{ q.who }}{% if q.url %} <span class="rquote__src">via LinkedIn ↗</span>{% endif %}
+            </figcaption>
+          {%- if q.url -%}</a>{%- endif -%}
         </figure>
       {%- endfor -%}
       <div class="rquote__dots" data-rquote-dots aria-hidden="true">

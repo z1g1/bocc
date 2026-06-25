@@ -1,9 +1,12 @@
 {%- comment -%}
-  home/wall.html — "Don't take our word for it." screenshot wall.
-  Real LinkedIn posts as pinned notes; data from _data/home.yml (wall).
-  Grid tolerates non-square images (object-fit: cover, 1:1 frame).
+  home/wall.html — "Don't take our word for it." LinkedIn-post carousel.
+  Data from _data/home.yml (wall). Screenshots are shown uncropped, one at a
+  time, in a native scroll-snap track (swipe/scroll works with JS off).
+  assets/js/gallery.js layers on prev/next buttons + dots and tracks the
+  active slide. Each slide links to its source LinkedIn post.
 {%- endcomment -%}
 {%- assign w = site.data.home.wall -%}
+{%- assign n = w.posts | size -%}
 <section class="wall" id="stories" aria-labelledby="wall-heading">
   <div class="container wall__inner">
     <div class="section-head">
@@ -11,21 +14,43 @@
       <h2 id="wall-heading">{{ w.heading }}</h2>
       <p class="section-head__lead">{{ w.lead }}</p>
     </div>
-    <div class="wall__grid">
-      {%- for post in w.posts -%}
-        <div class="wall__card" style="--rot: {{ post.rot }}deg; --lift: {{ post.lift }}px;">
-          <a class="wall__note" href="{{ post.url }}" rel="noopener"
-             aria-label="Read {{ post.who }}'s LinkedIn post about Buffalo Open Coffee Club">
-            <span class="wall__pin" aria-hidden="true"></span>
-            <img class="wall__img" src="{{ post.image | relative_url }}" alt="{{ post.alt }}"
-                 width="310" height="310" loading="lazy" decoding="async">
-            <span class="wall__meta">
-              <span class="wall__who">{{ post.who }}</span>
-              <span class="wall__via">via LinkedIn ↗</span>
-            </span>
-          </a>
-        </div>
-      {%- endfor -%}
+
+    <div class="gallery" data-gallery aria-roledescription="carousel" aria-label="{{ w.heading }}">
+      <div class="gallery__viewport">
+        <ul class="gallery__track" data-gallery-track>
+          {%- for post in w.posts -%}
+            <li class="gallery__slide" data-gallery-slide
+                role="group" aria-roledescription="slide"
+                aria-label="{{ forloop.index }} of {{ n }}: {{ post.who }}">
+              <a class="gallery__link" href="{{ post.url }}" target="_blank" rel="noopener"
+                 aria-label="Read {{ post.who }}'s LinkedIn post about Buffalo Open Coffee Club (opens in a new tab)">
+                <img class="gallery__img" src="{{ post.image | relative_url }}" alt="{{ post.alt }}"
+                     loading="lazy" decoding="async">
+              </a>
+              <span class="gallery__cap">
+                <span class="gallery__who">{{ post.who }}</span>
+                <span class="gallery__via">via LinkedIn ↗</span>
+              </span>
+            </li>
+          {%- endfor -%}
+        </ul>
+      </div>
+
+      <button type="button" class="gallery__nav gallery__nav--prev" data-gallery-prev aria-label="Previous post">
+        {% include icon.html name="arrow-left" size="22" %}
+      </button>
+      <button type="button" class="gallery__nav gallery__nav--next" data-gallery-next aria-label="Next post">
+        {% include icon.html name="arrow" size="22" %}
+      </button>
+
+      <div class="gallery__dots" data-gallery-dots role="tablist" aria-label="Choose a post">
+        {%- for post in w.posts -%}
+          <button type="button" class="gallery__dot{% if forloop.first %} is-active{% endif %}"
+                  data-gallery-dot data-index="{{ forloop.index0 }}"
+                  role="tab" aria-label="Show {{ post.who }}'s post"
+                  aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"></button>
+        {%- endfor -%}
+      </div>
     </div>
   </div>
 </section>
