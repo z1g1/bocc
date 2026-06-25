@@ -106,4 +106,10 @@
 
 @media (max-width: 480px) {
   #checkinForm #checkinButton { width: 100%; justify-content: center; }
+
+  // Returning-visitor actions: stack full-width with spacing. (Side by side they
+  // rely on a horizontal margin that disappears once they wrap on small screens,
+  // leaving the buttons touching.)
+  #greeting #confirmCheckinBtn,
+  #greeting #notMeBtn { display: flex; width: 100%; justify-content: center; margin: 0 0 var(--sp-3); }
 }
