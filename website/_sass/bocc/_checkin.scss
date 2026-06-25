@@ -1,0 +1,109 @@
+// ============================================================
+//  BOCC - Check-in pages
+//  Restyled onto the new token system. IDs/classes are unchanged so
+//  js/checkin.js keeps working (#checkinForm, #checkinButton, #greeting,
+//  #validationError, #sponsorCountdown, .honeypot-field, .submitting).
+// ============================================================
+
+.checkin { max-width: var(--reading); margin-inline: auto; padding: 56px var(--sp-5) 80px; }
+.checkin h1, .checkin h2 { font-size: clamp(24px, 4vw, 34px); letter-spacing: var(--tr-tight); margin: 0 0 var(--sp-5); }
+
+#checkinForm {
+  max-width: 480px;
+
+  .form-group { margin-bottom: var(--sp-5); }
+
+  label {
+    display: block; margin-bottom: 6px;
+    font-family: var(--font-mono); font-size: var(--t-sm); font-weight: var(--w-semi);
+    letter-spacing: 0.04em; color: var(--coffee);
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"] {
+    display: block; width: 100%;
+    padding: 12px 14px; font-family: var(--font-body); font-size: var(--t-base);
+    line-height: 1.5; color: var(--ink); background: var(--white);
+    border: 1.5px solid var(--border-strong); border-radius: var(--r-sm);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease; box-sizing: border-box;
+
+    &:focus {
+      outline: none; border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--ring);
+    }
+  }
+
+  .checkbox-group {
+    display: flex; align-items: flex-start; gap: var(--sp-2); margin-bottom: var(--sp-5);
+
+    input[type="checkbox"] {
+      margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent);
+    }
+    label { display: inline; font-family: var(--font-body); font-weight: var(--w-regular); margin-bottom: 0; cursor: pointer; }
+  }
+
+  hr { border: none; border-top: 1px solid var(--sand); margin: var(--sp-5) 0; }
+
+  #checkinButton {
+    display: inline-flex; align-items: center; gap: var(--sp-2);
+    padding: 13px 30px; font-family: var(--font-body); font-size: var(--t-base); font-weight: var(--w-bold);
+    color: var(--on-accent); background: var(--accent); border: 0; border-radius: var(--r-pill);
+    cursor: pointer; box-shadow: var(--shadow-warm);
+    transition: background 0.12s ease, transform 0.12s ease;
+
+    &:hover { background: var(--accent-hover); }
+    &:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+    &:active { background: var(--accent-press); transform: scale(0.97); }
+  }
+}
+
+#validationError {
+  background: #FBECEA; border: 1px solid #E5A89F; color: var(--danger);
+  padding: 12px 14px; border-radius: var(--r-sm); margin-bottom: var(--sp-4); font-size: var(--t-sm);
+}
+
+#greeting {
+  max-width: 480px;
+
+  p { font-size: var(--t-lg); margin-bottom: var(--sp-5); color: var(--coffee); }
+
+  button {
+    display: inline-flex; align-items: center;
+    padding: 12px 24px; font-family: var(--font-body); font-size: var(--t-base); font-weight: var(--w-bold);
+    border: 0; border-radius: var(--r-pill); cursor: pointer;
+    transition: background 0.12s ease, transform 0.12s ease;
+    &:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+    &:active { transform: scale(0.97); }
+  }
+
+  #confirmCheckinBtn {
+    color: var(--on-accent); background: var(--accent); margin-right: var(--sp-3); box-shadow: var(--shadow-warm);
+    &:hover { background: var(--accent-hover); }
+  }
+
+  #notMeBtn {
+    color: var(--ink); background: transparent; border: 2px solid var(--ink); padding: 10px 22px;
+    &:hover { background: var(--accent-soft); border-color: var(--accent-press); }
+  }
+}
+
+#sponsorCountdown {
+  background: var(--cream); border: 1px solid var(--sand); border-radius: var(--r-md);
+  padding: var(--sp-4) var(--sp-5); margin-top: var(--sp-5); max-width: 480px;
+
+  p { font-size: var(--t-base); margin-bottom: var(--sp-2); }
+  #countdownTimer { font-weight: var(--w-bold); color: var(--accent-press); }
+  #skipRedirect {
+    background: none; border: 0; color: var(--accent-press); cursor: pointer;
+    font-size: var(--t-sm); padding: 0; text-decoration: underline;
+    &:hover { color: var(--ink); }
+  }
+}
+
+.submitting { opacity: 0.7; pointer-events: none; }
+.honeypot-field { position: absolute; left: -9999px; }
+
+@media (max-width: 480px) {
+  #checkinForm #checkinButton { width: 100%; justify-content: center; }
+}

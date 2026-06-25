@@ -1,0 +1,59 @@
+---
+# _layouts/default.html — base shell for every BOCC page.
+# Provides <head> (SEO, fonts, CSP), skip link, landmarks, header + footer.
+# Front matter is required (even if empty) so Jekyll processes the file.
+---
+<!DOCTYPE html>
+<html lang="{{ site.lang | default: site.locale | default: 'en-US' }}" class="no-js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    {%- comment -%} Swap .no-js → .js before paint so CSS can branch (rotating quote fallback). {%- endcomment -%}
+    <script>document.documentElement.className = document.documentElement.className.replace('no-js','js');</script>
+
+    {%- comment -%} Content Security Policy. Self-hosted fonts (no Google CDN);
+       Eventbrite is allowed for the home-page checkout widget; the contact form
+       posts to Google Forms. Keep in sync with new third-party embeds. {%- endcomment -%}
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self';
+                   script-src 'self' 'unsafe-inline' https://www.eventbrite.com https://www.eventbrite.com/static/;
+                   style-src 'self' 'unsafe-inline';
+                   font-src 'self';
+                   img-src 'self' data: https:;
+                   frame-src https://www.eventbrite.com;
+                   connect-src 'self';
+                   form-action 'self' https://docs.google.com;">
+
+    <link rel="preconnect" href="https://www.eventbrite.com">
+
+    {%- comment -%} SEO: jekyll-seo-tag emits <title>, description, canonical,
+       Open Graph, Twitter cards, and WebSite/Organization JSON-LD from
+       _config.yml + page front matter. {%- endcomment -%}
+    {% seo %}
+
+    {%- comment -%} Self-hosted variable fonts, preloaded to cut FOUT (README §Fonts). {%- endcomment -%}
+    <link rel="preload" href="{{ '/assets/fonts/bricolage-grotesque-var.woff2' | relative_url }}" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="{{ '/assets/fonts/hanken-grotesk-var.woff2'      | relative_url }}" as="font" type="font/woff2" crossorigin>
+
+    <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
+    <link rel="icon" href="{{ '/favicon.ico' | relative_url }}">
+    <link rel="apple-touch-icon" href="{{ '/assets/images/bocc-logo-square.png' | relative_url }}">
+
+    {%- comment -%} Domain-specific Event + Organization structured data. {%- endcomment -%}
+    {% include event-jsonld.html %}
+
+    <script src="{{ '/assets/js/hero-quote.js' | relative_url }}" defer></script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    {% include header.html %}
+
+    <main id="main">
+      {{ content }}
+    </main>
+
+    {% include footer.html %}
+  </body>
+</html>

@@ -1,0 +1,26 @@
+{%- comment -%}
+  blocks/cta.html — closing CTA card (cream, civic-badge radius, sunrise rule).
+  Inputs (block.*): label (mono eyebrow), title, lead, actions[] of {label, href, variant, icon}.
+{%- endcomment -%}
+{%- assign b = include.block -%}
+<section class="cta-band">
+  <div class="container cta-band__inner">
+    <div class="cta-card">
+      <div class="sunrise-rule"></div>
+      <div class="cta-card__body">
+        {%- if b.label -%}<span class="section-label">{{ b.label }}</span>{%- endif -%}
+        {%- if b.title -%}<h2>{{ b.title }}</h2>{%- endif -%}
+        {%- if b.lead -%}<p class="cta-card__lead">{{ b.lead }}</p>{%- endif -%}
+        {%- if b.actions -%}
+          <div class="cta-card__actions">
+            {%- for a in b.actions -%}
+              <a class="btn btn--{{ a.variant | default: 'primary' }} btn--lg" href="{{ a.href }}">
+                {{ a.label }}{% if a.icon %}{% include icon.html name=a.icon size="18" %}{% endif %}
+              </a>
+            {%- endfor -%}
+          </div>
+        {%- endif -%}
+      </div>
+    </div>
+  </div>
+</section>

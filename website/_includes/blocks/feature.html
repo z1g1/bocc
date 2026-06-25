@@ -1,0 +1,25 @@
+{%- comment -%}
+  blocks/feature.html — charcoal feature block (the sponsor offer).
+  Sunrise rule on top + sun-ray texture; heading/lead then a grid of benefit cards.
+  Inputs (block.*): label (gold eyebrow), title, lead, items[] of {icon, title, body}.
+{%- endcomment -%}
+{%- assign b = include.block -%}
+<section class="feature sun-rays"{% if b.id %} id="{{ b.id }}"{% endif %}>
+  <div class="sunrise-rule"></div>
+  <div class="container feature__inner">
+    <div class="feature__grid">
+      <div class="feature__head">
+        {%- if b.label -%}<span class="section-label section-label--gold">{{ b.label }}</span>{%- endif -%}
+        {%- if b.title -%}<h2>{{ b.title }}</h2>{%- endif -%}
+        {%- if b.lead -%}<p class="feature__lead">{{ b.lead }}</p>{%- endif -%}
+      </div>
+      {%- for item in b.items -%}
+        <div class="benefit">
+          <div class="benefit__icon">{% include icon.html name=item.icon size="22" %}</div>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.body }}</p>
+        </div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>

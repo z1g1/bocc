@@ -1,0 +1,45 @@
+# _data/nav.yml — single source of truth for site chrome (header + footer).
+# Editors change links here; no template edits needed.
+
+brand:
+  name: Buffalo Open Coffee Club
+  wordmark: Open Coffee Club          # shown beside the logo in the header/footer
+  tagline: The first stop for Buffalo's startup community. Built by neighbors, for neighbors.
+
+# Primary header nav. `url` may be a path (/about/) or an in-page anchor (/#stories).
+primary:
+  - label: About
+    url: /about/
+  - label: Sponsorship
+    url: /sponsorship/
+  - label: Stories
+    url: /#stories
+  - label: Code of Conduct
+    url: /code-of-conduct/
+
+# Header call-to-action button (the "Join Tuesday" slot → free registration).
+cta:
+  label: Register Free
+  url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+
+# Footer link column.
+footer:
+  - label: About
+    url: /about/
+  - label: Sponsorship
+    url: /sponsorship/
+  - label: Code of Conduct
+    url: /code-of-conduct/
+  - label: Contact
+    url: https://docs.google.com/forms/d/e/1FAIpQLSfDqOoB3eLfUJe2bST_3hzpHFPNxR8zNRARXSpbpLkvJrjmyw/viewform?usp=header
+
+# Social / community links (footer).
+social:
+  - label: LinkedIn
+    url: https://www.linkedin.com/showcase/buffalo-open-coffee
+  - label: Instagram
+    url: https://www.instagram.com/buffaloopencoffeeclub
+  - label: Facebook
+    url: https://www.facebook.com/buffaloopencoffeeclub
+  - label: 716.social
+    url: https://www.716.social/

@@ -1,0 +1,43 @@
+{%- comment -%}
+  home/hero.html — centered charcoal hero with the rotating attendee pull-quote.
+  Content from _data/home.yml (hero, pull_quotes). The first quote renders
+  server-side (readable with JS off); assets/js/hero-quote.js cross-fades the
+  rest and pauses under prefers-reduced-motion.
+{%- endcomment -%}
+{%- assign h = site.data.home.hero -%}
+<section class="hero sun-rays">
+  <div class="container hero__inner">
+    <span class="hero__badge">
+      {% include icon.html name="sunrise" size="16" %}
+      <span class="stamp">{{ h.badge }}</span>
+    </span>
+    <h1>{{ h.title }}</h1>
+    <p class="hero__lead">{{ h.lead }}</p>
+
+    <div class="rquote" data-rquote
+         role="group" aria-roledescription="carousel" aria-label="Attendee quotes">
+      {%- for q in site.data.home.pull_quotes -%}
+        <figure class="rquote__item{% if forloop.first %} is-active{% endif %}"
+                data-rquote-item{% unless forloop.first %} aria-hidden="true"{% endunless %}>
+          <blockquote class="rquote__line">
+            <span class="rquote__mark" aria-hidden="true">&ldquo;</span>
+            <span class="rquote__text">{{ q.text }}</span>
+          </blockquote>
+          <figcaption class="rquote__who">&mdash; {{ q.who }}</figcaption>
+        </figure>
+      {%- endfor -%}
+      <div class="rquote__dots" data-rquote-dots aria-hidden="true">
+        {%- for q in site.data.home.pull_quotes -%}
+          <button type="button" class="rquote__dot{% if forloop.first %} is-active{% endif %}"
+                  data-rquote-dot aria-label="Show quote {{ forloop.index }}"></button>
+        {%- endfor -%}
+      </div>
+    </div>
+
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="{{ h.cta_url }}">
+        {{ h.cta_label }}{% include icon.html name="arrow" size="18" %}
+      </a>
+    </div>
+  </div>
+</section>

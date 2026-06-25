@@ -1,0 +1,48 @@
+{%- comment -%}
+  _includes/footer.html — charcoal footer, capped by a sunrise rule.
+  Brand + when/where pull from _data/nav.yml and _config (site.event);
+  link + social columns are data-driven from _data/nav.yml.
+{%- endcomment -%}
+{%- assign nav = site.data.nav -%}
+<footer class="site-footer">
+  <div class="sunrise-rule"></div>
+  <div class="container site-footer__grid">
+    <div class="site-footer__brand">
+      <a class="site-header__logo" href="{{ '/' | relative_url }}" aria-label="{{ nav.brand.name }} — home">
+        <img src="{{ '/assets/images/bocc-logo.png' | relative_url }}" alt="" width="44" height="44">
+        <span>{{ nav.brand.wordmark }}</span>
+      </a>
+      <p>{{ nav.brand.tagline }}</p>
+    </div>
+
+    <div class="site-footer__cols">
+      <div class="site-footer__meta">
+        <span class="stamp stamp--gold">When</span>
+        <p>Every Tuesday<br>7:30&ndash;9:00&nbsp;AM</p>
+      </div>
+      <div class="site-footer__meta">
+        <span class="stamp stamp--gold">Where</span>
+        <p>{{ site.event.venue }}<br>Lobby · Buffalo, NY</p>
+      </div>
+      <nav class="site-footer__nav" aria-label="Footer">
+        <span class="stamp stamp--gold">Explore</span>
+        <ul>
+          {%- for item in nav.footer -%}
+            <li><a href="{{ item.url | relative_url }}">{{ item.label }}</a></li>
+          {%- endfor -%}
+        </ul>
+      </nav>
+    </div>
+  </div>
+
+  <div class="container site-footer__legal">
+    <div class="site-footer__legal-grid">
+      <small>&copy; {{ 'now' | date: '%Y' }} {{ nav.brand.name }} &middot; A program of {{ site.event.organizer }} (501c3)</small>
+      <ul class="site-footer__social" aria-label="Social media">
+        {%- for item in nav.social -%}
+          <li><a href="{{ item.url }}" rel="me noopener">{{ item.label }}</a></li>
+        {%- endfor -%}
+      </ul>
+    </div>
+  </div>
+</footer>

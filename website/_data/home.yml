@@ -1,0 +1,97 @@
+# _data/home.yml — content for the home page sections.
+# Edit copy here; the home layout + includes render it. No markup edits needed.
+
+hero:
+  badge: "Tuesdays · 7:30–9:00 AM · Seneca One"
+  title: Your First Free Entrepreneurial Step in Buffalo
+  lead: A free, no-frills coffee meetup for the people building businesses in the 716.
+  cta_label: Join Us on Tuesday
+  cta_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+
+# Rotating attendee pull-quotes shown in the hero (first renders server-side).
+pull_quotes:
+  - text: Almost felt like a family reunion.
+    who: Lena Levine
+  - text: The perfect place to expand your network.
+    who: Scott Wojtanik
+  - text: The sense of feeling like home.
+    who: Yelenna Cichocki
+
+# Stat strip (cream band).
+stats:
+  - { value: "Free", label: "always, for everyone" }
+  - { value: "Every Week", label: "if BPS is open we're there" }
+  - { value: "90 min", label: "coffee + connection" }
+  - { value: "716", label: "born in Buffalo" }
+
+# Screenshot wall — real LinkedIn posts. Grid tolerates non-square images;
+# swap in square re-shoots by replacing the image files / paths here.
+wall:
+  eyebrow: Straight from LinkedIn
+  heading: Don't take our word for it.
+  lead: Real posts from real neighbors, the morning after.
+  posts:
+    - image: /assets/images/bocc-sponsorship-scott.png
+      who: Scott Wojtanik
+      url: https://www.linkedin.com/posts/scott-wojtanik-mba-59ba72108_morningmeetup-buffalocoffeeclub-coffeewithpurpose-activity-7324058248595054592-KBeB
+      alt: LinkedIn post from Scott Wojtanik about Buffalo Open Coffee Club
+      rot: -2.2
+      lift: 6
+    - image: /assets/images/bocc-sponsorship-yelena.png
+      who: Yelenna Cichocki
+      url: https://www.linkedin.com/posts/yelenna-cichocki-b6a94b163_community-is-where-is-at-it-felt-so-good-activity-7282453355744927744-zdrq
+      alt: LinkedIn post from Yelenna Cichocki about Buffalo Open Coffee Club
+      rot: 1.6
+      lift: 28
+    - image: /assets/images/bocc-sponsorship-lena.png
+      who: Lena Levine
+      url: https://www.linkedin.com/posts/lenalevine_this-mornings-buffalo-open-coffee-club-was-activity-7201391349776973824-nddW
+      alt: LinkedIn post from Lena Levine about Buffalo Open Coffee Club
+      rot: -1.1
+      lift: 0
+    - image: /assets/images/bocc-sponsorship-jennifer.png
+      who: Jennifer Getty
+      url: https://www.linkedin.com/posts/jennifer-getty-7b9b60113_a-couple-weeks-ago-i-attended-buffalo-open-activity-7243959914367254529-i7az
+      alt: LinkedIn post from Jennifer Getty about Buffalo Open Coffee Club
+      rot: 1.8
+      lift: 10
+    - image: /assets/images/bocc-sponsorship-freed.png
+      who: Freed
+      url: https://www.linkedin.com/posts/beingfreed_beingfreed-buffalony-networking-activity-7275159130674282496-VRsY
+      alt: LinkedIn post from Freed about Buffalo Open Coffee Club
+      rot: -1.7
+      lift: 30
+    - image: /assets/images/bocc-sponsorship-benjamin.png
+      who: Benjamin Spitler
+      url: https://www.linkedin.com/posts/benjamin-spitler_today-concludes-a-dynamic-month-of-coffee-activity-7191459504364945408-8KcQ
+      alt: LinkedIn post from Benjamin Spitler about Buffalo Open Coffee Club
+      rot: 1.2
+      lift: 2
+
+# Schedule — "No badges. No pitches. Just coffee."
+schedule:
+  eyebrow: How it works
+  heading: No badges. No pitches. Just coffee.
+  intro: Here's how a typical Tuesday runs.
+  rows:
+    - time: "7:30"
+      title: Open Networking
+      body: Grab a coffee, settle in, and say hi to a stranger.
+    - time: "8:15"
+      title: Gives and Asks
+      body: The "giving first" mentality that keeps the community moving forward.
+    - time: "8:30"
+      title: Open Networking
+      body: Find your people and keep chatting.
+    - time: "9:00"
+      title: Wrap Up
+      body: Head to work or stick around to co-work — the lobby has tables and Wi-Fi.
+
+# Sign-up close (charcoal). The Eventbrite checkout widget lives in the panel.
+signup:
+  eyebrow: Reserve a spot
+  heading: See you Tuesday.
+  lead: Grab a free ticket so we know to expect you — walk-ins are always welcome, too.
+  facts:
+    - { icon: calendar, label: "Every Tue" }
+    - { icon: pin, label: "Seneca One" }

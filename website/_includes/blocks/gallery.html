@@ -1,0 +1,25 @@
+{%- comment -%}
+  blocks/gallery.html — responsive photo grid for interior pages.
+  Inputs (block.*): label (optional eyebrow), title (optional), caption (optional),
+  items[] of {image, alt}. Decorative framing only; alt text describes each photo.
+{%- endcomment -%}
+{%- assign b = include.block -%}
+<section class="gallery-band"{% if b.label %} aria-label="{{ b.label }}"{% endif %}>
+  <div class="container gallery-band__inner">
+    {%- if b.label or b.title -%}
+      <div class="gallery-band__head">
+        {%- if b.label -%}<span class="section-label">{{ b.label }}</span>{%- endif -%}
+        {%- if b.title -%}<h2 class="prose-band__title">{{ b.title }}</h2>{%- endif -%}
+      </div>
+    {%- endif -%}
+    <div class="gallery-grid">
+      {%- for item in b.items -%}
+        <figure class="gallery-grid__item">
+          <img src="{{ item.image | relative_url }}" alt="{{ item.alt }}"
+               width="600" height="400" loading="lazy" decoding="async">
+        </figure>
+      {%- endfor -%}
+    </div>
+    {%- if b.caption -%}<div class="gallery-band__caption">{{ b.caption | markdownify }}</div>{%- endif -%}
+  </div>
+</section>

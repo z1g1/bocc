@@ -1,0 +1,27 @@
+{%- comment -%}
+  _includes/header.html — sticky charcoal nav.
+  Nav items + CTA are data-driven from _data/nav.yml so editors never touch markup.
+  Current page gets aria-current="page" (also drives the gold highlight).
+{%- endcomment -%}
+{%- assign nav = site.data.nav -%}
+<header class="site-header">
+  <div class="container site-header__bar">
+    <a class="site-header__logo" href="{{ '/' | relative_url }}" aria-label="{{ nav.brand.name }} — home">
+      <img src="{{ '/assets/images/bocc-logo.png' | relative_url }}" alt="" width="40" height="40">
+      <span>{{ nav.brand.wordmark }}</span>
+    </a>
+
+    <nav class="site-nav" aria-label="Primary">
+      <ul class="site-nav__list">
+        {%- for item in nav.primary -%}
+          {%- assign current = false -%}
+          {%- if page.url == item.url -%}{%- assign current = true -%}{%- endif -%}
+          <li>
+            <a href="{{ item.url | relative_url }}"{% if current %} aria-current="page"{% endif %}>{{ item.label }}</a>
+          </li>
+        {%- endfor -%}
+        <li><a class="btn btn--primary btn--sm" href="{{ nav.cta.url }}">{{ nav.cta.label }}</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>

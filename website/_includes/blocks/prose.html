@@ -1,0 +1,15 @@
+{%- comment -%}
+  blocks/prose.html — centered reading-column prose band.
+  Inputs (block.*): label (mono eyebrow), title (display heading), body (Markdown),
+  first (bool → extra top padding), cream (bool → cream background).
+  Divided from neighbours by a 64px sunrise rule under the heading.
+{%- endcomment -%}
+{%- assign b = include.block -%}
+<section class="prose-band{% if b.cream %} prose-band--cream{% endif %}{% if b.first %} prose-band--first{% endif %}">
+  <div class="prose-band__inner">
+    {%- if b.label -%}<span class="section-label">{{ b.label }}</span>{%- endif -%}
+    {%- if b.title -%}<h2 class="prose-band__title">{{ b.title }}</h2>{%- endif -%}
+    <div class="prose-band__rule" aria-hidden="true"></div>
+    <div class="prose-band__body">{{ b.body | markdownify }}</div>
+  </div>
+</section>

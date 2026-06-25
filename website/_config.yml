@@ -1,33 +1,24 @@
-# Welcome to Jekyll!
-#
-# This config file is meant for settings that affect your whole blog, values
-# which you are expected to set up once and rarely edit after that. If you find
-# yourself editing this file very often, consider using Jekyll's data files
-# feature for the data you need to update frequently.
-#
-# For technical reasons, this file is *NOT* reloaded automatically when you use
-# 'bundle exec jekyll serve'. If you change this file, please restart the server process.
+# Site settings — Buffalo Open Coffee Club (716coffee.club)
+# NOTE: Jekyll does NOT reload this file on `serve`. Restart after edits.
 
-# Site settings
-# These are used to personalize your new site. If you look in the HTML files,
-# you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
-# You can create any custom variable you would like, and they will be accessible
-# in the templates via {{ site.myvariable }}.
 locale: "en-US"
+lang: "en-US"
 title: Buffalo Open Coffee Club
 email: bocc@zackglick.com
-description: >- # this means to ignore newlines until "baseurl:"
+description: >- # ignore newlines until the next key
   Buffalo Open Coffee Club (BOCC) is a free weekly networking event every Tuesday 7:30-9 AM
   at Seneca One Tower in downtown Buffalo, NY. Connect with entrepreneurs, small business
   owners, and startup founders over coffee. Open to all — register free on Eventbrite.
 baseurl: "" # the subpath of your site, e.g. /blog
-url: "https://716coffee.club" # the base hostname & protocol for your site, e.g. http://example.com
+url: "https://716coffee.club" # base hostname & protocol, no trailing slash
 domain: "716coffee.club"
 
-# Social / SEO
+# ---- SEO (jekyll-seo-tag) ----
+author: Buffalo Open Coffee Club
 og_image: /assets/images/BOCC-header-image-coffee-background.png
 twitter:
   username: buffaloopencoffeeclub
+  card: summary_large_image
 social:
   name: Buffalo Open Coffee Club
   links:
@@ -35,12 +26,33 @@ social:
     - https://www.instagram.com/buffaloopencoffeeclub
     - https://www.facebook.com/buffaloopencoffeeclub
 
-# Build settings
+# Default social-share image for every page (override per-page with `image:`).
+# TODO: replace with the client's 1200×630 og-default.png when delivered (README §Assets).
+defaults:
+  - scope: { path: "" }
+    values:
+      image: /assets/images/BOCC-header-image-coffee-background.png
+
+# ---- Event data (consumed by _includes/event-jsonld.html + home/signup) ----
+event:
+  description: Free weekly networking for Buffalo's entrepreneurs, small business owners, and startup founders. Open networking followed by community Gives and Asks.
+  venue: Seneca One Tower
+  organizer: BootSector
+  organizer_url: https://joinbootsector.com/
+  registration_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+  eventbrite_id: "1983098086761"
+  performer:
+    name: Zack Glick
+    url: https://www.linkedin.com/in/zglick/
+  address:
+    streetAddress: 1 Seneca St
+    addressLocality: Buffalo
+    addressRegion: NY
+    postalCode: "14203"
+    addressCountry: US
+
+# ---- Build settings ----
 markdown: kramdown
-#theme: minima
-remote_theme: "mmistakes/minimal-mistakes@4.26.2"
-minimal_mistakes_skin: sunrise
-logo: "/assets/images/bocc-mug-logo.png"
 
 plugins:
   - jekyll-feed
@@ -48,35 +60,16 @@ plugins:
   - jekyll-seo-tag
   - jekyll-sitemap
 
-footer:
-  links:
-    - label: "Linkedin"
-      icon: "fab fa-fw fa-linkedin"
-      url: "https://www.linkedin.com/showcase/buffalo-open-coffee"
-    - label: "Instagram"
-      icon: "fab fa-fw fa-instagram"
-      url: "https://www.instagram.com/buffaloopencoffeeclub"
-    - label: "Facebook"
-      icon: "fab fa-fw fa-facebook"
-      url: "https://www.facebook.com/buffaloopencoffeeclub"
-    - label: "Register on Eventbrite"
-      icon: "fas fa-fw fa-ticket-alt"
-      url: "https://bocc.eventbrite.com/"
-    - label: "Powered by BootSector"
-      url: "https://joinbootsector.com/"
-    - label: "Become a Sponsor"
-      icon: "fas fa-fw fa-handshake"
-      url: "/sponsorship/"
-    - label: "Contact Us"
-      icon: "fas fa-fw fa-envelope"
-      url: "https://docs.google.com/forms/d/e/1FAIpQLSfDqOoB3eLfUJe2bST_3hzpHFPNxR8zNRARXSpbpLkvJrjmyw/viewform?usp=header"
+sass:
+  style: compressed   # minified /assets/css/main.css in production
 
 # Exclude from processing.
-# The following items will not be processed, by default. Create a custom list
-# to override the default setting.
 exclude:
   - Gemfile
   - Gemfile.lock
   - vendor/
   - output/
   - README.md
+
+# No gem theme: all layouts/includes/sass are local (overrides github-pages default primer theme).
+theme: null
