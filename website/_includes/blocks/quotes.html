@@ -1,0 +1,19 @@
+{%- comment -%}
+  blocks/quotes.html — typeset pull-quote strip (3 cards) with sunrise quote marks.
+  Inputs (block.*): label (mono eyebrow), items[] of {quote, who}.
+{%- endcomment -%}
+{%- assign b = include.block -%}
+<section class="quote-strip">
+  <div class="container quote-strip__inner">
+    {%- if b.label -%}<div class="quote-strip__label"><span class="section-label">{{ b.label }}</span></div>{%- endif -%}
+    <div class="quote-strip__grid">
+      {%- for item in b.items -%}
+        <figure class="quote-card">
+          <span class="quote-card__mark" aria-hidden="true">&ldquo;</span>
+          <blockquote>{{ item.quote }}</blockquote>
+          <figcaption>&mdash; {{ item.who }}</figcaption>
+        </figure>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>

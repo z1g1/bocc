@@ -1,0 +1,33 @@
+// ============================================================
+//  BOCC - Self-hosted webfonts
+//  Import FIRST (before _tokens) so the families resolve everywhere.
+//  Variable woff2 faces (weight axis 400-800) downloaded from Google
+//  Fonts and served from /assets/fonts - no CDN, no third-party requests.
+//  See README Fonts section. font-display: swap keeps text visible during load;
+//  the two above-the-fold faces (display + body) are <link rel=preload>ed
+//  in _layouts/default.html.
+// ============================================================
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-style: normal;
+  font-weight: 400 800;            // variable weight axis
+  font-display: swap;
+  src: url("/assets/fonts/bricolage-grotesque-var.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-weight: 400 800;            // variable weight axis
+  font-display: swap;
+  src: url("/assets/fonts/hanken-grotesk-var.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 400 700;            // variable weight axis
+  font-display: swap;
+  src: url("/assets/fonts/spline-sans-mono-var.woff2") format("woff2");
+}

@@ -1,0 +1,128 @@
+// ============================================================
+//  Buffalo Open Coffee Club - Design Tokens
+//  Drop into  _sass/bocc/_tokens.scss  and @import first.
+//  Vintage civic badge x neighborhood coffee shop.
+//  These are CSS custom properties so they cascade & theme cleanly;
+//  the SCSS map below mirrors them for compile-time use (e.g. mixins).
+// ============================================================
+
+:root {
+  // ---- Sunrise ramp (outer rust -> inner gold) ----
+  --rust:   #B85428;
+  --ember:  #C9612C;
+  --orange: #D86E2E;   // * PRIMARY brand orange
+  --amber:  #E08A38;
+  --honey:  #EBA24A;
+  --gold:   #F2BB63;
+
+  // ---- Ink & warm neutrals ----
+  --ink:      #16120D;
+  --espresso: #241C14;
+  --coffee:   #4A3A2C;
+  --mocha:    #6E5A46;
+  --latte:    #A28A6F;
+  --sand:     #DBCBB0;
+  --cream:    #F2ECD6;
+  --paper:    #FAF5E8;   // * primary light background
+  --white:    #FFFFFF;
+
+  // ---- Pine (secondary accent) ----
+  --pine:      #3F6B45;
+  --pine-soft: #5C8A5F;
+  --pine-wash: #E4ECDD;
+  --night:     #11131A;
+
+  // ---- Semantic surfaces & text ----
+  --bg:          var(--paper);
+  --bg-warm:     var(--cream);
+  --surface:     var(--white);
+  --surface-sun: var(--cream);
+  --surface-ink: var(--ink);
+
+  --fg:          var(--ink);
+  --fg2:         var(--mocha);
+  --fg3:         var(--latte);
+  --fg-on-ink:   var(--cream);
+  --fg-on-ink-2: #C7B69C;
+
+  --border:        var(--sand);
+  --border-strong: #C9B596;
+  --border-ink:    #2E251B;
+
+  // ---- Actions ----
+  --accent:       var(--orange);
+  --accent-hover: var(--ember);
+  --accent-press: var(--rust);
+  --accent-soft:  #F7E2CC;
+  --on-accent:    var(--white);
+  --accent-2:       var(--pine);
+  --accent-2-hover: #355A3A;
+  --accent-2-soft:  var(--pine-wash);
+
+  // ---- Functional ----
+  --success: var(--pine);
+  --warning: var(--amber);
+  --danger:  #B23A2E;
+  --info:    #3C5A78;
+
+  // WCAG focus ring - keep visible, never remove
+  --ring: color-mix(in srgb, var(--orange) 55%, transparent);
+
+  // ---- Gradients ----
+  --sunrise:        linear-gradient(180deg, var(--gold) 0%, var(--honey) 22%, var(--amber) 45%, var(--orange) 70%, var(--rust) 100%);
+  --sunrise-radial: radial-gradient(120% 140% at 50% 118%, var(--gold) 0%, var(--amber) 32%, var(--orange) 58%, var(--rust) 82%, var(--ink) 100%);
+  --ember-sweep:    linear-gradient(120deg, var(--ember), var(--orange) 55%, var(--amber));
+
+  // ---- Type families (self-host - see README Fonts section) ----
+  --font-display: 'Bricolage Grotesque', 'Arial Black', sans-serif;
+  --font-body:    'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono:    'Spline Sans Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  // ---- Weights ----
+  --w-regular: 400; --w-medium: 500; --w-semi: 600; --w-bold: 700; --w-black: 800;
+
+  // ---- Type scale (rem; root = 16px) ----
+  --t-display: 4.5rem;   // 72
+  --t-h1:      3rem;     // 48
+  --t-h2:      2.25rem;  // 36
+  --t-h3:      1.5rem;   // 24
+  --t-h4:      1.25rem;  // 20
+  --t-lg:      1.125rem; // 18
+  --t-base:    1rem;     // 16
+  --t-sm:      0.875rem; // 14
+  --t-xs:      0.75rem;  // 12
+
+  --lh-tight: 1.04; --lh-snug: 1.18; --lh-normal: 1.55;
+  --tr-tight: -0.02em; --tr-normal: 0; --tr-label: 0.14em;
+
+  // ---- Radii ----
+  --r-xs: 4px; --r-sm: 8px; --r-md: 12px; --r-lg: 18px; --r-xl: 26px;
+  --r-badge: 40px 40px 16px 16px;   // the civic-patch arch
+  --r-pill: 999px;
+
+  // ---- Spacing scale ----
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px; --sp-9: 96px;
+
+  // ---- Shadows ----
+  --shadow-sm:   0 1px 2px rgba(22,18,13,0.08), 0 1px 1px rgba(22,18,13,0.04);
+  --shadow-md:   0 4px 14px rgba(22,18,13,0.10), 0 2px 4px rgba(22,18,13,0.06);
+  --shadow-lg:   0 18px 40px rgba(22,18,13,0.16), 0 6px 14px rgba(22,18,13,0.08);
+  --shadow-warm: 0 10px 30px rgba(184,84,40,0.22);  // orange CTA glow
+
+  // ---- Layout ----
+  --container: 1120px;   // max content width
+  --reading:   760px;    // prose column width
+}
+
+// Compile-time mirror (for use inside SCSS mixins/functions).
+// Prefer the CSS custom properties above in component styles.
+$bocc: (
+  orange:  #D86E2E,
+  ink:     #16120D,
+  paper:   #FAF5E8,
+  cream:   #F2ECD6,
+  pine:    #3F6B45,
+  container: 1120px,
+  reading:   760px,
+);

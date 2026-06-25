@@ -1,24 +1,20 @@
 ---
 layout: default
+permalink: /404.html
+title: "Page not found"
+sitemap: false
 ---
 
-<style type="text/css" media="screen">
-  .container {
-    margin: 10px auto;
-    max-width: 600px;
-    text-align: center;
-  }
-  h1 {
-    margin: 30px 0;
-    font-size: 4em;
-    line-height: 1;
-    letter-spacing: -1px;
-  }
-</style>
-
-<div class="container">
-  <h1>404</h1>
-
-  <p><strong>Page not found :(</strong></p>
-  <p>The requested page could not be found.</p>
-</div>
+<section class="hero sun-rays">
+  <div class="container hero__inner">
+    <span class="hero__badge">
+      {% include icon.html name="coffee" size="16" %}
+      <span class="stamp">Error 404</span>
+    </span>
+    <h1>This page poured out.</h1>
+    <p class="hero__lead">We couldn't find that page — but the coffee's still on every Tuesday.</p>
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href="{{ '/' | relative_url }}">Back to home{% include icon.html name="arrow" size="18" %}</a>
+    </div>
+  </div>
+</section>

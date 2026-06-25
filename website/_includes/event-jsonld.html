@@ -1,0 +1,86 @@
+{%- comment -%}
+  _includes/event-jsonld.html — structured data for the recurring meetup.
+  Emits schema.org/Event (with a weekly Schedule) + Organization so Google can
+  show event rich results. All values pull from _config.yml (site.event, site.url,
+  site.social) — no hardcoded copy. jekyll-seo-tag handles the page/website JSON-LD;
+  this adds the domain-specific Event + Organization graph.
+{%- endcomment -%}
+{%- assign e = site.event -%}
+{%- assign logo = site.url | append: '/assets/images/bocc-logo-square.png' -%}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "name": {{ site.title | jsonify }},
+  "description": {{ e.description | default: site.description | jsonify }},
+  "image": [{{ site.url | append: site.og_image | jsonify }}],
+  "url": {{ site.url | append: site.baseurl | jsonify }},
+  "eventStatus": "https://schema.org/EventScheduled",
+  "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+  "eventSchedule": {
+    "@type": "Schedule",
+    "repeatFrequency": "P1W",
+    "byDay": "https://schema.org/Tuesday",
+    "startTime": "07:30:00",
+    "endTime": "09:00:00",
+    "scheduleTimezone": "America/New_York"
+  },
+  "location": {
+    "@type": "Place",
+    "name": {{ e.venue | jsonify }},
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": {{ e.address.streetAddress | jsonify }},
+      "addressLocality": {{ e.address.addressLocality | jsonify }},
+      "addressRegion": {{ e.address.addressRegion | jsonify }},
+      "postalCode": {{ e.address.postalCode | jsonify }},
+      "addressCountry": {{ e.address.addressCountry | jsonify }}
+    }
+  },
+  "organizer": {
+    "@type": "Organization",
+    "name": {{ e.organizer | jsonify }},
+    "url": {{ e.organizer_url | jsonify }}
+  },
+  {%- if e.performer %}
+  "performer": {
+    "@type": "Person",
+    "name": {{ e.performer.name | jsonify }},
+    "url": {{ e.performer.url | jsonify }}
+  },
+  {%- endif %}
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock",
+    "url": {{ e.registration_url | jsonify }}
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": {{ site.title | jsonify }},
+  "alternateName": "BOCC",
+  "url": {{ site.url | jsonify }},
+  "logo": {{ logo | jsonify }},
+  "description": {{ site.description | jsonify }},
+  "parentOrganization": {
+    "@type": "Organization",
+    "name": {{ e.organizer | jsonify }},
+    "url": {{ e.organizer_url | jsonify }}
+  },
+  "sameAs": {{ site.social.links | jsonify }},
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": {{ e.address.streetAddress | jsonify }},
+    "addressLocality": {{ e.address.addressLocality | jsonify }},
+    "addressRegion": {{ e.address.addressRegion | jsonify }},
+    "postalCode": {{ e.address.postalCode | jsonify }},
+    "addressCountry": {{ e.address.addressCountry | jsonify }}
+  }
+}
+</script>

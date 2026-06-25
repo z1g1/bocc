@@ -1,0 +1,26 @@
+{%- comment -%}
+  home/schedule.html — "No badges. No pitches. Just coffee." timeline.
+  White card (sunrise rule on top) of time/title/body rows from _data/home.yml.
+{%- endcomment -%}
+{%- assign s = site.data.home.schedule -%}
+<section class="schedule" aria-labelledby="schedule-heading">
+  <div class="container">
+    <div class="schedule__head">
+      <span class="section-label">{{ s.eyebrow }}</span>
+      <h2 id="schedule-heading">{{ s.heading }}</h2>
+      <p>{{ s.intro }}</p>
+    </div>
+    <div class="schedule__card">
+      <div class="sunrise-rule"></div>
+      {%- for row in s.rows -%}
+        <div class="schedule__row">
+          <div class="schedule__time">{{ row.time }}</div>
+          <div>
+            <div class="schedule__title">{{ row.title }}</div>
+            <div class="schedule__body">{{ row.body }}</div>
+          </div>
+        </div>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
