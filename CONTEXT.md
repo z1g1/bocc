@@ -25,7 +25,7 @@ day) — checking in twice for the same event on the same day is a no-op that re
 friendly "already checked in" result, not an error.
 
 ### Event / eventId / Token
-An **Event** is a recurring gathering kind (`bocc`, `bocc-afternoon`, `codeCoffee`…),
+An **Event** is a recurring gathering kind (`bocc`, `bocc-afternoon`, `coffee-and-code`…),
 named by `eventId`. A **Token** is the per-occurrence GUID embedded in the QR code
 (`/checkin/bocc?token=<GUID>`); together `eventId` + `token` + day identify one occurrence
 for dedup purposes.

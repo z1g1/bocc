@@ -5,6 +5,8 @@
 // The Supabase path needs a connection string at first connect; set a dummy one
 // (config reads env at import; the mocked Pool never really connects).
 process.env.SUPABASE_CHECKIN_WRITER_URL = 'postgres://checkin_writer@pooler/test';
+// Dummy CA so getSslConfig() passes; pg.Pool is mocked, so it's never used for TLS.
+process.env.SUPABASE_CA_CERT = '-----BEGIN CERTIFICATE-----\nMIIDUMMY\n-----END CERTIFICATE-----';
 
 const mockQuery = jest.fn();
 jest.mock(

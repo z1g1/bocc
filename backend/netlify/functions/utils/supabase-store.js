@@ -17,6 +17,7 @@
 
 const { Pool } = require('pg');
 const config = require('./config');
+const { getSslConfig } = require('./supabase-ssl');
 
 let pool;
 
@@ -36,6 +37,7 @@ const getPool = () => {
     pool = new Pool({
       connectionString: config.supabase.connectionString,
       max: config.supabase.poolMax,
+      ssl: getSslConfig(),
     });
   }
   return pool;
