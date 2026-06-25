@@ -1,0 +1,56 @@
+{%- comment -%}
+  home/signup.html — charcoal sign-up close.
+  Left: copy from _data/home.yml (signup). Right panel: the existing Eventbrite
+  checkout widget (preserved behavior). Event id is site.event.eventbrite_id.
+{%- endcomment -%}
+{%- assign s = site.data.home.signup -%}
+{%- assign eid = site.event.eventbrite_id -%}
+<section class="signup sun-rays" id="signup" aria-labelledby="signup-heading">
+  <span class="signup__glow" aria-hidden="true"></span>
+  <div class="container signup__inner">
+    <div>
+      <span class="section-label section-label--gold">{{ s.eyebrow }}</span>
+      <h2 id="signup-heading">{{ s.heading }}</h2>
+      <p class="signup__lead">{{ s.lead }}</p>
+      <div class="signup__facts">
+        {%- for f in s.facts -%}
+          <span class="signup__fact">
+            {% include icon.html name=f.icon size="18" %}<span class="stamp">{{ f.label }}</span>
+          </span>
+        {%- endfor -%}
+      </div>
+    </div>
+
+    <div class="signup__panel">
+      <h3>Free tickets on Eventbrite</h3>
+      <p class="stamp">Reserve in 30 seconds</p>
+      <div id="eventbrite-widget-container-{{ eid }}">
+        <p><a class="btn btn--primary btn--lg" href="{{ site.event.registration_url }}">Register free on Eventbrite</a></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.eventbrite.com/static/widgets/eb_widgets.js" async></script>
+  <script>
+    (function () {
+      function initEventbriteWidget() {
+        if (typeof window.EBWidgets === 'undefined') {
+          return setTimeout(initEventbriteWidget, 200);
+        }
+        window.EBWidgets.createWidget({
+          widgetType: 'checkout',
+          eventId: '{{ eid }}',
+          iframeContainerId: 'eventbrite-widget-container-{{ eid }}',
+          iframeContainerHeight: 460,
+          onOrderComplete: function () { /* no-op */ }
+        });
+        // Give the Eventbrite iframe an accessible name.
+        setTimeout(function () {
+          var iframe = document.querySelector('#eventbrite-widget-container-{{ eid }} iframe');
+          if (iframe) iframe.setAttribute('title', 'Eventbrite ticket checkout for Buffalo Open Coffee Club');
+        }, 1000);
+      }
+      initEventbriteWidget();
+    })();
+  </script>
+</section>

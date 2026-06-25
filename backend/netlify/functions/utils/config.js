@@ -38,6 +38,26 @@ if (missing.length > 0) {
 // One concise boot summary replaces the per-module 'Exists / Not set' logs.
 console.log('[config] Required secrets present:', Object.keys(REQUIRED_SECRETS).join(', '));
 
+// --- Check-in store mode (migration ladder: airtable → dual → supabase) ------
+// 'airtable' : current behavior, Airtable only.
+// 'dual'     : Airtable is authoritative; Supabase gets a non-blocking shadow
+//              write and powers the streak celebration. The verification mode.
+// 'supabase' : Supabase is authoritative; Airtable no longer written.
+const CHECKIN_STORE = (env.CHECKIN_STORE || 'airtable').toLowerCase();
+const VALID_CHECKIN_STORES = ['airtable', 'dual', 'supabase'];
+if (!VALID_CHECKIN_STORES.includes(CHECKIN_STORE)) {
+  throw new Error(
+    `[config] Invalid CHECKIN_STORE='${CHECKIN_STORE}'. ` +
+    `Use one of: ${VALID_CHECKIN_STORES.join(', ')}.`
+  );
+}
+if (CHECKIN_STORE !== 'airtable' && !env.SUPABASE_CHECKIN_WRITER_URL) {
+  throw new Error(
+    `[config] CHECKIN_STORE='${CHECKIN_STORE}' requires SUPABASE_CHECKIN_WRITER_URL. ` +
+    `Set it (and the CA) per docs/backend/SUPABASE_PERMISSIONS.md, or use 'airtable'.`
+  );
+}
+
 // --- Frozen config object ---------------------------------------------------
 const config = Object.freeze({
   airtable: Object.freeze({
@@ -91,6 +111,11 @@ const config = Object.freeze({
 
   http: Object.freeze({
     allowedOrigin: env.ALLOWED_ORIGIN || '*',
+  }),
+
+  // Check-in storage mode — see the migration-ladder note above.
+  checkin: Object.freeze({
+    store: CHECKIN_STORE,
   }),
 
   isDev: env.NODE_ENV === 'development',

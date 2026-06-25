@@ -1,0 +1,15 @@
+{%- comment -%}
+  blocks/stats.html — cream band of 4 big orange stats + mono captions.
+  Inputs (block.*): label (optional accessible name), items[] of {value, label}.
+{%- endcomment -%}
+{%- assign b = include.block -%}
+<section class="stat-strip"{% if b.label %} aria-label="{{ b.label }}"{% endif %}>
+  <div class="container stat-strip__grid">
+    {%- for item in b.items -%}
+      <div class="stat-strip__item">
+        <div class="stat-strip__value">{{ item.value }}</div>
+        <div class="stat-strip__label">{{ item.label }}</div>
+      </div>
+    {%- endfor -%}
+  </div>
+</section>

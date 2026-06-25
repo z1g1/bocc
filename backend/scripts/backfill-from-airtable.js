@@ -19,6 +19,7 @@
 const Airtable = require('airtable');
 const { Pool } = require('pg');
 const { easternCheckinDate } = require('../netlify/functions/utils/eastern-week');
+const { getSslConfig } = require('../netlify/functions/utils/supabase-ssl');
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
@@ -33,21 +34,22 @@ const asBool = (v) => v === true || v === 1 || v === '1' || v === 'true';
 const norm = (s) => (s || '').toString().trim();
 
 const airtable = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID);
-const pg = new Pool({ connectionString: process.env.SUPABASE_CHECKIN_WRITER_URL, max: 1 });
+const pg = new Pool({
+  connectionString: process.env.SUPABASE_CHECKIN_WRITER_URL,
+  max: 1,
+  ssl: getSslConfig(),
+});
 
 const log = (...args) => console.log(DRY_RUN ? '[dry-run]' : '[backfill]', ...args);
 
-async function backfillAttendees() {
-  const records = await airtable('attendees').select().all();
+async function backfillAttendees(records) {
   log(`attendees in Airtable: ${records.length}`);
   let written = 0;
+  let noEmail = 0;
 
   for (const r of records) {
     const email = norm(r.get('email')).toLowerCase();
-    if (!email) {
-      console.warn(`  skip attendee ${r.id}: no email`);
-      continue;
-    }
+    if (!email) { noEmail++; continue; }
     if (DRY_RUN) { written++; continue; }
 
     const res = await pg.query(
@@ -67,23 +69,26 @@ async function backfillAttendees() {
     );
     if (res.rows.length) written++;
   }
-  log(`attendees ${DRY_RUN ? 'would write' : 'written'}: ${written}`);
+  log(`attendees ${DRY_RUN ? 'would write' : 'written'}: ${written}` +
+      (noEmail ? `, no-email skipped: ${noEmail}` : ''));
 }
 
-async function backfillCheckins() {
-  // Map Airtable attendee record id -> Postgres attendee id (via legacy_airtable_id).
-  const map = new Map();
+async function backfillCheckins(recordIdToEmail) {
+  // Resolve each check-in's attendee by EMAIL (the natural key), not by Airtable
+  // record id. This collapses duplicate-email attendee records to one Postgres
+  // attendee, so their check-ins are never orphaned. See ADR 0003 / CONTEXT.md
+  // ("Attendee identified by email").
+  const emailToId = new Map();
   if (!DRY_RUN) {
-    const { rows } = await pg.query(
-      'select id, legacy_airtable_id from attendees where legacy_airtable_id is not null'
-    );
-    rows.forEach((row) => map.set(row.legacy_airtable_id, row.id));
+    const { rows } = await pg.query('select id, email from attendees');
+    rows.forEach((row) => emailToId.set(row.email, row.id));
   }
 
   const records = await airtable('checkins').select().all();
   log(`checkins in Airtable: ${records.length}`);
   let written = 0;
-  let skipped = 0;
+  let missingData = 0;
+  let unresolved = 0;
 
   for (const r of records) {
     const linked = r.get('Attendee'); // array of Airtable attendee record ids
@@ -92,15 +97,22 @@ async function backfillCheckins() {
     const ts = r.get('checkinDate') || r._rawJson?.createdTime;
 
     if (!airtableAttendeeId || !eventId || !ts) {
-      skipped++;
+      missingData++;
+      continue;
+    }
+
+    const email = recordIdToEmail.get(airtableAttendeeId);
+    if (!email) {
+      console.warn(`  skip checkin ${r.id}: linked attendee ${airtableAttendeeId} has no email/record`);
+      unresolved++;
       continue;
     }
     if (DRY_RUN) { written++; continue; }
 
-    const attendeeId = map.get(airtableAttendeeId);
+    const attendeeId = emailToId.get(email);
     if (!attendeeId) {
-      console.warn(`  skip checkin ${r.id}: attendee ${airtableAttendeeId} not in Postgres`);
-      skipped++;
+      console.warn(`  skip checkin ${r.id}: email ${email} not in Postgres attendees`);
+      unresolved++;
       continue;
     }
 
@@ -121,14 +133,24 @@ async function backfillCheckins() {
     );
     if (res.rows.length) written++;
   }
-  log(`checkins ${DRY_RUN ? 'would write' : 'written'}: ${written}, skipped: ${skipped}`);
+  log(`checkins ${DRY_RUN ? 'would write' : 'written'}: ${written}, ` +
+      `missing-data: ${missingData}, unresolved-attendee: ${unresolved}`);
 }
 
 (async () => {
   try {
     log(`starting${DRY_RUN ? ' (no writes)' : ''}`);
-    await backfillAttendees();
-    await backfillCheckins();
+    // Fetch attendees once; build Airtable record id -> email so check-ins can
+    // resolve their attendee by email even when duplicate records exist.
+    const attendeeRecords = await airtable('attendees').select().all();
+    const recordIdToEmail = new Map();
+    for (const r of attendeeRecords) {
+      const email = norm(r.get('email')).toLowerCase();
+      if (email) recordIdToEmail.set(r.id, email);
+    }
+
+    await backfillAttendees(attendeeRecords);
+    await backfillCheckins(recordIdToEmail);
     log('done');
   } catch (err) {
     console.error('Backfill failed:', err.message);

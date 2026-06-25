@@ -61,7 +61,12 @@ exports.handler = async (event) => {
                 return {
                     statusCode: 200,
                     headers,
-                    body: JSON.stringify({ message: 'Check-in successful' }),
+                    body: JSON.stringify({
+                        message: 'Check-in successful',
+                        // Streak for the frontend celebration; null when unavailable
+                        // (Airtable-only mode, debug check-in, or a non-fatal failure).
+                        streak: result.streak || null
+                    }),
                 };
 
             default:

@@ -1,0 +1,66 @@
+---
+# _layouts/page.html — reusable interior / topic page (Sponsorship, About, Code of Conduct…).
+# Compact charcoal page-hero (+ optional "at a glance" card) followed by either:
+#   • an ordered list of structured `blocks` (prose | stats | quotes | feature | cta), or
+#   • the Markdown body in a generic reading column (when no blocks are given).
+# New topic page = one Markdown file with `layout: page`. See pages docs in README.
+layout: default
+---
+<section class="page-hero sun-rays">
+  <img class="page-hero__watermark" src="{{ '/assets/images/bocc-logo.png' | relative_url }}" alt="" aria-hidden="true">
+  <div class="container page-hero__grid">
+    <div class="page-hero__lead">
+      {%- if page.eyebrow -%}
+        <span class="page-hero__badge">
+          {% include icon.html name="sunrise" size="16" %}
+          <span class="stamp">{{ page.eyebrow }}</span>
+        </span>
+      {%- endif -%}
+      <h1>{{ page.heading | default: page.title }}</h1>
+      {%- if page.summary -%}<p class="page-hero__summary">{{ page.summary }}</p>{%- endif -%}
+      {%- if page.actions -%}
+        <div class="page-hero__cta">
+          {%- for a in page.actions -%}
+            <a class="btn btn--{{ a.variant | default: 'primary' }} btn--lg" href="{{ a.href }}">
+              {{ a.label }}{% if a.icon %}{% include icon.html name=a.icon size="18" %}{% endif %}
+            </a>
+          {%- endfor -%}
+        </div>
+      {%- endif -%}
+    </div>
+
+    {%- if page.glance -%}
+      <aside class="glance-card" aria-label="At a glance">
+        <div class="sunrise-rule"></div>
+        <div class="glance-card__body">
+          <span class="stamp">At a glance</span>
+          <dl class="glance-card__list">
+            {%- for item in page.glance -%}
+              <div class="glance-card__row">
+                <dt>{{ item.value }}</dt>
+                <dd>{{ item.label }}</dd>
+              </div>
+            {%- endfor -%}
+          </dl>
+        </div>
+      </aside>
+    {%- endif -%}
+  </div>
+</section>
+
+{%- if page.blocks -%}
+  {%- for block in page.blocks -%}
+    {%- case block.type -%}
+      {%- when 'prose'   -%}{% include blocks/prose.html   block=block %}
+      {%- when 'stats'   -%}{% include blocks/stats.html   block=block %}
+      {%- when 'quotes'  -%}{% include blocks/quotes.html  block=block %}
+      {%- when 'gallery' -%}{% include blocks/gallery.html block=block %}
+      {%- when 'feature' -%}{% include blocks/feature.html block=block %}
+      {%- when 'cta'     -%}{% include blocks/cta.html     block=block %}
+    {%- endcase -%}
+  {%- endfor -%}
+{%- else -%}
+  <div class="page-prose">
+    {{ content }}
+  </div>
+{%- endif -%}

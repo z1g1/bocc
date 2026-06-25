@@ -1,0 +1,11 @@
+---
+# _layouts/home.html — the landing page.
+# Composes the home sections (data-driven from _data/home.yml). The Markdown
+# body, if any, renders nowhere by default — keep home copy in _data/home.yml.
+layout: default
+---
+{% include home/hero.html %}
+{% include home/stats.html %}
+{% include home/wall.html %}
+{% include home/schedule.html %}
+{% include home/signup.html %}

@@ -1,8 +1,11 @@
 ---
-post: standard
+layout: default
 title:  "Welcome to Jekyll!"
 date:   2024-12-17 11:54:50 -0500
 categories: jekyll update
+# Jekyll demo post — kept in the repo but excluded from the built site.
+# Safe to delete entirely. (See redesign summary.)
+published: false
 ---
 You’ll find this post in your `_posts` directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run `jekyll serve`, which launches a web server and auto-regenerates your site when a file is updated.
 

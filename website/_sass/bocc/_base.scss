@@ -1,0 +1,99 @@
+// ============================================================
+//  BOCC - Base / reset / element defaults
+//  Import AFTER _tokens.scss.
+//  Accessibility-first: visible focus, reduced-motion, skip-link.
+// ============================================================
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--t-base);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+// ---- Headings ----
+h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; color: var(--ink); }
+h1 { font-size: var(--t-h1); font-weight: var(--w-black); line-height: var(--lh-tight); letter-spacing: var(--tr-tight); }
+h2 { font-size: var(--t-h2); font-weight: var(--w-bold);  line-height: var(--lh-snug);  letter-spacing: var(--tr-tight); }
+h3 { font-size: var(--t-h3); font-weight: var(--w-bold);  line-height: var(--lh-snug); }
+h4 { font-size: var(--t-h4); font-weight: var(--w-bold);  line-height: var(--lh-snug); }
+
+p  { margin: 0 0 1em; max-width: 68ch; text-wrap: pretty; }
+.lead { font-size: var(--t-lg); color: var(--fg2); }
+small, .small { font-size: var(--t-sm); }
+
+// ---- Links ----
+a { color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 2px; }
+a:hover { color: var(--accent-hover); }
+
+// ---- Mono eyebrow / stamp (the "716" treatment) ----
+.eyebrow, .stamp {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  font-weight: var(--w-semi);
+  letter-spacing: var(--tr-label);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.stamp { color: var(--fg2); }
+
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
+
+img, svg { max-width: 100%; height: auto; display: block; }
+
+// ============================================================
+//  ACCESSIBILITY UTILITIES
+// ============================================================
+
+// Visible focus for keyboard users only (mouse clicks stay clean).
+:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+// Screen-reader-only text (for icon-only buttons, skip links, etc.)
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0);
+  white-space: nowrap; border: 0;
+}
+
+// Skip-to-content link - first focusable element in <body>.
+.skip-link {
+  position: absolute;
+  left: var(--sp-4); top: -64px;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  padding: var(--sp-3) var(--sp-5);
+  border-radius: var(--r-sm);
+  transition: top 0.18s ease;
+}
+.skip-link:focus { top: var(--sp-4); }
+
+// ---- Layout helpers ----
+.container { max-width: var(--container); margin-inline: auto; padding-inline: var(--sp-5); }
+.reading   { max-width: var(--reading);   margin-inline: auto; }
+.sunrise-rule { height: 4px; background: var(--sunrise); border-radius: 2px; }

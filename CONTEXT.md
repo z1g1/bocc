@@ -25,7 +25,7 @@ day) — checking in twice for the same event on the same day is a no-op that re
 friendly "already checked in" result, not an error.
 
 ### Event / eventId / Token
-An **Event** is a recurring gathering kind (`bocc`, `bocc-afternoon`, `codeCoffee`…),
+An **Event** is a recurring gathering kind (`bocc`, `bocc-afternoon`, `coffee-and-code`…),
 named by `eventId`. A **Token** is the per-occurrence GUID embedded in the QR code
 (`/checkin/bocc?token=<GUID>`); together `eventId` + `token` + day identify one occurrence
 for dedup purposes.
@@ -130,7 +130,11 @@ The deep module behind the check-in HTTP handler: `checkInAttendee(input) → re
 the validate → find-or-create Attendee → dedup → record Check-in → Circle sync sequence and
 returns a plain discriminated result (`invalid` / `duplicate` / `created`), throwing only on
 unexpected infrastructure failures. Lets the handler shrink to an HTTP **adapter** and makes
-the whole flow testable by calling one function.
+the whole flow testable by calling one function. The `created` result also carries the
+**Streak** for the celebration. A `CHECKIN_STORE` mode selects the storage backend — the
+migration ladder `airtable` → `dual` (Airtable authoritative + Supabase shadow write +
+streak, the verification mode) → `supabase` (authoritative). The shadow write and streak
+read are **non-blocking** (same domain promise as Circle sync). See ADR 0003.
 
 ### Circle transport (live) — `utils/circle-http.js`
 The shared transport beneath the two Circle domain modules (`circle.js` for Admin v2,

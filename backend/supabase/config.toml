@@ -11,6 +11,7 @@
 # applied; API and Auth settings here are ignored, so this file cannot clobber
 # project configuration.
 
+# Working directory in the GitHub integration is set to `backend`.
 project_id = "bocc-data"
 
 [db]

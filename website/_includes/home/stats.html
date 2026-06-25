@@ -1,0 +1,14 @@
+{%- comment -%}
+  home/stats.html — home stat strip (cream band). Data from _data/home.yml (stats).
+  Mirrors blocks/stats.html but reads the home data shape directly.
+{%- endcomment -%}
+<section class="stat-strip" aria-label="Buffalo Open Coffee Club at a glance">
+  <div class="container stat-strip__grid">
+    {%- for item in site.data.home.stats -%}
+      <div class="stat-strip__item">
+        <div class="stat-strip__value">{{ item.value }}</div>
+        <div class="stat-strip__label">{{ item.label }}</div>
+      </div>
+    {%- endfor -%}
+  </div>
+</section>

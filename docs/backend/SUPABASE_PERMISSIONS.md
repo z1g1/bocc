@@ -37,6 +37,26 @@ manually so no secret lands in git:
 Path (a) is the cleaner least-privilege mapping (role = privileges, no token
 minting) and is the default recommendation.
 
+## TLS / SSL (verify-full, not disabled)
+
+Supabase enforces SSL. We verify the full chain + hostname against Supabase's CA
+rather than disabling verification (`rejectUnauthorized: false` is **not** used).
+
+- The connection string carries **no `sslmode`** — SSL is configured in code
+  (`utils/supabase-ssl.js`) so `pg` doesn't fall back to a CA-less `verify-full`
+  and throw `self-signed certificate in certificate chain`.
+- The CA is the **public** Supabase cert (download: dashboard → Database → SSL
+  Configuration). Provide it one of two ways:
+  - paste the PEM into `netlify/functions/utils/supabase-ca.js` (committed; esbuild
+    bundles it into the function), **or**
+  - set `SUPABASE_CA_CERT` to the PEM (env var; takes precedence).
+- If no CA is configured, the connection **fails closed** — it never silently
+  downgrades to an unverified connection.
+
+Note: passwords with special characters must be **URL-encoded** in the connection
+string (e.g. `^` → `%5E`, `%` → `%25`). A hex password (`openssl rand -hex 32`)
+avoids this entirely.
+
 ## Required environment variables (Netlify, never committed)
 
 | Var | Path | Purpose |
