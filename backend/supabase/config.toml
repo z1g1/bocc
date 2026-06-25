@@ -1,0 +1,17 @@
+# Supabase configuration for the BOCC transactional store (project: bocc-data).
+#
+# Consumed by the Supabase GitHub branching integration. Because this lives in a
+# monorepo at backend/supabase/, the integration's **Working directory** must be
+# set to `backend` (Project Settings → Integrations → GitHub). Migrations in
+# ./migrations are applied automatically to preview branches (per PR) and to
+# production on merge to the `main` git branch. See ADR 0003 and
+# docs/backend/SUPABASE_PERMISSIONS.md.
+#
+# On production deploy only migrations / edge functions / storage buckets are
+# applied; API and Auth settings here are ignored, so this file cannot clobber
+# project configuration.
+
+project_id = "bocc-data"
+
+[db]
+major_version = 17
