@@ -11,7 +11,13 @@
       <span>{{ nav.brand.wordmark }}</span>
     </a>
 
-    <nav class="site-nav" aria-label="Primary">
+    <button type="button" class="site-nav__toggle" data-nav-toggle
+            aria-controls="site-nav" aria-expanded="false" aria-label="Open menu">
+      <span class="site-nav__toggle-open">{% include icon.html name="menu" size="24" %}</span>
+      <span class="site-nav__toggle-close">{% include icon.html name="close" size="24" %}</span>
+    </button>
+
+    <nav class="site-nav" id="site-nav" aria-label="Primary" data-nav>
       <ul class="site-nav__list">
         {%- for item in nav.primary -%}
           {%- assign current = false -%}
