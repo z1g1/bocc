@@ -5,6 +5,7 @@
   "description": "Deploy manifest for the unified Netlify site. Installs the runtime dependencies used by the Netlify Functions in backend/netlify/functions. Keep these versions in sync with backend/package.json (which is used for local development and tests).",
   "dependencies": {
     "airtable": "^0.12.2",
-    "axios": "^1.13.4"
+    "axios": "^1.13.4",
+    "pg": "^8.13.1"
   }
 }
