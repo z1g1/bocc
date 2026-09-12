@@ -1,4 +1,8 @@
 source "https://rubygems.org"
 
-gem "github-pages", group: :jekyll_plugins
+# Pinned: unpinned, Bundler prefers jekyll-include-cache 0.2.2 (2026-07-30) and
+# backtracks to github-pages 222 (Jekyll 3.9.0 / Liquid 4.0.3), which crashes on
+# Ruby 3.2+ with "undefined method `tainted?'". 232 pins include-cache 0.2.1 and
+# ships Jekyll 3.10.0 / Liquid 4.0.4.
+gem "github-pages", "~> 232", group: :jekyll_plugins
 gem "jekyll-include-cache", group: :jekyll_plugins
