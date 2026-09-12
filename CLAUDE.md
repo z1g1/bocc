@@ -119,20 +119,21 @@ netlify dev
 
 1. Form sends attendee data (email, name, phone, businessName, okToEmail) + eventId + debug flag + token
 2. API validates all inputs via `utils/validation.js`
-3. Checks for duplicate check-in (same attendee, event, token, same day)
-4. Fetches or creates attendee record in Airtable `attendees` table
-5. Creates check-in record in Airtable `checkins` table
+3. Finds or creates the attendee in Postgres `attendees` (by lowercased email)
+4. Inserts the check-in into Postgres `checkins`. Same-day duplicates are rejected by a unique index and return "already checked in"
+5. Reads the attendee's streak from the `streaks` view (non-fatal)
 6. For non-debug check-ins: invites to Circle.so + increments `checkinCount` (non-blocking)
 
-### Data Storage (Airtable)
+### Data Storage (Neon Postgres + legacy Airtable)
 
-Three tables: `attendees`, `checkins`, `No Photo Warnings`
+**Check-ins live in Neon Postgres** (project `young-queen-80162551`, branch `production`). See ADR 0005.
+- `attendees`: id (uuid), email (unique), name, phone, business_name, ok_to_email, debug, legacy_airtable_id
+- `checkins`: id, attendee_id → attendees, event_id, token, checkin_at, checkin_date (Eastern), debug, legacy_airtable_id
+- Views: `held_occurrences`, `streaks` (recompute-on-read, ADR 0004)
+- Schema lives in `backend/db/migrations/`. Apply with `npm run migrate` (owner URL from gitignored `.env.local`)
+- The app connects as least-privilege `checkin_writer` (SELECT/INSERT only). The owner credential is never in Netlify. See `docs/backend/NEON_PERMISSIONS.md`
 
-- `attendees`: email, attendeeID, name, phone, businessName, okToEmail, debug
-- `checkins`: id, checkinDate, eventId, Attendee (linked), email, name, phone, businessName, token, debug
-- `No Photo Warnings`: Email, Name, WarningCount, Status, LastWarningDate, CreatedDate, MemberID, Notes
-
-See `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md` for full warning table schema.
+**Airtable** now holds only `No Photo Warnings` (enforcement) plus the read-only historical `attendees`/`checkins` (the free base is full). See `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`.
 
 ### Community Platform (Circle.so)
 
@@ -158,19 +159,29 @@ Progressive warning system (4 warnings → deactivation):
 ### Environment Variables
 
 Required (set in Netlify dashboard, never committed):
-- `AIRTABLE_API_KEY` — Airtable API key
-- `AIRTABLE_BASE_ID` — BOCC database base ID
-- `CIRCLE_API_TOKEN` — Circle.so Admin API v2 token
-- `CIRCLE_HEADLESS_API` — Circle.so Headless Auth API token
+- `CHECKIN_DB_URL`: pooled Neon URL for the `checkin_writer` role (never the owner URL)
+- `AIRTABLE_API_KEY`: Airtable API key (enforcement warnings)
+- `AIRTABLE_BASE_ID`: BOCC Airtable base ID
+- `CIRCLE_API_TOKEN`: Circle.so Admin API v2 token
+- `CIRCLE_HEADLESS_API`: Circle.so Headless Auth API token
 
 Optional:
-- `ALLOWED_ORIGIN` — CORS origin (defaults to `*`, set to `https://716coffee.club` in production)
+- `CHECKIN_STORE`: `postgres` (default) or `airtable` (legacy rollback only)
+- `ALLOWED_ORIGIN`: CORS origin (defaults to `*`, set to `https://716coffee.club` in production)
 
-See `docs/backend/CIRCLE_PERMISSIONS.md` for detailed API permissions documentation.
+Local operator-only files (gitignored, never deployed): `.env.local` (Neon owner URL from `neon link`), `.env.backfill` (checkin_writer URL + Airtable creds). The Neon CLI authenticates with a project-scoped API key in `~/.config/neon/api-key` (`NEON_API_KEY="$(cat ~/.config/neon/api-key)" neon …`), because browser login doesn't work on this remote machine.
+
+See `docs/backend/NEON_PERMISSIONS.md` and `docs/backend/CIRCLE_PERMISSIONS.md` for permissions documentation.
 
 ### Code Patterns
 
-**Airtable operations** (`utils/airtable.js`):
+**Postgres check-in store** (`utils/pg-store.js`, parameterized SQL only):
+- `findOrCreateAttendee({ email, name, phone, businessName, okToEmail, debug })`
+- `insertCheckin({ attendeeId, eventId, token, debug, checkinDate })` → `{ created }`. `created: false` means a same-day duplicate
+- `getStreak(attendeeId, eventId)` reads the `streaks` view
+- `utils/db-ssl.js` `toPgConfig(url, extra)`: verify-full TLS, strips `sslmode` from URLs
+
+**Airtable operations** (`utils/airtable.js`, legacy rollback path; `utils/airtable-warnings.js` for enforcement):
 - `fetchAttendeeByEmail(email)` — Query with formula injection protection
 - `createAttendee(email, name, phone, businessName, okToEmail, debug)`
 - `createCheckinEntry(attendeeId, eventId, debug, token)`
@@ -189,7 +200,8 @@ See `docs/backend/CIRCLE_PERMISSIONS.md` for detailed API permissions documentat
 
 ### Testing Strategy
 
-- ~299 Jest tests across 10 suites (checkin, validation, deduplication, circle, enforcement, messages, warnings, member API)
+- ~355 Jest tests across 19 suites (checkin, check-in stores, pg-store, db-ssl, config, validation, deduplication, circle, enforcement, messages, warnings, member API)
+- Unit tests mock `pg`, Airtable, and Circle, so no database or API keys are needed
 - Integration tests require `RUN_INTEGRATION_TESTS=true` + real API tokens
 - Smoke tests: `test:smoke-local` (automated), `test:smoke-prod` (deployed)
 - Use `debug: "1"` for all test submissions
@@ -197,10 +209,11 @@ See `docs/backend/CIRCLE_PERMISSIONS.md` for detailed API permissions documentat
 ### Common Tasks
 
 **Adding fields to check-in:**
-1. Add field to Airtable table schema
-2. Add validation in `utils/validation.js`
-3. Update `createAttendee()` or `createCheckinEntry()` in `utils/airtable.js`
-4. Add tests
+1. Add a new migration file in `backend/db/migrations/` (never edit an applied one). Grant `checkin_writer` access if it's a new table
+2. Run `npm run migrate` (owner URL in `../.env.local`) **before** deploying code that uses it
+3. Add validation in `utils/validation.js`
+4. Update `findOrCreateAttendee()` or `insertCheckin()` in `utils/pg-store.js`
+5. Add tests
 
 **Modifying enforcement:**
 1. Message copy: `utils/message-templates.js` (see `docs/backend/716-bot-final-messaging.md`)

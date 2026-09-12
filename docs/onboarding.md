@@ -19,7 +19,7 @@ Check-in form (website/checkin/bocc.html)
     ↓
 js/checkin.js POSTs to backend API
     ↓
-Backend: validates → stores in Airtable → invites to Circle.so
+Backend: validates → stores in Neon Postgres → invites to Circle.so
     ↓
 Weekly: enforcement bot checks profile photos via Circle.so API
 ```
@@ -31,7 +31,7 @@ For a detailed technical diagram, see [architecture.md](architecture.md).
 | Directory | What's In It | Deploy Target |
 |-----------|-------------|---------------|
 | `website/` | Jekyll static site (HTML, Markdown, JS, CSS) | Netlify → `716coffee.club` |
-| `backend/` | Netlify Functions (Node.js serverless) | Netlify → `716coffee.club/.netlify/functions/` |
+| `backend/` | Netlify Functions (Node.js serverless) + `db/migrations/` | Netlify → `716coffee.club/.netlify/functions/` |
 | `docs/` | All documentation (you're reading it) | Not deployed |
 
 ## Getting Started
@@ -40,8 +40,9 @@ For a detailed technical diagram, see [architecture.md](architecture.md).
 
 - **Git** for version control
 - **Ruby** (3.3.x) + Bundler for the website (managed via `rbenv`)
-- **Node.js** + npm for the backend
+- **Node.js** (20+) + npm for the backend
 - **Netlify CLI** (`npm install -g netlify-cli`) for local backend development
+- **Neon CLI** (`npm install -g neon`), only if you manage the database
 
 ### Clone and Set Up
 
@@ -67,13 +68,16 @@ For Eventbrite embed testing, you need local SSL certs — see the main [README.
 cd backend
 npm install
 
-# Run tests (no API keys needed)
+# Run tests (no API keys or database needed)
 npm test
 
 # Run the dev server (requires environment variables)
 # Copy .env.example to .env and fill in values, then:
 netlify dev
 ```
+
+For local development, point `CHECKIN_DB_URL` at a **Neon dev branch**, never `production`.
+Ask the maintainer for a branch and a `checkin_writer` URL.
 
 ### Run Both Together
 
@@ -85,12 +89,13 @@ The website check-in form talks to the production backend by default (same-origi
 
 ## Environment Variables (Secrets)
 
-The backend requires 4 secrets, all set in the Netlify dashboard (never committed to git):
+The backend requires these secrets, all set in the Netlify dashboard (never committed to git):
 
 | Variable | Service | Purpose |
 |----------|---------|---------|
-| `AIRTABLE_API_KEY` | Airtable | Database read/write access |
-| `AIRTABLE_BASE_ID` | Airtable | Identifies the BOCC database |
+| `CHECKIN_DB_URL` | Neon | Least-privilege `checkin_writer` connection (attendees, check-ins) |
+| `AIRTABLE_API_KEY` | Airtable | Enforcement warning records |
+| `AIRTABLE_BASE_ID` | Airtable | Identifies the BOCC base |
 | `CIRCLE_API_TOKEN` | Circle.so | Admin API for member management |
 | `CIRCLE_HEADLESS_API` | Circle.so | Bot user for sending DMs |
 
@@ -105,7 +110,8 @@ If you need access to these services, ask the project maintainer (Zack Glick).
 | Service | Purpose | Dashboard |
 |---------|---------|-----------|
 | **Netlify** | Hosting for both website and backend | netlify.com |
-| **Airtable** | Database for attendees, check-ins, warnings | airtable.com |
+| **Neon** | Postgres database for attendees and check-ins | console.neon.tech |
+| **Airtable** | Enforcement warnings; historical check-in archive | airtable.com |
 | **Circle.so** | Community platform (716.social) | app.circle.so |
 | **Eventbrite** | Event registration and ticketing | eventbrite.com |
 | **GitHub** | Source code and version control | github.com/z1g1/bocc |
@@ -120,6 +126,10 @@ A single Netlify site (serving both the website and the functions) auto-deploys 
 3. When ready, merge `dev` → `main` and push
 4. The site deploys automatically within 2-3 minutes
 
+Database schema changes are **not** applied by deploys. Add a new file to
+`backend/db/migrations/` and run `npm run migrate` from `backend/` (operator with the owner URL)
+**before** deploying code that depends on it.
+
 ## Key Files to Know
 
 ### Website
@@ -131,14 +141,18 @@ A single Netlify site (serving both the website and the functions) auto-deploys 
 
 ### Backend
 - `backend/netlify/functions/checkin.js` — Main API endpoint
+- `backend/netlify/functions/utils/check-in.js` — Check-in use-case
 - `backend/netlify/functions/utils/validation.js` — Input validation
-- `backend/netlify/functions/utils/airtable.js` — Database operations
+- `backend/netlify/functions/utils/pg-store.js` — Postgres check-in store
 - `backend/netlify/functions/utils/circle.js` — Circle.so API client
-- `backend/netlify.toml` — Netlify config including scheduled function cron
+- `backend/db/migrations/` — Database schema, views, and roles
+- `netlify.toml` — Netlify config including scheduled function cron
 
 ### Documentation
+- `docs/backend/NEON_PERMISSIONS.md` — Database roles, grants, and key handling
 - `docs/backend/CIRCLE_PERMISSIONS.md` — Circle.so API permissions setup
 - `docs/backend/SAFETY_LIMITS_SPECIFICATION.md` — Why safety limits exist
+- `docs/adr/` — Architecture decisions (datastore: 0003, 0004, 0005)
 - `docs/strategy/` — Social media strategies and brand guide
 
 ## Common Tasks for Volunteers
@@ -148,7 +162,7 @@ A single Netlify site (serving both the website and the functions) auto-deploys 
 - **Add a new page**: Create a new `.md` file in `website/` with YAML front matter
 - **Fix a backend bug**: Edit files in `backend/netlify/functions/`, run `npm test`
 - **Update social media strategy**: Edit docs in `docs/strategy/`
-- **Review API permissions**: See `docs/backend/CIRCLE_PERMISSIONS.md`
+- **Review API permissions**: See `docs/backend/NEON_PERMISSIONS.md` and `docs/backend/CIRCLE_PERMISSIONS.md`
 
 ## Questions?
 

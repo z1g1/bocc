@@ -49,16 +49,20 @@ openssl req -x509 -out website/ssl/localhost.crt -keyout website/ssl/localhost.k
 cd backend
 npm install
 
-# Run tests (~299 tests)
+# Run tests (~355 tests)
 npm test
 
 # Local dev (requires Netlify CLI and environment variables)
 netlify dev
+
+# Apply database migrations (operator only; owner URL in gitignored ../.env.local)
+npm run migrate
 ```
 
 Required environment variables (set in Netlify dashboard, never committed):
-- `AIRTABLE_API_KEY` — Airtable API authentication
-- `AIRTABLE_BASE_ID` — BOCC Airtable database ID
+- `CHECKIN_DB_URL`: Neon Postgres URL for the least-privilege `checkin_writer` role (see `docs/backend/NEON_PERMISSIONS.md`)
+- `AIRTABLE_API_KEY`: Airtable API authentication (enforcement warnings)
+- `AIRTABLE_BASE_ID`: BOCC Airtable base ID
 - `CIRCLE_API_TOKEN` — Circle.so Admin API v2 token
 - `CIRCLE_HEADLESS_API` — Circle.so Headless Auth API token (for bot DMs)
 - `ALLOWED_ORIGIN` — CORS origin (set to `https://716coffee.club` in production)

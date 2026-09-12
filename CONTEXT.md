@@ -15,14 +15,14 @@ deletion test) comes from `/codebase-design` — this file gives those seams dom
 
 ### Attendee
 A person who shows up to BOCC. Identified by **email** (the natural key). Stored in the
-Airtable `attendees` table with name, phone, optional business name, and an `okToEmail`
-consent flag. An Attendee is created lazily on their first check-in.
+Postgres `attendees` table (Neon) with name, phone, optional business name, and an
+`ok_to_email` consent flag. An Attendee is created lazily on their first check-in.
 
 ### Check-in
-A single act of an Attendee arriving at one **Event** instance, recorded in the Airtable
-`checkins` table. A check-in is **deduplicated** per (attendee, eventId, token, calendar
-day) — checking in twice for the same event on the same day is a no-op that returns a
-friendly "already checked in" result, not an error.
+A single act of an Attendee arriving at one **Event** instance, recorded in the Postgres
+`checkins` table. A check-in is **deduplicated** per (attendee, eventId, token, Eastern
+calendar day), enforced by a unique index. Checking in twice for the same event on the
+same day is a no-op that returns a friendly "already checked in" result, not an error.
 
 ### Event / eventId / Token
 An **Event** is a recurring gathering kind (`bocc`, `bocc-afternoon`, `coffee-and-code`…),
@@ -85,8 +85,8 @@ cancellation) is simply **not an occurrence** and creates no gap.
 
 ### Occurrence calendar
 The ordered set of held Occurrences for one eventId — the answer to "when did this event
-actually meet?". A **derived, rebuildable projection**, not a source of truth: on Postgres
-it is a SQL query/view (`SELECT DISTINCT date_trunc('week', …)` over non-debug check-ins),
+actually meet?". A **derived, rebuildable projection**, not a source of truth: the
+`held_occurrences` view (`SELECT DISTINCT date_trunc('week', …)` over non-debug check-ins),
 not a maintained table. It is the single **seam** a future authoritative schedule (the
 volunteers' Google Sheets calendar) would slot behind without touching the streak math.
 
@@ -96,9 +96,9 @@ occurrences — never in calendar days or raw check-ins. A streak **breaks** onl
 Occurrence is missed; a non-occurrence (snow-day) is skipped, not a break. A streak is
 **active** if the Attendee attended the most recent held Occurrence. The **personal best**
 is the longest such run the Attendee has ever achieved for that event. Like the occurrence
-calendar, a streak is a **recomputable projection** of the check-in history, materialised for
-fast reads and celebration — it must always be rebuildable from scratch, never only
-incremented. Debug check-ins never affect streaks (same rule as Circle sync).
+calendar, a streak is a **recomputable projection** of the check-in history — it must always
+be rebuildable from scratch, never only incremented. Debug check-ins never affect streaks
+(same rule as Circle sync).
 
 ---
 
@@ -120,10 +120,11 @@ rules are testable without touching Airtable or Circle.
 
 ### Config adapter (live) — `utils/config.js`
 The single place that reads and **validates** the platform's contract with its environment:
-the four required secrets, the defaulted options, and the named operational constants (Bot
-identity, admin identity, API base URLs, safety-limit thresholds). Fails fast at import with
-one clear message if anything required is missing. Every other module imports from it and
-never touches `process.env`. *Decision recorded in `docs/adr/0001-config-fail-fast-at-import.md`.*
+the four required secrets, the check-in store mode and its DB URL, the defaulted options,
+and the named operational constants (Bot identity, admin identity, API base URLs,
+safety-limit thresholds). Fails fast at import with one clear message if anything required
+is missing. Every other module imports from it and never touches `process.env`. *Decision
+recorded in `docs/adr/0001-config-fail-fast-at-import.md`.*
 
 ### Check-in use-case (live) — `utils/check-in.js`
 The deep module behind the check-in HTTP handler: `checkInAttendee(input) → result`. Owns
@@ -131,10 +132,21 @@ the validate → find-or-create Attendee → dedup → record Check-in → Circl
 returns a plain discriminated result (`invalid` / `duplicate` / `created`), throwing only on
 unexpected infrastructure failures. Lets the handler shrink to an HTTP **adapter** and makes
 the whole flow testable by calling one function. The `created` result also carries the
-**Streak** for the celebration. A `CHECKIN_STORE` mode selects the storage backend — the
-migration ladder `airtable` → `dual` (Airtable authoritative + Supabase shadow write +
-streak, the verification mode) → `supabase` (authoritative). The shadow write and streak
-read are **non-blocking** (same domain promise as Circle sync). See ADR 0003.
+**Streak** for the celebration (blocking but non-fatal). `CHECKIN_STORE` selects the
+backend: `postgres` (default) or `airtable` (legacy rollback only). See ADR 0005.
+
+### Postgres check-in store (live) — `utils/pg-store.js` + `backend/db/migrations/`
+The storage adapter for Attendees and Check-ins on **Neon Postgres**. It connects as the
+least-privilege `checkin_writer` role (SELECT/INSERT only, RLS on, owner credential never
+deployed) over verify-full TLS (`utils/db-ssl.js`). Same-day dedup is enforced by a unique
+index. See ADR 0003 (model), ADR 0005 (host), `docs/backend/NEON_PERMISSIONS.md`.
+
+### Streak engine (live) — `streaks` / `held_occurrences` views
+Computes a Streak's `current_streak`, `longest_streak`, and `is_personal_best` from check-in
+history via a **gaps-and-islands** query over the per-`(Attendee, eventId)` attended weeks
+measured against the Occurrence calendar. **Recompute-on-read, no drift, no maintained
+counter** — the same query powers the live celebration, the backfilled history, and (later)
+reminder targeting. See ADR 0004.
 
 ### Circle transport (live) — `utils/circle-http.js`
 The shared transport beneath the two Circle domain modules (`circle.js` for Admin v2,
@@ -146,25 +158,9 @@ considered and declined — only `getAllMembers` branches on an error status.)
 
 ---
 
-### Streak engine (planned) — Postgres view/function
-Computes a Streak's `currentStreak`, `longestStreak`, and `isPersonalBest` from check-in
-history via a **gaps-and-islands** query over the per-`(Attendee, eventId)` attended weeks
-measured against the Occurrence calendar. **Recompute-on-read, no drift, no maintained
-counter** — the same query powers the live celebration, the one-time backport, and (later)
-reminder targeting. Lives behind the storage seam; see ADR 0004.
-
-### Datastore migration (planned) — Airtable → Supabase Postgres
-The transactional store (`attendees`, `checkins`, derived occurrences/streaks) is moving to
-Supabase Postgres to escape Airtable's 1,000-record/base cap and make streaks a recomputable
-SQL projection. Google Sheets remains the human-edited event **schedule**; `No Photo
-Warnings` stays in Airtable. Access is via a **least-privilege** Postgres role (deny-by-default
-RLS, no `service_role`), server-only. Phased: migrate check-ins → streaks → reminders.
-See ADR 0003. *Until Phase 1 lands, the "Airtable `attendees`/`checkins` table" wording above
-still describes today's storage.*
-
 ## Naming conventions
 
-- Say **Attendee** for the Airtable/event side, **Member** for the Circle side; they are the
+- Say **Attendee** for the check-in/event side, **Member** for the Circle side; they are the
   same human linked by email, but never use the words interchangeably in code.
 - Say **Enforcement run** for a whole job, **Enforcement action** for one Member's outcome.
 - A "non-blocking" step is a domain promise (the core action survives its failure), not just

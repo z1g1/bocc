@@ -1,6 +1,8 @@
 # ADR 0003 — Move the transactional check-in store to Supabase Postgres
 
-- **Status:** Accepted
+- **Status:** Accepted. The hosting choice (Supabase) is superseded by
+  [ADR 0005](0005-neon-replaces-supabase.md) (Neon). The data model, least-privilege role,
+  and phased approach below still apply.
 - **Date:** 2026-06-25
 - **Deciders:** Zack Glick
 
