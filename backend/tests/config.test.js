@@ -21,6 +21,8 @@ const TOUCHED = [
   'ADMIN_MEMBER_ID',
   'HARD_LIMIT_MAX_MEMBERS',
   'ALLOWED_ORIGIN',
+  'CHECKIN_STORE',
+  'CHECKIN_DB_URL',
 ];
 
 describe('config adapter', () => {
@@ -100,5 +102,42 @@ describe('config adapter', () => {
     setRequired();
     process.env.ALLOWED_ORIGIN = 'https://716coffee.club';
     expect(require(CONFIG_PATH).http.allowedOrigin).toBe('https://716coffee.club');
+  });
+
+  describe('check-in store', () => {
+    test('defaults to postgres and exposes the DB connection string', () => {
+      setRequired();
+      delete process.env.CHECKIN_STORE;
+      process.env.CHECKIN_DB_URL = 'postgres://checkin_writer@pooler/test';
+
+      const config = require(CONFIG_PATH);
+      expect(config.checkin.store).toBe('postgres');
+      expect(config.db.connectionString).toBe('postgres://checkin_writer@pooler/test');
+      expect(config.db.poolMax).toBe(1);
+    });
+
+    test('postgres mode fails fast without CHECKIN_DB_URL', () => {
+      setRequired();
+      delete process.env.CHECKIN_STORE;
+      delete process.env.CHECKIN_DB_URL;
+
+      expect(() => require(CONFIG_PATH)).toThrow(/CHECKIN_DB_URL/);
+    });
+
+    test('airtable rollback mode does not require CHECKIN_DB_URL', () => {
+      setRequired();
+      process.env.CHECKIN_STORE = 'airtable';
+      delete process.env.CHECKIN_DB_URL;
+
+      expect(require(CONFIG_PATH).checkin.store).toBe('airtable');
+    });
+
+    test('rejects retired or unknown modes', () => {
+      setRequired();
+      process.env.CHECKIN_DB_URL = 'postgres://checkin_writer@pooler/test';
+      process.env.CHECKIN_STORE = 'dual';
+
+      expect(() => require(CONFIG_PATH)).toThrow(/Invalid CHECKIN_STORE='dual'/);
+    });
   });
 });

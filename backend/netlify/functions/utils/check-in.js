@@ -4,15 +4,12 @@
  * `checkInAttendee(rawInput)` owns the whole "check someone in" story:
  * validate → record the Check-in in the configured store → (streak) → Circle sync.
  * It returns a discriminated result for the three EXPECTED outcomes and lets
- * UNEXPECTED infrastructure failures from the AUTHORITATIVE store propagate (the
- * handler maps those to 500). See CONTEXT.md → "Check-in use-case" seam.
+ * UNEXPECTED infrastructure failures from the store propagate (the handler maps
+ * those to 500). See CONTEXT.md → "Check-in use-case" seam.
  *
- * STORE MODES (config.checkin.store — the migration ladder, ADR 0003):
- *   'airtable' : Airtable only (current production behavior).
- *   'dual'     : Airtable is AUTHORITATIVE (decides created/duplicate); Supabase
- *                gets a NON-BLOCKING shadow write and powers the streak. The
- *                one-week verification mode.
- *   'supabase' : Supabase is authoritative; Airtable is not written.
+ * STORE MODES (config.checkin.store — ADR 0005):
+ *   'postgres' : Neon Postgres (default).
+ *   'airtable' : legacy Airtable-only path, kept for rollback only.
  *
  * Result shape (discriminated on `status`):
  *   { status: 'invalid',   errors }                        ← validation failed
@@ -20,13 +17,13 @@
  *   { status: 'created',   circleSynced, streak }          ← check-in recorded
  *
  * `streak` is the attendee's streak for this event ({ currentStreak, longestStreak,
- * isPersonalBest }) read from Supabase, or `null`. It is BLOCKING-BUT-NON-FATAL:
- * a streak failure (or Airtable-only mode, or a debug check-in) yields `null` and
+ * isPersonalBest }) read from Postgres, or `null`. It is BLOCKING-BUT-NON-FATAL:
+ * a streak failure (or Airtable mode, or a debug check-in) yields `null` and
  * never fails the check-in. `circleSynced` is observability-only (see below).
  */
 
 const { fetchAttendeeByEmail, createAttendee, createCheckinEntry, findExistingCheckin } = require('./airtable');
-const supabaseStore = require('./supabase-store');
+const pgStore = require('./pg-store');
 const { validateCheckinInput } = require('./validation');
 const { ensureMember, incrementCheckinCount } = require('./circle');
 const { easternCheckinDate } = require('./eastern-week');
@@ -91,18 +88,18 @@ const recordCheckinAirtable = async (s) => {
 };
 
 /**
- * Record a check-in in Supabase (find-or-create attendee → insert with
- * DB-enforced same-day dedup). Returns the Supabase attendee id so the caller
+ * Record a check-in in Postgres (find-or-create attendee → insert with
+ * DB-enforced same-day dedup). Returns the Postgres attendee id so the caller
  * can read the streak.
  * @returns {Promise<{status:'created'|'duplicate', checkinDate:string, attendeeId:string}>}
  */
-const recordCheckinSupabase = async (s) => {
-    const attendee = await supabaseStore.findOrCreateAttendee({
+const recordCheckinPostgres = async (s) => {
+    const attendee = await pgStore.findOrCreateAttendee({
         email: s.email, name: s.name, phone: s.phone,
         businessName: s.businessName, okToEmail: s.okToEmail, debug: s.debug,
     });
     const checkinDate = easternCheckinDate(new Date());
-    const res = await supabaseStore.insertCheckin({
+    const res = await pgStore.insertCheckin({
         attendeeId: attendee.id, eventId: s.eventId, token: s.token,
         debug: s.debug, checkinDate,
     });
@@ -114,14 +111,14 @@ const recordCheckinSupabase = async (s) => {
 };
 
 /**
- * Read the attendee's streak from Supabase. Non-blocking: never throws — returns
+ * Read the attendee's streak from Postgres. Non-blocking: never throws — returns
  * null on any failure. Never reads for debug check-ins (they don't affect streaks).
  * @returns {Promise<object|null>}
  */
-const readStreakSafe = async (supabaseAttendeeId, eventId, debug) => {
-    if (!supabaseAttendeeId || debug) return null;
+const readStreakSafe = async (pgAttendeeId, eventId, debug) => {
+    if (!pgAttendeeId || debug) return null;
     try {
-        return await supabaseStore.getStreak(supabaseAttendeeId, eventId);
+        return await pgStore.getStreak(pgAttendeeId, eventId);
     } catch (error) {
         console.error('Streak read failed (non-blocking):', error.message);
         return null;
@@ -133,7 +130,7 @@ const readStreakSafe = async (supabaseAttendeeId, eventId, debug) => {
  *
  * @param {object} rawInput - the parsed request body (unvalidated)
  * @returns {Promise<object>} discriminated result (see module docstring)
- * @throws on unexpected infrastructure failure of the AUTHORITATIVE store
+ * @throws on unexpected infrastructure failure of the store
  */
 const checkInAttendee = async (rawInput) => {
     const { isValid, errors, sanitized } = validateCheckinInput(rawInput);
@@ -147,34 +144,24 @@ const checkInAttendee = async (rawInput) => {
         return { status: 'invalid', errors };
     }
 
-    const store = config.checkin.store;
+    const usePostgres = config.checkin.store === 'postgres';
 
-    // 1. Record in the AUTHORITATIVE store. Failure here propagates (→ 500).
-    const primaryFlow = store === 'supabase' ? recordCheckinSupabase : recordCheckinAirtable;
-    const result = await primaryFlow(sanitized);
+    // 1. Record in the store. Failure here propagates (→ 500).
+    const result = usePostgres
+        ? await recordCheckinPostgres(sanitized)
+        : await recordCheckinAirtable(sanitized);
 
     if (result.status === 'duplicate') {
         console.log('Duplicate check-in prevented:', sanitized.email, sanitized.eventId);
         return { status: 'duplicate', checkinDate: result.checkinDate };
     }
 
-    // 2. Dual-write: shadow the check-in into Supabase. NON-BLOCKING — a failure
-    //    here must never fail a check-in the authoritative store already accepted.
-    let supabaseAttendeeId = store === 'supabase' ? result.attendeeId : null;
-    if (store === 'dual') {
-        try {
-            const shadow = await recordCheckinSupabase(sanitized);
-            supabaseAttendeeId = shadow.attendeeId;
-            console.log('Supabase shadow write ok:', shadow.status);
-        } catch (error) {
-            console.error('Supabase shadow write failed (non-blocking):', error.message);
-        }
-    }
+    // 2. Streak for the celebration. Blocking-but-non-fatal; never for debug.
+    const streak = usePostgres
+        ? await readStreakSafe(result.attendeeId, sanitized.eventId, sanitized.debug)
+        : null;
 
-    // 3. Streak for the celebration. Blocking-but-non-fatal; never for debug.
-    const streak = await readStreakSafe(supabaseAttendeeId, sanitized.eventId, sanitized.debug);
-
-    // 4. Circle sync (non-blocking). Skipped for debug check-ins.
+    // 3. Circle sync (non-blocking). Skipped for debug check-ins.
     let circleSynced = false;
     if (!sanitized.debug) {
         circleSynced = await syncCheckinToCircle(sanitized.email, sanitized.name);

@@ -22,8 +22,10 @@ for (const [key, value] of Object.entries(dummySecrets)) {
   }
 }
 
-// Pin the check-in store mode to the default for every test file. setupFiles runs
-// before each file's config import, so this guarantees a clean 'airtable' baseline
-// even if a prior file in the same worker mutated CHECKIN_STORE. Suites that test
-// other modes (check-in-stores.test.js) override it locally via jest.isolateModules.
+// Pin the check-in store mode for every test file. setupFiles runs before each
+// file's config import, so this guarantees a clean baseline even if a prior file in
+// the same worker mutated CHECKIN_STORE. 'airtable' is pinned (not the production
+// default 'postgres') because the handler suites mock utils/airtable.js and have no
+// DB URL. The postgres default is covered by config.test.js and
+// check-in-stores.test.js, which override this locally.
 process.env.CHECKIN_STORE = 'airtable';
