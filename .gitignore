@@ -22,6 +22,8 @@ Thumbs.db
 *.swp
 *.key
 *.cert
+.env
+.env.*
 
 # Editors
 .vscode/
