@@ -101,6 +101,43 @@
   }
 }
 
+// Streak celebration toast (created by js/checkin.js). A small bottom-center card,
+// never a takeover; auto-dismisses. Motion is skipped for reduced-motion users.
+#celebrationToast {
+  position: fixed; left: 50%; bottom: var(--sp-5); z-index: 1000;
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: calc(100% - 2 * var(--sp-4)); max-width: 420px; box-sizing: border-box;
+  padding: var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-4);
+  background: var(--surface); border: 1px solid var(--sand);
+  border-radius: var(--r-md); box-shadow: var(--shadow-md);
+  opacity: 0; transform: translate(-50%, 12px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+
+  &.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+  .celebration-emoji { flex-shrink: 0; font-size: 1.75rem; line-height: 1; }
+
+  .celebration-text {
+    flex: 1; margin: 0;
+    font-size: var(--t-base); line-height: var(--lh-normal); color: var(--coffee);
+  }
+
+  .celebration-close {
+    flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; padding: 0;
+    font-size: 1.5rem; line-height: 1; color: var(--mocha);
+    background: none; border: 0; border-radius: var(--r-pill); cursor: pointer;
+
+    &:hover { background: var(--accent-soft); color: var(--ink); }
+    &:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+    transform: translate(-50%, 0);
+  }
+}
+
 .submitting { opacity: 0.7; pointer-events: none; }
 .honeypot-field { position: absolute; left: -9999px; }
 
