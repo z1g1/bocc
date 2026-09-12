@@ -22,6 +22,9 @@ Thumbs.db
 *.swp
 *.key
 *.cert
+.env
+.env.*
+!.env.example
 
 # Editors
 .vscode/
@@ -30,3 +33,5 @@ Thumbs.db
 
 # Claude
 .claude
+.neon
+node_modules/

@@ -24,11 +24,11 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 │              (Netlify Functions - Serverless)            │
 │                                                         │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │ checkin.js                                        │   │
+│  │ checkin.js → utils/check-in.js                    │   │
 │  │  1. Validate inputs (validation.js)               │   │
-│  │  2. Check for duplicate (airtable.js)             │   │
-│  │  3. Fetch/create attendee (airtable.js)           │   │
-│  │  4. Create check-in record (airtable.js)          │   │
+│  │  2. Find/create attendee (pg-store.js)            │   │
+│  │  3. Insert check-in, DB-enforced dedup (pg-store) │   │
+│  │  4. Read streak (pg-store.js) [non-fatal]         │   │
 │  │  5. Invite to Circle.so (circle.js) [non-blocking]│   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                         │
@@ -40,26 +40,31 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 │  │  4. Send progressive DMs (circle-member-api.js)   │   │
 │  │  5. Deactivate after 4 warnings                   │   │
 │  └──────────────────────────────────────────────────┘   │
-└──────────────┬──────────────────────┬───────────────────┘
-               │                      │
-               ▼                      ▼
-┌──────────────────────┐  ┌──────────────────────────┐
-│      Airtable        │  │      Circle.so           │
-│                      │  │      (716.social)        │
-│  Tables:             │  │                          │
-│  • attendees         │  │  • Member profiles       │
-│  • checkins          │  │  • checkinCount field    │
-│  • No Photo Warnings │  │  • Bot DMs (716.social   │
-│                      │  │    Bot)                  │
-└──────────────────────┘  └──────────────────────────┘
+└───────┬──────────────────┬───────────────────┬──────────┘
+        │ checkin_writer   │                   │
+        ▼                  ▼                   ▼
+┌────────────────┐ ┌──────────────────┐ ┌──────────────────────┐
+│ Neon Postgres  │ │    Airtable      │ │     Circle.so        │
+│                │ │                  │ │     (716.social)     │
+│ • attendees    │ │ • No Photo       │ │                      │
+│ • checkins     │ │   Warnings       │ │ • Member profiles    │
+│ • held_        │ │ • attendees /    │ │ • checkinCount field │
+│   occurrences  │ │   checkins       │ │ • Bot DMs (716.social│
+│ • streaks      │ │   (historical,   │ │   Bot)               │
+│                │ │   read-only)     │ │                      │
+└────────────────┘ └──────────────────┘ └──────────────────────┘
 ```
 
-> **Module layer (June 2026 refactor):** the `checkin.js` function is now a thin
-> HTTP adapter; the check-in business flow lives in `utils/check-in.js`
+> **Module layer (June 2026 refactor):** the `checkin.js` function is a thin HTTP
+> adapter; the check-in business flow lives in `utils/check-in.js`
 > (`checkInAttendee`). Configuration is centralized in `utils/config.js`, and
 > Circle HTTP transport in `utils/circle-http.js`. See
 > [architecture-review-2026-06.md](architecture-review-2026-06.md) and
 > [`CONTEXT.md`](../CONTEXT.md) for the module seams.
+>
+> **Datastore (September 2026):** check-ins moved from Airtable (free base full) to
+> Neon Postgres. See [ADR-0003](adr/0003-supabase-transactional-store.md) (data model)
+> and [ADR-0005](adr/0005-neon-replaces-supabase.md) (host).
 
 ## Check-in Flow (Detailed)
 
@@ -78,25 +83,28 @@ The QR code URL contains the event token: `https://716coffee.club/checkin/bocc?t
 - Phone: digits, spaces, hyphens, parentheses (optional)
 - Token: alphanumeric + hyphens only
 - Text fields: HTML/script tag removal, XSS prevention
-- Airtable formula injection protection
+- All SQL uses parameterized queries (`$1…`). Nothing is string-built.
 
-### 4. Duplicate detection (`utils/airtable.js`)
-- Queries `checkins` table for same attendee + eventId + token + today's date
-- If found: returns `200 "Already checked in for this event today"`
-- If not: continues to create records
+### 4. Attendee record (`utils/pg-store.js`)
+- `INSERT … ON CONFLICT (email) DO NOTHING`, then reads the id back if the attendee already existed
+- A returning attendee's stored details are not overwritten
 
-### 5. Airtable records (`utils/airtable.js`)
-- Looks up attendee by email in `attendees` table
-- If not found: creates new attendee record
-- Creates check-in record in `checkins` table linking to attendee
+### 5. Check-in + duplicate detection (`utils/pg-store.js`)
+- `INSERT … ON CONFLICT DO NOTHING` into `checkins`
+- The unique index on (attendee, event, token, Eastern day) makes dedup race-safe
+- No row inserted → returns `200 "Already checked in for this event today"`
 
-### 6. Circle.so integration (`utils/circle.js`) — non-blocking
+### 6. Streak (`streaks` view)
+- Reads current/longest streak for the celebration
+- Failure returns `streak: null` and never fails the check-in; debug check-ins skip it
+
+### 7. Circle.so integration (`utils/circle.js`) — non-blocking
 - Only for production check-ins (debug flag = "0")
 - Calls `ensureMember(email, name)` to find or create Circle member
 - Increments `checkinCount` custom field
 - If Circle API fails, check-in still succeeds (graceful degradation)
 
-### 7. Frontend response
+### 8. Frontend response
 - On success: shows confirmation + optional sponsor redirect countdown
 - On API failure: saves data to `localStorage` and shows "saved locally" message
 
@@ -121,31 +129,39 @@ See `docs/backend/SAFETY_LIMITS_SPECIFICATION.md` for rationale.
 
 ## Data Model
 
-### Airtable: `attendees`
-| Field | Type | Notes |
-|-------|------|-------|
-| email | Email | Primary key (unique) |
-| attendeeID | Auto | Airtable record ID |
-| name | Text | |
-| phone | Phone | Optional |
-| businessName | Text | Optional |
-| okToEmail | Checkbox | Consent for future emails |
-| debug | Checkbox | Test submission flag |
-| Checkins | Rollup | Count of linked check-in records |
+Source of truth: `backend/db/migrations/*.sql`.
 
-### Airtable: `checkins`
-| Field | Type | Notes |
-|-------|------|-------|
-| id | Auto | Airtable record ID |
-| checkinDate | DateTime | Timestamp of check-in |
-| eventId | Text | "bocc", "codeCoffee", etc. |
-| Attendee | Link | → attendees table |
-| email | Text | Denormalized for convenience |
-| name | Text | |
-| phone | Text | |
-| businessName | Text | |
-| token | Text | Event GUID from QR code |
-| debug | Checkbox | Test submission flag |
+### Postgres: `attendees`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | Primary key |
+| email | text | Unique; lowercased by the app (natural key) |
+| name | text | |
+| phone | text | Optional |
+| business_name | text | Optional |
+| ok_to_email | boolean | Consent for future emails |
+| debug | boolean | Test submission flag |
+| legacy_airtable_id | text | Provenance from the backfill (unique when set) |
+| created_at | timestamptz | |
+
+### Postgres: `checkins`
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | Primary key |
+| attendee_id | uuid | → attendees |
+| event_id | text | "bocc", "codeCoffee", etc. |
+| token | text | Event GUID from QR code |
+| checkin_at | timestamptz | Time of check-in |
+| checkin_date | date | Eastern calendar day (dedup key) |
+| debug | boolean | Test submission flag |
+| legacy_airtable_id | text | Provenance from the backfill |
+| created_at | timestamptz | |
+
+Unique index `checkins_dedup_key` on `(attendee_id, event_id, coalesce(token,''), checkin_date)`.
+
+### Postgres views
+- `held_occurrences`: the weeks each event actually met (≥1 non-debug check-in)
+- `streaks`: `current_streak`, `longest_streak`, `is_personal_best` per (attendee, event), via gaps-and-islands ([ADR-0004](adr/0004-streak-computation-model.md))
 
 ### Airtable: `No Photo Warnings`
 | Field | Type | Notes |
@@ -159,7 +175,8 @@ See `docs/backend/SAFETY_LIMITS_SPECIFICATION.md` for rationale.
 | MemberID | Text | Circle.so member ID |
 | Notes | Text | Action log |
 
-Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`
+Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`. The Airtable `attendees` and
+`checkins` tables remain as a read-only historical copy; all rows were backfilled to Postgres.
 
 ## External Service Integration
 
@@ -169,11 +186,16 @@ Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`
 - No API integration — purely a frontend embed
 - CSP headers in `_includes/head/custom.html` allow Eventbrite domains
 
+### Neon Postgres
+- `pg` driver over Neon's pooled endpoint, verify-full TLS (`utils/db-ssl.js`)
+- Auth: least-privilege `checkin_writer` role in `CHECKIN_DB_URL`
+- Free plan: compute scales to zero when idle and wakes on connect (no inactivity pause)
+- Permissions documented in `docs/backend/NEON_PERMISSIONS.md`
+
 ### Airtable
-- REST API via `airtable` npm package
+- REST API via `airtable` npm package (enforcement warnings only)
 - Auth: API key in `AIRTABLE_API_KEY` env var
 - Formula injection protection in all queries
-- Principle of least privilege: read/write on 3 tables only
 
 ### Circle.so (716.social)
 - Three APIs (all under `app.circle.so`):
@@ -193,7 +215,8 @@ Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`
 ### Input Validation (Defense in Depth)
 - Client-side: `js/checkin.js` validates before sending
 - Server-side: `utils/validation.js` validates all inputs again
-- Database: Airtable formula injection protection via `escapeAirtableFormula()`
+- Database: parameterized SQL, a DB-enforced dedup index, and a role that can't UPDATE,
+  DELETE, or run DDL. Airtable queries keep `escapeAirtableFormula()`.
 
 ### CORS
 - Backend `ALLOWED_ORIGIN` env var controls allowed origins
@@ -212,9 +235,11 @@ Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`
   validated once in `utils/config.js` (fails fast at import; see
   [ADR-0001](adr/0001-config-fail-fast-at-import.md))
 - Website has zero secrets (static site)
-- Backend env vars: 4 required secrets + optional `ALLOWED_ORIGIN`,
-  `ENFORCEMENT_TRIGGER_TOKEN`, and identity overrides (see `.env.example`)
-- Principle of least privilege for all API tokens
+- Backend env vars: 4 required secrets + `CHECKIN_DB_URL` (required in the default
+  `postgres` mode) + optional `ALLOWED_ORIGIN`, `ENFORCEMENT_TRIGGER_TOKEN`, and
+  identity overrides (see `.env.example`)
+- The Neon owner URL and Neon API key are operator-only and never deployed
+- Principle of least privilege for all API tokens and database roles
 
 ### Content Security Policy
 - Configured in `website/_includes/head/custom.html`

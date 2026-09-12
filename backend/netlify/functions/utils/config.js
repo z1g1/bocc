@@ -38,23 +38,22 @@ if (missing.length > 0) {
 // One concise boot summary replaces the per-module 'Exists / Not set' logs.
 console.log('[config] Required secrets present:', Object.keys(REQUIRED_SECRETS).join(', '));
 
-// --- Check-in store mode (migration ladder: airtable → dual → supabase) ------
-// 'airtable' : current behavior, Airtable only.
-// 'dual'     : Airtable is authoritative; Supabase gets a non-blocking shadow
-//              write and powers the streak celebration. The verification mode.
-// 'supabase' : Supabase is authoritative; Airtable no longer written.
-const CHECKIN_STORE = (env.CHECKIN_STORE || 'airtable').toLowerCase();
-const VALID_CHECKIN_STORES = ['airtable', 'dual', 'supabase'];
+// --- Check-in store (ADR 0005) ----------------------------------------------
+// 'postgres' : Neon Postgres is authoritative (default).
+// 'airtable' : legacy Airtable-only path, kept for rollback only. The Airtable
+//              free base is full, so this mode cannot record new check-ins.
+const CHECKIN_STORE = (env.CHECKIN_STORE || 'postgres').toLowerCase();
+const VALID_CHECKIN_STORES = ['postgres', 'airtable'];
 if (!VALID_CHECKIN_STORES.includes(CHECKIN_STORE)) {
   throw new Error(
     `[config] Invalid CHECKIN_STORE='${CHECKIN_STORE}'. ` +
     `Use one of: ${VALID_CHECKIN_STORES.join(', ')}.`
   );
 }
-if (CHECKIN_STORE !== 'airtable' && !env.SUPABASE_CHECKIN_WRITER_URL) {
+if (CHECKIN_STORE === 'postgres' && !env.CHECKIN_DB_URL) {
   throw new Error(
-    `[config] CHECKIN_STORE='${CHECKIN_STORE}' requires SUPABASE_CHECKIN_WRITER_URL. ` +
-    `Set it (and the CA) per docs/backend/SUPABASE_PERMISSIONS.md, or use 'airtable'.`
+    `[config] CHECKIN_STORE='postgres' requires CHECKIN_DB_URL (the least-privilege ` +
+    `checkin_writer connection string). See docs/backend/NEON_PERMISSIONS.md.`
   );
 }
 
@@ -66,15 +65,12 @@ const config = Object.freeze({
     endpointUrl: 'https://api.airtable.com', // stable vendor endpoint
   }),
 
-  // Supabase Postgres — the post-migration transactional store (ADR 0003).
-  // OPTIONAL at boot: the Supabase path is opt-in until Phase 1 cutover, so a
-  // missing connection string does not fail config. utils/supabase-store.js
-  // throws a clear error if asked to connect without it. The connection string
-  // points at the least-privilege `checkin_writer` role via the transaction
-  // pooler — never service_role. See docs/backend/SUPABASE_PERMISSIONS.md.
-  supabase: Object.freeze({
-    connectionString: env.SUPABASE_CHECKIN_WRITER_URL || null,
-    poolMax: Number(env.SUPABASE_POOL_MAX || 1), // serverless: one conn per instance
+  // Neon Postgres — the transactional check-in store (ADR 0003 model, ADR 0005
+  // host). The connection string is the POOLED endpoint for the least-privilege
+  // `checkin_writer` role — never the owner. See docs/backend/NEON_PERMISSIONS.md.
+  db: Object.freeze({
+    connectionString: env.CHECKIN_DB_URL || null,
+    poolMax: Number(env.DB_POOL_MAX || 1), // serverless: one conn per instance
   }),
 
   circle: Object.freeze({
@@ -113,7 +109,7 @@ const config = Object.freeze({
     allowedOrigin: env.ALLOWED_ORIGIN || '*',
   }),
 
-  // Check-in storage mode — see the migration-ladder note above.
+  // Check-in storage mode — see the note above.
   checkin: Object.freeze({
     store: CHECKIN_STORE,
   }),

@@ -1,7 +1,6 @@
 /**
- * Supabase (Postgres) check-in store — the storage adapter behind the check-in
- * use-case for the post-migration world. See ADR 0003 / ADR 0004 and
- * docs/backend/SUPABASE_PERMISSIONS.md.
+ * Postgres (Neon) check-in store — the storage adapter behind the check-in
+ * use-case. See ADR 0003 / ADR 0004 / ADR 0005 and docs/backend/NEON_PERMISSIONS.md.
  *
  * This module is the Postgres counterpart of `utils/airtable.js`. It owns the
  * three operations the use-case needs:
@@ -9,36 +8,31 @@
  *   - insertCheckin         (DB-enforced same-day dedup via ON CONFLICT)
  *   - getStreak             (reads the recompute-on-read `streaks` view)
  *
- * It connects as the least-privilege `checkin_writer` role (NOT service_role),
- * via the Supabase transaction pooler. A single small pool is reused for the
- * function-process lifetime (cold-start once), mirroring the Bot-JWT memoization
- * pattern in circle-http.js.
+ * It connects as the least-privilege `checkin_writer` role (never the owner), via
+ * Neon's pooled endpoint. A single small pool is reused for the function-process
+ * lifetime (cold-start once), mirroring the Bot-JWT memoization pattern in
+ * circle-http.js.
  */
 
 const { Pool } = require('pg');
 const config = require('./config');
-const { getSslConfig } = require('./supabase-ssl');
+const { toPgConfig } = require('./db-ssl');
 
 let pool;
 
 /**
- * Lazily build the connection pool. Throws a clear error if the connection
- * string is unset — the Supabase path is opt-in until cutover (Phase 1), so
- * config does not make it a required boot secret.
+ * Lazily build the connection pool. Config already fails fast when postgres mode
+ * has no URL; this guard covers callers in airtable rollback mode.
  */
 const getPool = () => {
   if (!pool) {
-    if (!config.supabase.connectionString) {
+    if (!config.db.connectionString) {
       throw new Error(
-        '[supabase-store] SUPABASE_CHECKIN_WRITER_URL is not set; cannot reach Postgres. ' +
-        'See docs/backend/SUPABASE_PERMISSIONS.md.'
+        '[pg-store] CHECKIN_DB_URL is not set; cannot reach Postgres. ' +
+        'See docs/backend/NEON_PERMISSIONS.md.'
       );
     }
-    pool = new Pool({
-      connectionString: config.supabase.connectionString,
-      max: config.supabase.poolMax,
-      ssl: getSslConfig(),
-    });
+    pool = new Pool(toPgConfig(config.db.connectionString, { max: config.db.poolMax }));
   }
   return pool;
 };

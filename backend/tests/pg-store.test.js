@@ -1,23 +1,17 @@
-// Unit tests for the Supabase check-in store (utils/supabase-store.js).
-// `pg` is virtual-mocked (it isn't a test dependency); we assert the SQL the
-// store issues and how it maps results — same spirit as the airtable/circle mocks.
+// Unit tests for the Postgres check-in store (utils/pg-store.js).
+// `pg` is mocked; we assert the SQL the store issues and how it maps results —
+// same spirit as the airtable/circle mocks.
 
-// The Supabase path needs a connection string at first connect; set a dummy one
-// (config reads env at import; the mocked Pool never really connects).
-process.env.SUPABASE_CHECKIN_WRITER_URL = 'postgres://checkin_writer@pooler/test';
-// Dummy CA so getSslConfig() passes; pg.Pool is mocked, so it's never used for TLS.
-process.env.SUPABASE_CA_CERT = '-----BEGIN CERTIFICATE-----\nMIIDUMMY\n-----END CERTIFICATE-----';
+// The store needs a connection string at first connect; set a dummy one (config
+// reads env at import; the mocked Pool never really connects).
+process.env.CHECKIN_DB_URL = 'postgres://checkin_writer@pooler/test';
 
 const mockQuery = jest.fn();
-jest.mock(
-  'pg',
-  () => ({ Pool: jest.fn(() => ({ query: mockQuery })) }),
-  { virtual: true }
-);
+jest.mock('pg', () => ({ Pool: jest.fn(() => ({ query: mockQuery })) }));
 
-const store = require('../netlify/functions/utils/supabase-store');
+const store = require('../netlify/functions/utils/pg-store');
 
-describe('supabase-store', () => {
+describe('pg-store', () => {
   beforeEach(() => {
     mockQuery.mockReset();
   });
