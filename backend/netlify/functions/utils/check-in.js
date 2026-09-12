@@ -12,14 +12,17 @@
  *   'airtable' : legacy Airtable-only path, kept for rollback only.
  *
  * Result shape (discriminated on `status`):
- *   { status: 'invalid',   errors }                        ← validation failed
- *   { status: 'duplicate', checkinDate }                   ← already checked in today
- *   { status: 'created',   circleSynced, streak }          ← check-in recorded
+ *   { status: 'invalid',   errors }                                  ← validation failed
+ *   { status: 'duplicate', checkinDate }                             ← already checked in today
+ *   { status: 'created',   circleSynced, streak, celebration }       ← check-in recorded
  *
- * `streak` is the attendee's streak for this event ({ currentStreak, longestStreak,
- * isPersonalBest }) read from Postgres, or `null`. It is BLOCKING-BUT-NON-FATAL:
- * a streak failure (or Airtable mode, or a debug check-in) yields `null` and
- * never fails the check-in. `circleSynced` is observability-only (see below).
+ * `streak` is the attendee's streak for this event read from Postgres, or `null`. It is
+ * BLOCKING-BUT-NON-FATAL: a streak failure (or Airtable mode, or a debug check-in) yields
+ * `null` and never fails the check-in. `celebration` is the toast to show
+ * (utils/streak-celebration.js), or `null` whenever `streak` is. `circleSynced` is
+ * observability-only (see below).
+ *
+ * Logging: never log attendee PII (email, name, phone) — only event ids and record ids.
  */
 
 const { fetchAttendeeByEmail, createAttendee, createCheckinEntry, findExistingCheckin } = require('./airtable');
@@ -27,6 +30,7 @@ const pgStore = require('./pg-store');
 const { validateCheckinInput } = require('./validation');
 const { ensureMember, incrementCheckinCount } = require('./circle');
 const { easternCheckinDate } = require('./eastern-week');
+const { celebrationFor } = require('./streak-celebration');
 const config = require('./config');
 
 /**
@@ -37,11 +41,11 @@ const config = require('./config');
  * @returns {Promise<boolean>} whether the member was ensured in Circle
  */
 const syncCheckinToCircle = async (email, name) => {
-    console.log('Inviting attendee to Circle.so:', email);
+    console.log('Inviting attendee to Circle.so');
 
     try {
         const member = await ensureMember(email, name);
-        console.log('Successfully ensured Circle member:', member.id || member.email);
+        console.log('Successfully ensured Circle member:', member.id);
 
         try {
             await incrementCheckinCount(member.id);
@@ -72,7 +76,7 @@ const syncCheckinToCircle = async (email, name) => {
 const recordCheckinAirtable = async (s) => {
     let attendee = await fetchAttendeeByEmail(s.email);
     if (!attendee) {
-        console.log('Creating new Airtable attendee:', s.email);
+        console.log('Creating new Airtable attendee');
         attendee = await createAttendee(s.email, s.name, s.phone, s.businessName, s.okToEmail, s.debug);
     } else {
         console.log('Found existing Airtable attendee:', attendee.id);
@@ -135,9 +139,7 @@ const readStreakSafe = async (pgAttendeeId, eventId, debug) => {
 const checkInAttendee = async (rawInput) => {
     const { isValid, errors, sanitized } = validateCheckinInput(rawInput);
 
-    console.log('Parsed email:', sanitized.email);
-    console.log('Parsed eventId:', sanitized.eventId);
-    console.log('Parsed debug:', sanitized.debug);
+    console.log('Check-in for eventId:', sanitized.eventId, 'debug:', sanitized.debug);
 
     if (!isValid) {
         console.log('Validation failed:', errors);
@@ -152,14 +154,15 @@ const checkInAttendee = async (rawInput) => {
         : await recordCheckinAirtable(sanitized);
 
     if (result.status === 'duplicate') {
-        console.log('Duplicate check-in prevented:', sanitized.email, sanitized.eventId);
+        console.log('Duplicate check-in prevented for eventId:', sanitized.eventId);
         return { status: 'duplicate', checkinDate: result.checkinDate };
     }
 
-    // 2. Streak for the celebration. Blocking-but-non-fatal; never for debug.
+    // 2. Streak + celebration. Blocking-but-non-fatal; never for debug.
     const streak = usePostgres
         ? await readStreakSafe(result.attendeeId, sanitized.eventId, sanitized.debug)
         : null;
+    const celebration = celebrationFor(streak);
 
     // 3. Circle sync (non-blocking). Skipped for debug check-ins.
     let circleSynced = false;
@@ -169,7 +172,7 @@ const checkInAttendee = async (rawInput) => {
         console.log('Skipping Circle invitation for debug check-in');
     }
 
-    return { status: 'created', circleSynced, streak };
+    return { status: 'created', circleSynced, streak, celebration };
 };
 
 module.exports = {

@@ -5,7 +5,10 @@ const config = require('./utils/config');
 const ALLOWED_ORIGIN = config.http.allowedOrigin;
 
 exports.handler = async (event) => {
-    console.log('Received event:', event);
+    // Never log the raw event: it carries attendee PII in the body and short-lived
+    // Netlify tokens (purge/log/blobs) in the payload. Method + request id only.
+    const requestId = (event.headers && event.headers['x-nf-request-id']) || 'n/a';
+    console.log('Check-in request:', event.httpMethod, 'request id:', requestId);
 
     const headers = {
         'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -63,9 +66,10 @@ exports.handler = async (event) => {
                     headers,
                     body: JSON.stringify({
                         message: 'Check-in successful',
-                        // Streak for the frontend celebration; null when unavailable
-                        // (Airtable-only mode, debug check-in, or a non-fatal failure).
-                        streak: result.streak || null
+                        // Streak + celebration for the frontend toast; null when unavailable
+                        // (Airtable mode, debug check-in, or a non-fatal failure).
+                        streak: result.streak || null,
+                        celebration: result.celebration || null
                     }),
                 };
 

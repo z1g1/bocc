@@ -7,6 +7,12 @@ const CIRCLE = '../netlify/functions/utils/circle';
 const PG = '../netlify/functions/utils/pg-store';
 const CHECKIN = '../netlify/functions/utils/check-in';
 
+const STREAK = {
+    currentStreak: 3, longestStreak: 5, isPersonalBest: false,
+    previousStreak: 2, priorLongestStreak: 5, weeksAttended: 9,
+    eventTopStreak: 4, eventTopHolders: 1,
+};
+
 const validInput = (overrides = {}) => ({
     email: 'test@example.com',
     eventId: 'bocc',
@@ -45,7 +51,7 @@ function loadWithStore(store) {
         jest.doMock(PG, () => ({
             findOrCreateAttendee: jest.fn().mockResolvedValue({ id: 'pg_att', created: true }),
             insertCheckin: jest.fn().mockResolvedValue({ created: true, id: 'pg_chk' }),
-            getStreak: jest.fn().mockResolvedValue({ currentStreak: 3, longestStreak: 5, isPersonalBest: false }),
+            getStreak: jest.fn().mockResolvedValue({ ...STREAK }),
         }));
 
         api = {
@@ -63,20 +69,33 @@ function loadWithStore(store) {
 }
 
 describe('store mode: postgres (default)', () => {
-    test('writes only Postgres, returns streak, no Airtable', async () => {
+    test('writes only Postgres, returns streak + celebration, no Airtable', async () => {
         const { checkInAttendee, airtable, pg, circle } = loadWithStore('postgres');
         const r = await checkInAttendee(validInput());
 
         expect(r.status).toBe('created');
         expect(pg.insertCheckin).toHaveBeenCalled();
         expect(pg.getStreak).toHaveBeenCalledWith('pg_att', 'bocc');
-        expect(r.streak).toEqual({ currentStreak: 3, longestStreak: 5, isPersonalBest: false });
+        expect(r.streak).toEqual(STREAK);
+        expect(r.celebration).toEqual({ kind: 'continued', currentStreak: 3, previousStreak: 2 });
         expect(airtable.fetchAttendeeByEmail).not.toHaveBeenCalled();
         expect(airtable.createCheckinEntry).not.toHaveBeenCalled();
         expect(circle.ensureMember).toHaveBeenCalled();
     });
 
-    test('Postgres duplicate returns duplicate, no streak, no Circle', async () => {
+    test('first check-in ever gets the first_visit celebration', async () => {
+        const { checkInAttendee, pg } = loadWithStore('postgres');
+        pg.getStreak.mockResolvedValueOnce({
+            ...STREAK, currentStreak: 1, longestStreak: 1, previousStreak: null,
+            priorLongestStreak: null, weeksAttended: 1,
+        });
+
+        const r = await checkInAttendee(validInput());
+
+        expect(r.celebration).toEqual({ kind: 'first_visit', currentStreak: 1, previousStreak: null });
+    });
+
+    test('Postgres duplicate returns duplicate, no streak, no celebration, no Circle', async () => {
         const { checkInAttendee, pg, circle } = loadWithStore('postgres');
         pg.insertCheckin.mockResolvedValueOnce({ created: false });
 
@@ -84,11 +103,12 @@ describe('store mode: postgres (default)', () => {
 
         expect(r.status).toBe('duplicate');
         expect(r.checkinDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(r.celebration).toBeUndefined();
         expect(pg.getStreak).not.toHaveBeenCalled();
         expect(circle.ensureMember).not.toHaveBeenCalled();
     });
 
-    test('still created when the streak read fails (non-fatal)', async () => {
+    test('still created when the streak read fails (non-fatal), no celebration', async () => {
         const { checkInAttendee, pg } = loadWithStore('postgres');
         pg.getStreak.mockRejectedValueOnce(new Error('view timeout'));
 
@@ -96,6 +116,7 @@ describe('store mode: postgres (default)', () => {
 
         expect(r.status).toBe('created');
         expect(r.streak).toBeNull();
+        expect(r.celebration).toBeNull();
     });
 
     test('a Postgres write failure propagates (handler maps to 500)', async () => {
@@ -105,7 +126,7 @@ describe('store mode: postgres (default)', () => {
         await expect(checkInAttendee(validInput())).rejects.toThrow('connection refused');
     });
 
-    test('debug check-in: recorded but no streak and no Circle', async () => {
+    test('debug check-in: recorded but no streak, no celebration and no Circle', async () => {
         const { checkInAttendee, pg, circle } = loadWithStore('postgres');
         const r = await checkInAttendee(validInput({ debug: '1' }));
 
@@ -114,16 +135,18 @@ describe('store mode: postgres (default)', () => {
         expect(pg.getStreak).not.toHaveBeenCalled();                 // debug never affects streaks
         expect(circle.ensureMember).not.toHaveBeenCalled();
         expect(r.streak).toBeNull();
+        expect(r.celebration).toBeNull();
     });
 });
 
 describe('store mode: airtable (legacy rollback)', () => {
-    test('writes only Airtable, no Postgres, streak null', async () => {
+    test('writes only Airtable, no Postgres, streak and celebration null', async () => {
         const { checkInAttendee, airtable, pg, circle } = loadWithStore('airtable');
         const r = await checkInAttendee(validInput());
 
         expect(r.status).toBe('created');
         expect(r.streak).toBeNull();
+        expect(r.celebration).toBeNull();
         expect(airtable.createCheckinEntry).toHaveBeenCalled();
         expect(pg.findOrCreateAttendee).not.toHaveBeenCalled();
         expect(pg.getStreak).not.toHaveBeenCalled();

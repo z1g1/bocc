@@ -100,6 +100,16 @@ calendar, a streak is a **recomputable projection** of the check-in history — 
 be rebuildable from scratch, never only incremented. Debug check-ins never affect streaks
 (same rule as Circle sync).
 
+### Celebration
+The small toast an Attendee sees right after a successful, non-debug check-in, chosen from
+their Streak for that event. Exactly one kind applies (first match wins):
+`first_visit` (first check-in ever) → `top_streak` (sole holder of the event's longest
+active streak, ≥ 2) → `first_streak` (first time reaching 2 in a row) → `tied_top` (shares
+the longest active streak) → `continued` (≥ 2 in a row) → `restart` (back after a missed
+held occurrence; quotes the previous streak). The rule is pure backend logic
+(`utils/streak-celebration.js`); the copy and emoji live in the frontend. No celebration for
+duplicates, debug check-ins, or when the streak can't be read. Never a full-screen takeover.
+
 ---
 
 ## Seams & deep modules
