@@ -193,7 +193,11 @@ describe('checkin handler', () => {
             const response = await handler(event);
 
             expect(response.statusCode).toBe(200);
-            expect(JSON.parse(response.body).message).toBe('Check-in successful');
+            const body = JSON.parse(response.body);
+            expect(body.message).toBe('Check-in successful');
+            // Airtable mode / debug: no streak, so no celebration (keys still present)
+            expect(body).toHaveProperty('streak', null);
+            expect(body).toHaveProperty('celebration', null);
             expect(createCheckinEntry).toHaveBeenCalledWith('rec123', 'event123', true, 'abc123');
             expect(createAttendee).not.toHaveBeenCalled();
         });

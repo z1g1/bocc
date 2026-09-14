@@ -63,7 +63,7 @@ const circleApi = createCircleClient({ baseURL: CIRCLE_API_BASE_URL, token: CIRC
  */
 const findMemberByEmail = async (email) => {
     try {
-        console.log('Searching for Circle member:', email);
+        console.log('Searching for Circle member by email');
 
         // GET /api/admin/v2/community_members with pagination
         // We'll need to search through results to find matching email
@@ -85,7 +85,7 @@ const findMemberByEmail = async (email) => {
             }
         }
 
-        console.log('No Circle member found with email:', email);
+        console.log('No Circle member found for email');
         return null;
     } catch (error) {
         logCircleError('Error searching for Circle member', error);
@@ -101,7 +101,7 @@ const findMemberByEmail = async (email) => {
  */
 const createMember = async (email, name) => {
     try {
-        console.log('Creating Circle member:', email, name);
+        console.log('Creating Circle member');
 
         const response = await circleApi.post('/community_members', {
             email: email,
@@ -109,7 +109,8 @@ const createMember = async (email, name) => {
             // Additional fields may be required - will discover during testing
         });
 
-        console.log('Successfully created Circle member:', response.data);
+        // Don't log response.data: it is the full member record (email, name, profile).
+        console.log('Successfully created Circle member');
         return response.data;
     } catch (error) {
         logCircleError('Error creating Circle member', error);
@@ -134,7 +135,7 @@ const updateMemberCustomField = async (memberId, fieldName, value) => {
             }
         });
 
-        console.log('Successfully updated member custom field:', response.data);
+        console.log(`Successfully updated custom field ${fieldName} for member:`, memberId);
         return response.data;
     } catch (error) {
         logCircleError('Error updating member custom field', error);
@@ -174,12 +175,12 @@ const ensureMember = async (email, name) => {
     const existingMember = await findMemberByEmail(email);
 
     if (existingMember) {
-        console.log('Member already exists in Circle:', email);
+        console.log('Member already exists in Circle:', existingMember.id);
         return existingMember;
     }
 
     // Create new member if not found
-    console.log('Creating new Circle member:', email);
+    console.log('Creating new Circle member');
     return await createMember(email, name);
 };
 

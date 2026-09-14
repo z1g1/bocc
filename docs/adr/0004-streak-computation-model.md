@@ -96,3 +96,18 @@ lives in a separate Google Sheet maintained by volunteers.
   `lastCheckinDate` + contactability.
 - The frontend check-in handler must change to **read the response body** (it
   currently discards it) to surface the streak.
+
+## Addendum — 2026-09-12: celebration toasts
+
+Supersedes decision 8's "currentStreak only" surface. After a check-in the site shows a
+small toast chosen by a pure backend rule (`utils/streak-celebration.js`): `first_visit`,
+`top_streak`, `first_streak`, `tied_top`, `continued`, `restart` (priority in that order;
+see CONTEXT.md → Celebration). The API returns only `{ kind, currentStreak, previousStreak }`;
+copy and emoji stay in the frontend.
+
+To support it, migration `20260912120000_streak_celebration_fields` appends three columns to
+the `streaks` view, still recompute-on-read: `previous_streak` (the run before the active one,
+for "last time you got to N"), `prior_longest_streak` (to detect a *first* 2-week streak), and
+`weeks_attended` (to detect a first visit). `getStreak` also returns the event's longest
+active streak and how many attendees hold it, so "longest / tied for longest" is computed per
+event at read time. A 1-week run never counts as the longest active streak.

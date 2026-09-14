@@ -69,15 +69,42 @@ describe('pg-store', () => {
   });
 
   describe('getStreak', () => {
-    test('maps the streaks view row to typed fields', async () => {
+    test('maps the streaks view row and event standing to typed fields', async () => {
       mockQuery.mockResolvedValueOnce({
-        rows: [{ current_streak: '4', longest_streak: '4', is_personal_best: true }],
+        rows: [{
+          current_streak: '4', longest_streak: '4', is_personal_best: true,
+          previous_streak: '2', prior_longest_streak: '3', weeks_attended: '9',
+          top_streak: '4', top_holders: '2',
+        }],
       });
 
       const result = await store.getStreak('uuid-1', 'bocc');
 
-      expect(result).toEqual({ currentStreak: 4, longestStreak: 4, isPersonalBest: true });
-      expect(mockQuery.mock.calls[0][0]).toMatch(/from\s+streaks/i);
+      expect(result).toEqual({
+        currentStreak: 4, longestStreak: 4, isPersonalBest: true,
+        previousStreak: 2, priorLongestStreak: 3, weeksAttended: 9,
+        eventTopStreak: 4, eventTopHolders: 2,
+      });
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toMatch(/from\s+streaks/i);
+      expect(sql).toMatch(/max\(current_streak\)/i);
+      expect(params).toEqual(['uuid-1', 'bocc']);
+    });
+
+    test('keeps previous/prior-longest null when there is no earlier run', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [{
+          current_streak: '1', longest_streak: '1', is_personal_best: true,
+          previous_streak: null, prior_longest_streak: null, weeks_attended: '1',
+          top_streak: '5', top_holders: '1',
+        }],
+      });
+
+      const result = await store.getStreak('uuid-1', 'bocc');
+
+      expect(result.previousStreak).toBeNull();
+      expect(result.priorLongestStreak).toBeNull();
+      expect(result.weeksAttended).toBe(1);
     });
 
     test('returns a zeroed shape when no streak row exists yet', async () => {
@@ -85,7 +112,11 @@ describe('pg-store', () => {
 
       const result = await store.getStreak('uuid-1', 'bocc');
 
-      expect(result).toEqual({ currentStreak: 0, longestStreak: 0, isPersonalBest: false });
+      expect(result).toEqual({
+        currentStreak: 0, longestStreak: 0, isPersonalBest: false,
+        previousStreak: null, priorLongestStreak: null, weeksAttended: 0,
+        eventTopStreak: 0, eventTopHolders: 0,
+      });
     });
   });
 });

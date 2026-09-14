@@ -86,30 +86,56 @@ const insertCheckin = async ({ attendeeId, eventId, token, debug, checkinDate })
   return { created: true, id: result.rows[0].id, checkinAt: result.rows[0].checkin_at };
 };
 
+const toNullableCount = (value) => (value === null || value === undefined ? null : Number(value));
+
 /**
- * Read an attendee's streak for an event from the `streaks` view. Returns a
- * zeroed shape when the view has no row yet (e.g. their very first check-in is
- * still being committed in another path). Callers treat this as non-fatal — a
- * failure here must never fail a check-in.
+ * Read an attendee's streak for an event from the `streaks` view, plus the event's
+ * standing (the longest active streak and how many attendees hold it) for the
+ * celebration. Returns a zeroed shape when the view has no row yet. Callers treat
+ * this as non-fatal — a failure here must never fail a check-in.
  *
- * @returns {Promise<{currentStreak: number, longestStreak: number, isPersonalBest: boolean}>}
+ * @returns {Promise<{currentStreak: number, longestStreak: number, isPersonalBest: boolean,
+ *   previousStreak: number|null, priorLongestStreak: number|null, weeksAttended: number,
+ *   eventTopStreak: number, eventTopHolders: number}>}
  */
 const getStreak = async (attendeeId, eventId) => {
   const result = await query(
-    `select current_streak, longest_streak, is_personal_best
-     from streaks
-     where attendee_id = $1 and event_id = $2`,
+    `with event_streaks as (
+       select attendee_id, current_streak, longest_streak, is_personal_best,
+              previous_streak, prior_longest_streak, weeks_attended
+       from streaks
+       where event_id = $2
+     ),
+     top as (
+       select max(current_streak) as top_streak from event_streaks
+     )
+     select s.current_streak, s.longest_streak, s.is_personal_best,
+            s.previous_streak, s.prior_longest_streak, s.weeks_attended,
+            top.top_streak,
+            (select count(*) from event_streaks e where e.current_streak = top.top_streak) as top_holders
+     from event_streaks s
+     cross join top
+     where s.attendee_id = $1`,
     [attendeeId, eventId]
   );
 
   if (result.rows.length === 0) {
-    return { currentStreak: 0, longestStreak: 0, isPersonalBest: false };
+    return {
+      currentStreak: 0, longestStreak: 0, isPersonalBest: false,
+      previousStreak: null, priorLongestStreak: null, weeksAttended: 0,
+      eventTopStreak: 0, eventTopHolders: 0,
+    };
   }
   const row = result.rows[0];
   return {
     currentStreak: Number(row.current_streak),
     longestStreak: Number(row.longest_streak),
     isPersonalBest: row.is_personal_best === true,
+    previousStreak: toNullableCount(row.previous_streak),
+    priorLongestStreak: toNullableCount(row.prior_longest_streak),
+    weeksAttended: Number(row.weeks_attended),
+    eventTopStreak: Number(row.top_streak),
+    eventTopHolders: Number(row.top_holders),
   };
 };
 
