@@ -50,7 +50,7 @@ DESCRIPTION_TEMPLATE = (
     "running businesses in the 716."
 )
 
-# Fallback cover image, shared with the website. config.py sits at
-# tools/linkedin-events/bocc_events/, so the repo root is three levels up.
-REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_IMAGE = REPO_ROOT / "website/assets/images/BOCC-header-image-coffee-background.png"
+# Cover image used when --image isn't given. It lives in the tool's own
+# directory (tools/linkedin-events/, one level above this package) so the CLI
+# doesn't depend on the website's asset layout.
+DEFAULT_IMAGE = Path(__file__).resolve().parents[1] / "default-bocc-image.png"

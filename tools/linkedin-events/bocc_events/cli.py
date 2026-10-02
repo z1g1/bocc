@@ -205,7 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_create = sub.add_parser("create", help="build (and with --live, create) the event")
     p_create.add_argument("--date", help="event date, YYYY-MM-DD (a Tuesday; default: next Tuesday)")
     image = p_create.add_mutually_exclusive_group()
-    image.add_argument("--image", help="cover photo, PNG or JPEG (default: the site header image)")
+    image.add_argument("--image", help="cover photo, PNG or JPEG (default: default-bocc-image.png)")
     image.add_argument("--no-image", action="store_true", help="use LinkedIn's default cover")
     p_create.add_argument("--url-only", action="store_true", help="unlisted: reachable only by link (for tests)")
     p_create.add_argument("--live", action="store_true", help="actually call LinkedIn (default is a dry run)")

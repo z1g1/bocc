@@ -49,7 +49,7 @@ uv run bocc-event create --image ~/photos/this-week.jpg --live   # asks "yes", t
 Options: `--date YYYY-MM-DD` (must be a future Tuesday; defaults to next Tuesday),
 `--no-image` (use LinkedIn's default cover), `--url-only` (unlisted, for tests),
 `--yes` (skip the prompt; required when there's no terminal).
-Without `--image` the site header image is used. Images must be real PNG/JPEG files,
+Without `--image` the tool uses `default-bocc-image.png` from this directory (replace that file to change the default). Images must be real PNG/JPEG files,
 at least 480x270 and no larger than 8 MiB. 16:9 is recommended.
 
 Then open the printed link, publish it as the BOCC page, and reshare it from your profile
