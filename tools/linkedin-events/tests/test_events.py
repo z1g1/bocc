@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from bocc_events import config, events
-from bocc_events.client import ApiError, LinkedInClient, Response
+from bocc_events.client import ApiError, LinkedInClient, Response, UncertainResult
 from bocc_events.ledger import CREATED, PENDING, Ledger
 
 DAY = date(2026, 10, 6)
@@ -162,7 +162,7 @@ def test_create_event_falls_back_to_restli_header():
 
 def test_create_event_without_id_says_check_linkedin():
     client, _ = client_with(resp({}, status=201))
-    with pytest.raises(ApiError, match="check the page"):
+    with pytest.raises(UncertainResult, match="check the page"):
         events.create_event(client, {})
 
 

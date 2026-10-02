@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 from . import config
-from .client import ApiError, LinkedInClient, build_query
+from .client import ApiError, LinkedInClient, UncertainResult, build_query
 from .dates import event_window, month_day, to_epoch_ms
 
 LISTED = "LISTED"
@@ -157,6 +157,6 @@ def create_event(client: LinkedInClient, payload: dict) -> str:
     body = resp.json() if resp.body else {}
     event_id = str(body.get("id") or resp.headers.get("x-restli-id", ""))
     if not event_id.isdigit():
-        # The event probably exists; surface that rather than a vague parse error.
-        raise ApiError(resp.status, "event created but the response had no numeric id; check the page's events in LinkedIn")
+        # A 2xx means the event probably exists, so this is "maybe created", not a failure.
+        raise UncertainResult("LinkedIn accepted the event but returned no numeric id; check the page's events in LinkedIn")
     return event_id
