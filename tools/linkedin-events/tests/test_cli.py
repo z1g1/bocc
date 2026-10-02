@@ -29,7 +29,7 @@ REGISTER_OK = resp(
 )
 NO_EVENTS = resp({"elements": []})
 UPLOAD_OK = Response(201, {}, b"")
-CREATE_OK = resp({"id": 7249812613549670400}, status=201)
+CREATE_OK = resp({"id": 7249812613549670400, "vanityName": "buffaloopencoffeeclubfor10-67249812613549670400"}, status=201)
 
 
 class Transport:
@@ -98,11 +98,11 @@ def test_live_create_full_flow(env, transport, capsys):
     assert t.calls[3][1].endswith("/rest/events")
     entry = ledger(env).get(DAY)
     assert entry["status"] == CREATED and entry["event_id"] == "7249812613549670400"
-    assert "linkedin.com/events/7249812613549670400/" in capsys.readouterr().out
+    assert "linkedin.com/events/buffaloopencoffeeclubfor10-67249812613549670400/" in capsys.readouterr().out
 
 
 def test_live_create_is_blocked_by_ledger(env, transport, capsys):
-    ledger(env).record_created(DAY, "1", events.event_url("1"), FIXED_NOW)
+    ledger(env).record_created(DAY, "1", events.event_url({"id": "1"}), FIXED_NOW)
     t = transport()
     assert cli.main(["create", "--live", "--yes"]) == 1
     assert t.calls == []

@@ -85,7 +85,7 @@ def cmd_check(args) -> int:
     upcoming = events.list_upcoming_events(client)
     print(f"Organizer {config.ORGANIZER_URN}: {len(upcoming)} upcoming posted event(s).")
     for event in upcoming:
-        print(f"  {events.event_day(event)}  {events.event_name(event)}  {events.event_url(event.get('id'))}")
+        print(f"  {events.event_day(event)}  {events.event_name(event)}  {events.event_url(event)}")
     if not creds.person_urn:
         _warn("No LINKEDIN_PERSON_URN; cover image uploads will fail. Re-run `bocc-event auth`.")
     return 0
@@ -147,7 +147,7 @@ def cmd_create(args) -> int:
     if dupes := events.find_duplicates(events.list_upcoming_events(client), spec):
         print("LinkedIn already has a matching event; not creating another:", file=sys.stderr)
         for event in dupes:
-            print(f"  {events.event_day(event)}  {events.event_name(event)}  {events.event_url(event.get('id'))}", file=sys.stderr)
+            print(f"  {events.event_day(event)}  {events.event_name(event)}  {events.event_url(event)}", file=sys.stderr)
         return 1
 
     if not args.yes and not _confirm(spec):
@@ -174,14 +174,14 @@ def cmd_create(args) -> int:
 
     ledger.record_pending(day, spec.name, now)
     try:
-        event_id = events.create_event(client, events.build_event_payload(spec, asset))
+        created = events.create_event(client, events.build_event_payload(spec, asset))
     except ApiError:
         ledger.forget(day)  # LinkedIn rejected it outright, so nothing exists and retrying is safe.
         raise
     # UncertainResult propagates with the ledger left at `pending` on purpose.
 
-    url = events.event_url(event_id)
-    ledger.record_created(day, event_id, url, now)
+    url = events.event_url(created)
+    ledger.record_created(day, created["id"], url, now)
     print(f"\nCreated (not yet published): {url}")
     print("Next: open the link as a page admin and post it as the BOCC page, then reshare it from your profile")
     print("with: Please join me at Buffalo Open Coffee Club")

@@ -151,13 +151,13 @@ def test_register_upload_rejects_incomplete_response():
 
 def test_create_event_returns_id_beyond_float_precision():
     client, transport = client_with(resp({"id": 7249812613549670400, "vanityName": "x"}, status=201))
-    assert events.create_event(client, {}) == "7249812613549670400"
+    assert events.create_event(client, {}) == {"id": "7249812613549670400", "vanityName": "x"}
     assert transport.calls[0]["headers"]["X-RestLi-Method"] == "create"
 
 
 def test_create_event_falls_back_to_restli_header():
     client, _ = client_with(Response(201, {"x-restli-id": "123"}, b""))
-    assert events.create_event(client, {}) == "123"
+    assert events.create_event(client, {})["id"] == "123"
 
 
 def test_create_event_without_id_says_check_linkedin():
@@ -175,9 +175,16 @@ def test_ledger_lifecycle(tmp_path):
     assert ledger.get(DAY) is None
     ledger.record_pending(DAY, "name", now)
     assert ledger.get(DAY)["status"] == PENDING
-    ledger.record_created(DAY, "123", events.event_url("123"), now)
+    ledger.record_created(DAY, "123", events.event_url({"id": "123"}), now)
     entry = ledger.get(DAY)
     assert (entry["status"], entry["event_id"], entry["name"]) == (CREATED, "123", "name")
     assert ledger.path.stat().st_mode & 0o777 == 0o600
     assert ledger.forget(DAY) and ledger.get(DAY) is None
     assert not ledger.forget(DAY)
+
+
+def test_event_url_prefers_vanity_name():
+    vanity = "buffaloopencoffeeclubfor10-67509297807225167873"
+    assert events.event_url({"id": 7509297807225167873, "vanityName": vanity}) == f"https://www.linkedin.com/events/{vanity}/"
+    assert events.event_url({"id": 5}) == "https://www.linkedin.com/events/5/"
+    assert events.event_url({"id": 5, "vanityName": "../evil"}) == "https://www.linkedin.com/events/5/"

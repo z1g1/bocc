@@ -133,8 +133,12 @@ def find_duplicates(events: list[dict], spec: EventSpec) -> list[dict]:
     return [e for e in events if event_name(e).casefold() == want or event_day(e) == spec.day]
 
 
-def event_url(event_id: str) -> str:
-    return f"https://www.linkedin.com/events/{event_id}/"
+def event_url(event: dict) -> str:
+    """Public event link. LinkedIn routes events by vanityName (slug + id); fall back to the id."""
+    slug = str(event.get("vanityName") or event.get("id") or "")
+    if not all(c.isalnum() or c == "-" for c in slug):  # never build a path from odd input
+        slug = str(event.get("id", ""))
+    return f"https://www.linkedin.com/events/{slug}/"
 
 
 # --- Writing -------------------------------------------------------------------
@@ -151,12 +155,12 @@ def register_upload(client: LinkedInClient, owner_urn: str) -> tuple[str, str]:
     return upload_url, asset
 
 
-def create_event(client: LinkedInClient, payload: dict) -> str:
-    """Create the event and return its numeric ID as a string."""
+def create_event(client: LinkedInClient, payload: dict) -> dict:
+    """Create the event and return {"id": str, "vanityName": str | None}."""
     resp = client.post_json("/rest/events", payload, restli_method="create")
     body = resp.json() if resp.body else {}
     event_id = str(body.get("id") or resp.headers.get("x-restli-id", ""))
     if not event_id.isdigit():
         # A 2xx means the event probably exists, so this is "maybe created", not a failure.
         raise UncertainResult("LinkedIn accepted the event but returned no numeric id; check the page's events in LinkedIn")
-    return event_id
+    return {"id": event_id, "vanityName": body.get("vanityName")}
