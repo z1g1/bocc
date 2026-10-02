@@ -18,8 +18,8 @@ from LinkedIn as the page, then reshares it. Permissions and the reasoning are i
 ## Setup
 
 1. **LinkedIn app.** Create one at https://www.linkedin.com/developers/apps, associate it with
-   the BOCC page, and add the products **Event Management API** and **Sign In with LinkedIn
-   using OpenID Connect**. On the Auth tab, add the redirect URL `http://localhost:8765/callback`.
+   the BOCC page, and add the products **Event Management API**, **Share on LinkedIn** (needed
+   for cover uploads) and **Sign In with LinkedIn using OpenID Connect**. On the Auth tab, add the redirect URL `http://localhost:8765/callback`.
 2. **Install** (Python 3.12+, [uv](https://docs.astral.sh/uv/)):
    ```bash
    cd tools/linkedin-events

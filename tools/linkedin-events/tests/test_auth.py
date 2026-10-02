@@ -25,7 +25,7 @@ def test_authorization_url_requests_minimum_scopes():
     url = auth.authorization_url("client-123", REDIRECT, STATE)
     params = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
     assert url.startswith(auth.AUTHORIZE_URL)
-    assert params["scope"] == ["r_events rw_events openid profile"]
+    assert params["scope"] == ["r_events rw_events openid profile w_member_social"]
     assert params["state"] == [STATE]
     assert params["redirect_uri"] == [REDIRECT]
     assert params["response_type"] == ["code"]
@@ -86,7 +86,7 @@ def json_response(status, payload):
 
 def test_exchange_code_builds_credentials():
     transport = Transport(
-        json_response(200, {"access_token": "tok", "expires_in": 5184000, "scope": "r_events,rw_events,openid,profile"}),
+        json_response(200, {"access_token": "tok", "expires_in": 5184000, "scope": "r_events,rw_events,openid,profile,w_member_social"}),
         json_response(200, {"sub": "AbC-123_x"}),
     )
     creds, data = auth.exchange_code("code", "id", "secret", REDIRECT, NOW, transport)
@@ -113,7 +113,7 @@ def test_rejects_suspicious_member_id():
 
 
 def test_missing_scopes_detects_ungranted_products():
-    assert auth.missing_scopes({"scope": "r_events,rw_events"}) == ["openid", "profile"]
+    assert auth.missing_scopes({"scope": "r_events,rw_events"}) == ["openid", "profile", "w_member_social"]
 
 
 def test_refresh_requires_refresh_token():

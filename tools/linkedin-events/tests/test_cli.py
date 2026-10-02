@@ -165,6 +165,6 @@ def test_cover_upload_403_explains_no_image(env, transport, capsys):
     t = transport(NO_EVENTS, resp({"message": "Not enough permissions", "serviceErrorCode": 100}, status=403))
     assert cli.main(["create", "--live", "--yes"]) == 1
     err = capsys.readouterr().err
-    assert "--no-image" in err and "nothing was created" in err
+    assert "--no-image" in err and "Nothing was created" in err and "w_member_social" in err
     assert len(t.calls) == 2  # duplicate check + registerUpload; no create attempted
     assert ledger(env).get(DAY) is None

@@ -165,8 +165,9 @@ def cmd_create(args) -> int:
             # w_organization_social; Event Management's rw_events doesn't cover it.
             raise ApiError(
                 403,
-                "LinkedIn won't accept the cover upload with Event Management scopes alone. Re-run with"
-                " --no-image and set the cover in LinkedIn when you publish (nothing was created).",
+                "LinkedIn refused the cover upload (needs w_member_social). Check the app has the"
+                " 'Share on LinkedIn' product and re-run `bocc-event auth`, or use --no-image."
+                " Nothing was created.",
             ) from None
         client.upload(upload_url, image.data, image.content_type)
         print(f"Uploaded cover image ({asset}).")

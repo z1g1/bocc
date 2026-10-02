@@ -19,15 +19,15 @@ One app at https://www.linkedin.com/developers/apps, associated with the BOCC pa
 | Product | Access | Why |
 |---|---|---|
 | Event Management API | Self-serve, on request | `r_events`, `rw_events`: list and create the page's events |
+| Share on LinkedIn | Self-serve | `w_member_social`: required by the Assets API to upload the event cover image. **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 over a no-cover workflow; it also enables automating the personal reshare later |
 | Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the cover-image upload owner. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
 
 **Cover images:** the Assets API (`/rest/assets?action=registerUpload`) requires `w_member_social`,
-`w_organization_social` or `rw_ads`. Event Management's `rw_events` is not enough, so LinkedIn
-returns 403 (`partnerApiAssets.ACTION-registerUpload`), confirmed 2026-10-02. Until a posting
-scope is added, run with `--no-image` and set the cover in LinkedIn's UI.
+`w_organization_social` or `rw_ads`. Event Management's `rw_events` alone returns 403
+(`partnerApiAssets.ACTION-registerUpload`), confirmed 2026-10-02. That's why Share on LinkedIn is requested.
 
-**Not requested:** Community Management API (`w_organization_social`), Share on LinkedIn
-(`w_member_social`), Advertising API. Without them the tool **cannot post or reshare**.
+**Not requested:** Community Management API (`w_organization_social`) and Advertising API.
+Without them the tool **cannot post as the page**.
 The admin publishes the created event from LinkedIn's UI, and that is the human approval step.
 Community Management is vetted, limited to registered legal organizations, and must be
 requested on a new app with no other products. Revisit it only if the one-click publish
@@ -37,7 +37,7 @@ Auth tab: add redirect URL `http://localhost:8765/callback` (override with `LINK
 
 ## OAuth scopes
 
-`r_events rw_events openid profile`. Nothing else. The authorizing member must be
+`r_events rw_events openid profile w_member_social`. Nothing else. The authorizing member must be
 **ADMINISTRATOR** or **CONTENT_ADMINISTRATOR** of the BOCC showcase page itself
 (`urn:li:organization:89993057`), not only of a parent company page.
 
@@ -46,7 +46,7 @@ Auth tab: add redirect URL `http://localhost:8765/callback` (override with `LINK
 | Secret | Lives in | Notes |
 |---|---|---|
 | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | Environment / CI secret | Only needed for `bocc-event auth`. Never committed. |
-| Access token + expiry + member URN | `~/.config/bocc-linkedin/token.env` (mode 0600, dir 0700), or the env vars `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_TOKEN_EXPIRES_AT`, `LINKEDIN_PERSON_URN` | 60-day lifetime. The tool warns 7 days ahead and refuses to run once it expires. Refresh tokens are documented only for approved partners. |
+| Access token + expiry + member URN (can post as the admin personally; treat as sensitive) | `~/.config/bocc-linkedin/token.env` (mode 0600, dir 0700), or the env vars `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_TOKEN_EXPIRES_AT`, `LINKEDIN_PERSON_URN` | 60-day lifetime. The tool warns 7 days ahead and refuses to run once it expires. Refresh tokens are documented only for approved partners. |
 
 The tool refuses to read a token file that other users can read. It never prints tokens,
 sends the bearer token only to `https://*.linkedin.com`, and does not follow redirects.
