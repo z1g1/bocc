@@ -156,7 +156,18 @@ def cmd_create(args) -> int:
 
     asset = None
     if image:
-        upload_url, asset = events.register_upload(client, creds.person_urn)
+        try:
+            upload_url, asset = events.register_upload(client, creds.person_urn)
+        except ApiError as err:
+            if err.status != 403:
+                raise
+            # The Assets API needs w_member_social (Share on LinkedIn) or
+            # w_organization_social; Event Management's rw_events doesn't cover it.
+            raise ApiError(
+                403,
+                "LinkedIn won't accept the cover upload with Event Management scopes alone. Re-run with"
+                " --no-image and set the cover in LinkedIn when you publish (nothing was created).",
+            ) from None
         client.upload(upload_url, image.data, image.content_type)
         print(f"Uploaded cover image ({asset}).")
 

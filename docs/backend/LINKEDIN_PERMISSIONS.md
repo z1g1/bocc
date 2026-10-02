@@ -21,6 +21,11 @@ One app at https://www.linkedin.com/developers/apps, associated with the BOCC pa
 | Event Management API | Self-serve, on request | `r_events`, `rw_events`: list and create the page's events |
 | Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the cover-image upload owner. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
 
+**Cover images:** the Assets API (`/rest/assets?action=registerUpload`) requires `w_member_social`,
+`w_organization_social` or `rw_ads`. Event Management's `rw_events` is not enough, so LinkedIn
+returns 403 (`partnerApiAssets.ACTION-registerUpload`), confirmed 2026-10-02. Until a posting
+scope is added, run with `--no-image` and set the cover in LinkedIn's UI.
+
 **Not requested:** Community Management API (`w_organization_social`), Share on LinkedIn
 (`w_member_social`), Advertising API. Without them the tool **cannot post or reshare**.
 The admin publishes the created event from LinkedIn's UI, and that is the human approval step.
