@@ -5,6 +5,8 @@ can't reliably tell us whether we already created this week's event. This
 ledger can. An entry is written as `pending` *before* the create request and
 upgraded to `created` after it, so a crash or timeout mid-request blocks
 further attempts until a human checks LinkedIn and runs `bocc-event forget`.
+After the publishing post succeeds the entry becomes `posted`, so `bocc-event
+post` can retry a failed post without ever posting twice.
 """
 
 import json
@@ -13,8 +15,9 @@ import tempfile
 from datetime import date, datetime
 from pathlib import Path
 
-PENDING = "pending"
-CREATED = "created"
+PENDING = "pending"  # create request sent, outcome unknown
+CREATED = "created"  # event exists but isn't posted yet (invisible on LinkedIn)
+POSTED = "posted"  # event published by the admin's post
 
 
 def default_path(env=os.environ) -> Path:
@@ -56,6 +59,13 @@ class Ledger:
         events = self._read()
         entry = events.get(day.isoformat(), {})
         entry.update({"status": CREATED, "event_id": event_id, "url": url, "created_at": now.isoformat()})
+        events[day.isoformat()] = entry
+        self._write(events)
+
+    def record_posted(self, day: date, post_urn: str, now: datetime) -> None:
+        events = self._read()
+        entry = events.get(day.isoformat(), {})
+        entry.update({"status": POSTED, "post_urn": post_urn, "posted_at": now.isoformat()})
         events[day.isoformat()] = entry
         self._write(events)
 

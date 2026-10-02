@@ -2,12 +2,14 @@
 
     bocc-event auth [--refresh]       one-time OAuth setup (or refresh, if LinkedIn granted one)
     bocc-event check                  prove the token and page access by listing upcoming events
-    bocc-event create [options]       dry-run by default; --live to create on LinkedIn
+    bocc-event create [options]       dry-run by default; --live to create and publish on LinkedIn
+    bocc-event post --date DATE       retry publishing an event that was created but not posted
     bocc-event forget --date DATE     clear a ledger entry after checking LinkedIn by hand
 
-`create` never posts the event. LinkedIn only lets an app post as a page with
-Community Management API access, so the admin opens the printed link and
-publishes it from LinkedIn.
+LinkedIn hides an event until it's posted, and only lets an app post as the
+page with Community Management API access. So `create --live` publishes the
+event with a public post from the admin's own profile (the page remains the
+organizer). The page can then reshare that post from LinkedIn.
 """
 
 import argparse
@@ -20,7 +22,7 @@ from . import auth, config, events
 from .client import ApiError, LinkedInClient, UncertainResult
 from .dates import DateError, resolve_event_date
 from .images import CoverImage, ImageError, load_cover_image
-from .ledger import CREATED, Ledger, default_path
+from .ledger import CREATED, POSTED, Ledger, default_path
 
 ASSET_PLACEHOLDER = "<urn:li:digitalmediaAsset from registerUpload>"
 OWNER_PLACEHOLDER = "<your urn:li:person from `bocc-event auth`>"
@@ -106,11 +108,13 @@ def _print_plan(spec: events.EventSpec, image: CoverImage | None) -> None:
         print("Cover:    none (LinkedIn default)")
 
 
-def _confirm(spec: events.EventSpec) -> bool:
+def _confirm(spec: events.EventSpec, no_post: bool) -> bool:
     if not sys.stdin.isatty():
         print("Refusing to create without a terminal to confirm; pass --yes for unattended runs.", file=sys.stderr)
         return False
-    answer = input(f"\nCreate '{spec.name}' on LinkedIn? Type 'yes' to continue: ")
+    print(f"\nThis creates '{spec.name}' and publishes it with a PUBLIC post from your profile:")
+    print(f"  \"{config.POST_COMMENTARY}\"" if not no_post else "  (skipped: --no-post)")
+    answer = input("Type 'yes' to continue: ")
     return answer.strip().lower() == "yes"
 
 
@@ -127,19 +131,23 @@ def cmd_create(args) -> int:
             _dump("POST /rest/assets?action=registerUpload", events.build_register_upload_payload(OWNER_PLACEHOLDER))
             print(f"\n--- POST <uploadUrl>: {len(image.data):,} bytes of {image.content_type} ---")
         _dump("POST /rest/events", events.build_event_payload(spec, ASSET_PLACEHOLDER if image else None))
-        print("\nDry run: nothing was sent. Re-run with --live to create the event.")
+        if not args.no_post:
+            _dump("POST /rest/posts", events.build_member_post_payload(OWNER_PLACEHOLDER, "<event id from create>"))
+        print("\nDry run: nothing was sent. Re-run with --live to create and publish the event.")
         return 0
 
     client, creds = _authed_client(now)
-    if image and not creds.person_urn:
-        raise auth.AuthError("Uploading a cover needs LINKEDIN_PERSON_URN. Re-run `bocc-event auth` or pass --no-image.")
+    if not creds.person_urn and (image or not args.no_post):
+        raise auth.AuthError("Uploading a cover and posting need LINKEDIN_PERSON_URN. Re-run `bocc-event auth`.")
 
     # Duplicate guard 1: our own record of attempts (works even for unposted events).
     ledger = Ledger(default_path())
     if entry := ledger.get(day):
         where = entry.get("url") or "unknown (the create request may not have finished)"
         print(f"Already {entry['status']} for {day}: {where}", file=sys.stderr)
-        if entry["status"] != CREATED:
+        if entry["status"] == CREATED:
+            print(f"It isn't published yet; run `bocc-event post --date {day}`.", file=sys.stderr)
+        elif entry["status"] != POSTED:
             print(f"Check the page's events on LinkedIn, then run `bocc-event forget --date {day}` to retry.", file=sys.stderr)
         return 1
 
@@ -150,7 +158,7 @@ def cmd_create(args) -> int:
             print(f"  {events.event_day(event)}  {events.event_name(event)}  {events.event_url(event)}", file=sys.stderr)
         return 1
 
-    if not args.yes and not _confirm(spec):
+    if not args.yes and not _confirm(spec, args.no_post):
         print("Cancelled; nothing was created.")
         return 1
 
@@ -182,10 +190,56 @@ def cmd_create(args) -> int:
 
     url = events.event_url(created)
     ledger.record_created(day, created["id"], url, now)
-    print(f"\nCreated (not yet published): {url}")
-    print("Next: open the link as a page admin and post it as the BOCC page, then reshare it from your profile")
-    print("with: Please join me at Buffalo Open Coffee Club")
+    print(f"\nCreated event {created['id']} (invisible until posted).")
+    if args.no_post:
+        print(f"Publish it with `bocc-event post --date {day}`.")
+        return 0
+    return _publish(client, creds, ledger, day, now)
+
+
+def _publish(client: LinkedInClient, creds: auth.Credentials, ledger: Ledger, day: date, now: datetime) -> int:
+    """Post the ledger's event for `day` from the admin's profile and record the result."""
+    entry = ledger.get(day)
+    try:
+        post_urn = events.post_event(client, creds.person_urn, entry["event_id"])
+    except ApiError as err:
+        # Ledger stays `created`: nothing was posted, so retrying is safe.
+        raise ApiError(err.status, f"{err}. The event exists but isn't published; fix and run `bocc-event post --date {day}`.") from None
+    except UncertainResult as err:
+        raise UncertainResult(f"{err}. Check your profile before running `bocc-event post --date {day}`.") from None
+    ledger.record_posted(day, post_urn, now)
+    print(f"Published: {entry['url']}")
+    print(f"Your post: {events.post_url(post_urn)}")
+    print("Next: reshare your post from the BOCC page on LinkedIn.")
     return 0
+
+
+# --- post ------------------------------------------------------------------------------
+
+
+def cmd_post(args) -> int:
+    day = date.fromisoformat(args.date)
+    ledger = Ledger(default_path())
+    entry = ledger.get(day)
+    if not entry or entry.get("status") not in (CREATED, POSTED):
+        print(f"No created event for {day} in the ledger; run `bocc-event create` first.", file=sys.stderr)
+        return 1
+    if entry["status"] == POSTED:
+        print(f"{day} is already published: {events.post_url(entry['post_urn'])}", file=sys.stderr)
+        return 1
+    now = _now()
+    client, creds = _authed_client(now)
+    if not creds.person_urn:
+        raise auth.AuthError("Posting needs LINKEDIN_PERSON_URN. Re-run `bocc-event auth`.")
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print("Refusing to post without a terminal to confirm; pass --yes.", file=sys.stderr)
+            return 1
+        print(f"This publishes {entry['url']} with a PUBLIC post from your profile:\n  \"{config.POST_COMMENTARY}\"")
+        if input("Type 'yes' to continue: ").strip().lower() != "yes":
+            print("Cancelled; nothing was posted.")
+            return 1
+    return _publish(client, creds, ledger, day, now)
 
 
 # --- forget ---------------------------------------------------------------------------
@@ -221,8 +275,14 @@ def build_parser() -> argparse.ArgumentParser:
     image.add_argument("--no-image", action="store_true", help="use LinkedIn's default cover")
     p_create.add_argument("--url-only", action="store_true", help="unlisted: reachable only by link (for tests)")
     p_create.add_argument("--live", action="store_true", help="actually call LinkedIn (default is a dry run)")
+    p_create.add_argument("--no-post", action="store_true", help="create only; publish later with `post`")
     p_create.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     p_create.set_defaults(func=cmd_create)
+
+    p_post = sub.add_parser("post", help="publish a created event with a post from your profile")
+    p_post.add_argument("--date", required=True, help="YYYY-MM-DD")
+    p_post.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    p_post.set_defaults(func=cmd_post)
 
     p_forget = sub.add_parser("forget", help="clear the local ledger entry for a date")
     p_forget.add_argument("--date", required=True, help="YYYY-MM-DD")

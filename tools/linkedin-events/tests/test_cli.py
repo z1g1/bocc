@@ -5,7 +5,7 @@ import pytest
 
 from bocc_events import auth, cli, events
 from bocc_events.client import LinkedInClient, Response
-from bocc_events.ledger import CREATED, PENDING, Ledger
+from bocc_events.ledger import CREATED, PENDING, POSTED, Ledger
 
 FIXED_NOW = datetime(2026, 10, 2, 16, 0, tzinfo=timezone.utc)  # Friday
 DAY = date(2026, 10, 6)
@@ -29,6 +29,7 @@ REGISTER_OK = resp(
 )
 NO_EVENTS = resp({"elements": []})
 UPLOAD_OK = Response(201, {}, b"")
+POST_OK = Response(201, {"x-restli-id": "urn:li:ugcPost:7511865991627468800"}, b"")
 CREATE_OK = resp({"id": 7249812613549670400, "vanityName": "buffaloopencoffeeclubfor10-67249812613549670400"}, status=201)
 
 
@@ -82,6 +83,7 @@ def test_dry_run_is_default_and_offline(env, transport, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Buffalo Open Coffee Club for 10/6" in out
     assert '"discoveryMode": "LISTED"' in out
+    assert "POST /rest/posts" in out and "Please join me at Buffalo Open Coffee Club" in out
     assert "Dry run: nothing was sent" in out
     assert t.calls == []
 
@@ -92,13 +94,55 @@ def test_dry_run_rejects_non_tuesday(env, capsys):
 
 
 def test_live_create_full_flow(env, transport, capsys):
-    t = transport(NO_EVENTS, REGISTER_OK, UPLOAD_OK, CREATE_OK)
+    t = transport(NO_EVENTS, REGISTER_OK, UPLOAD_OK, CREATE_OK, POST_OK)
     assert cli.main(["create", "--live", "--yes"]) == 0
-    assert [c[0] for c in t.calls] == ["GET", "POST", "POST", "POST"]
+    assert [c[0] for c in t.calls] == ["GET", "POST", "POST", "POST", "POST"]
     assert t.calls[3][1].endswith("/rest/events")
+    assert t.calls[4][1].endswith("/rest/posts")
     entry = ledger(env).get(DAY)
-    assert entry["status"] == CREATED and entry["event_id"] == "7249812613549670400"
-    assert "linkedin.com/events/buffaloopencoffeeclubfor10-67249812613549670400/" in capsys.readouterr().out
+    assert entry["status"] == POSTED and entry["event_id"] == "7249812613549670400"
+    assert entry["post_urn"] == "urn:li:ugcPost:7511865991627468800"
+    out = capsys.readouterr().out
+    assert "linkedin.com/events/buffaloopencoffeeclubfor10-67249812613549670400/" in out
+    assert "feed/update/urn:li:ugcPost:7511865991627468800/" in out
+
+
+def test_no_post_stops_after_create(env, transport, capsys):
+    t = transport(NO_EVENTS, CREATE_OK)
+    assert cli.main(["create", "--live", "--yes", "--no-image", "--no-post"]) == 0
+    assert len(t.calls) == 2
+    assert ledger(env).get(DAY)["status"] == CREATED
+    assert "bocc-event post --date 2026-10-06" in capsys.readouterr().out
+
+
+def test_failed_post_leaves_created_for_retry(env, transport, capsys):
+    transport(NO_EVENTS, CREATE_OK, resp({"message": "denied"}, status=403))
+    assert cli.main(["create", "--live", "--yes", "--no-image"]) == 1
+    assert ledger(env).get(DAY)["status"] == CREATED
+    assert "bocc-event post --date 2026-10-06" in capsys.readouterr().err
+
+
+def test_post_command_publishes_created_event(env, transport, capsys):
+    ledger(env).record_created(DAY, "123", events.event_url({"id": "123"}), FIXED_NOW)
+    t = transport(POST_OK)
+    assert cli.main(["post", "--date", "2026-10-06", "--yes"]) == 0
+    assert t.calls == [("POST", "https://api.linkedin.com/rest/posts")]
+    assert ledger(env).get(DAY)["status"] == POSTED
+
+
+def test_post_command_never_posts_twice(env, transport, capsys):
+    ledger(env).record_created(DAY, "123", events.event_url({"id": "123"}), FIXED_NOW)
+    ledger(env).record_posted(DAY, "urn:li:ugcPost:1", FIXED_NOW)
+    t = transport()
+    assert cli.main(["post", "--date", "2026-10-06", "--yes"]) == 1
+    assert t.calls == []
+    assert "already published" in capsys.readouterr().err
+
+
+def test_post_command_requires_created_event(env, transport, capsys):
+    t = transport()
+    assert cli.main(["post", "--date", "2026-10-06", "--yes"]) == 1
+    assert t.calls == []
 
 
 def test_live_create_is_blocked_by_ledger(env, transport, capsys):
@@ -120,7 +164,7 @@ def test_live_create_is_blocked_by_existing_linkedin_event(env, transport, capsy
 
 def test_rejected_create_clears_pending(env, transport):
     transport(NO_EVENTS, resp({"message": "bad"}, status=422))
-    assert cli.main(["create", "--live", "--yes", "--no-image"]) == 1
+    assert cli.main(["create", "--live", "--yes", "--no-image", "--no-post"]) == 1
     assert ledger(env).get(DAY) is None
 
 

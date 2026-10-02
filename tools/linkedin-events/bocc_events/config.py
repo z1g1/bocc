@@ -50,6 +50,9 @@ DESCRIPTION_TEMPLATE = (
     "running businesses in the 716."
 )
 
+# Commentary on the admin's personal post that publishes the event.
+POST_COMMENTARY = "Please join me at Buffalo Open Coffee Club"
+
 # Cover image used when --image isn't given. It lives in the tool's own
 # directory (tools/linkedin-events/, one level above this package) so the CLI
 # doesn't depend on the website's asset layout.

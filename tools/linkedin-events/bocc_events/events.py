@@ -4,9 +4,12 @@ API reference: https://learn.microsoft.com/en-us/linkedin/marketing/event-manage
 Notes from the docs that shape this module:
 - startsAt/endsAt are UTC epoch ms; there's no timezone field.
 - The organizer can only be set at creation.
-- An event isn't public until someone posts it. Posting as the page needs
-  w_organization_social (Community Management API), which we don't have.
-  The admin publishes it from LinkedIn's UI instead.
+- An event isn't visible to anyone, admins included, until it's posted.
+  Posting as the page needs w_organization_social (Community Management API),
+  which we don't have. A post by the admin personally (w_member_social) does
+  publish it, and the page stays the organizer (confirmed 2026-10-02), so
+  that's how we publish. LinkedIn rejects hidden (feedDistribution NONE)
+  member posts as sponsored content, so the post is always a real feed post.
 - Until it's posted, the event can't be fetched, updated or deleted through
   the API, and may not show up in eventsByOrganizer. The local ledger
   (ledger.py) is therefore the primary duplicate guard and this listing check
@@ -76,6 +79,19 @@ def build_event_payload(spec: EventSpec, background_asset: str | None) -> dict:
     return payload
 
 
+def build_member_post_payload(author_urn: str, event_id: str, commentary: str = config.POST_COMMENTARY) -> dict:
+    """POST /rest/posts body: a public feed post by the admin that publishes the event."""
+    return {
+        "author": author_urn,
+        "commentary": commentary,
+        "visibility": "PUBLIC",
+        "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
+        "content": {"reference": {"id": f"urn:li:event:{event_id}"}},
+        "lifecycleState": "PUBLISHED",
+        "isReshareDisabledByAuthor": False,
+    }
+
+
 def build_register_upload_payload(owner_urn: str) -> dict:
     """POST /rest/assets?action=registerUpload body for an event background image."""
     return {
@@ -133,6 +149,10 @@ def find_duplicates(events: list[dict], spec: EventSpec) -> list[dict]:
     return [e for e in events if event_name(e).casefold() == want or event_day(e) == spec.day]
 
 
+def post_url(post_urn: str) -> str:
+    return f"https://www.linkedin.com/feed/update/{post_urn}/"
+
+
 def event_url(event: dict) -> str:
     """Public event link. LinkedIn routes events by vanityName (slug + id); fall back to the id."""
     slug = str(event.get("vanityName") or event.get("id") or "")
@@ -164,3 +184,12 @@ def create_event(client: LinkedInClient, payload: dict) -> dict:
         # A 2xx means the event probably exists, so this is "maybe created", not a failure.
         raise UncertainResult("LinkedIn accepted the event but returned no numeric id; check the page's events in LinkedIn")
     return {"id": event_id, "vanityName": body.get("vanityName")}
+
+
+def post_event(client: LinkedInClient, author_urn: str, event_id: str) -> str:
+    """Publish the event with a post by `author_urn`; return the post URN. Never retried."""
+    resp = client.post_json("/rest/posts", build_member_post_payload(author_urn, event_id))
+    post_urn = resp.headers.get("x-restli-id", "")
+    if not post_urn.startswith(("urn:li:ugcPost:", "urn:li:share:")) or not post_urn.split(":")[-1].isdigit():
+        raise UncertainResult("LinkedIn accepted the post but returned no post id; check your profile's activity")
+    return post_urn

@@ -5,7 +5,7 @@ import pytest
 
 from bocc_events import config, events
 from bocc_events.client import ApiError, LinkedInClient, Response, UncertainResult
-from bocc_events.ledger import CREATED, PENDING, Ledger
+from bocc_events.ledger import CREATED, PENDING, POSTED, Ledger
 
 DAY = date(2026, 10, 6)
 
@@ -188,3 +188,34 @@ def test_event_url_prefers_vanity_name():
     assert events.event_url({"id": 7509297807225167873, "vanityName": vanity}) == f"https://www.linkedin.com/events/{vanity}/"
     assert events.event_url({"id": 5}) == "https://www.linkedin.com/events/5/"
     assert events.event_url({"id": 5, "vanityName": "../evil"}) == "https://www.linkedin.com/events/5/"
+
+
+def test_member_post_payload_publishes_event_publicly():
+    body = events.build_member_post_payload("urn:li:person:me", "123")
+    assert body["author"] == "urn:li:person:me"
+    assert body["content"] == {"reference": {"id": "urn:li:event:123"}}
+    assert body["commentary"] == config.POST_COMMENTARY
+    assert body["visibility"] == "PUBLIC" and body["lifecycleState"] == "PUBLISHED"
+    assert body["distribution"]["feedDistribution"] == "MAIN_FEED"
+
+
+def test_post_event_returns_post_urn():
+    client, transport = client_with(Response(201, {"x-restli-id": "urn:li:ugcPost:42"}, b""))
+    assert events.post_event(client, "urn:li:person:me", "123") == "urn:li:ugcPost:42"
+    assert json.loads(transport.calls[0]["body"])["content"]["reference"]["id"] == "urn:li:event:123"
+
+
+@pytest.mark.parametrize("header", ["", "urn:li:ugcPost:abc", "https://evil.example"])
+def test_post_event_without_valid_urn_is_uncertain(header):
+    client, _ = client_with(Response(201, {"x-restli-id": header}, b""))
+    with pytest.raises(UncertainResult):
+        events.post_event(client, "urn:li:person:me", "123")
+
+
+def test_ledger_records_post(tmp_path):
+    ledger = Ledger(tmp_path / "ledger.json")
+    now = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    ledger.record_created(DAY, "123", "url", now)
+    ledger.record_posted(DAY, "urn:li:ugcPost:1", now)
+    entry = ledger.get(DAY)
+    assert (entry["status"], entry["event_id"], entry["post_urn"]) == (POSTED, "123", "urn:li:ugcPost:1")

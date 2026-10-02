@@ -19,15 +19,22 @@ One app at https://www.linkedin.com/developers/apps, associated with the BOCC pa
 | Product | Access | Why |
 |---|---|---|
 | Event Management API | Self-serve, on request | `r_events`, `rw_events`: list and create the page's events |
-| Share on LinkedIn | Self-serve | `w_member_social`: required by the Assets API to upload the event cover image. **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 over a no-cover workflow; it also enables automating the personal reshare later |
+| Share on LinkedIn | Self-serve | `w_member_social`: (1) the Assets API cover upload; (2) the public post from the admin's profile that publishes each event (the page stays organizer). **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 |
 | Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the cover-image upload owner. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
 
 **Cover images:** the Assets API (`/rest/assets?action=registerUpload`) requires `w_member_social`,
 `w_organization_social` or `rw_ads`. Event Management's `rw_events` alone returns 403
 (`partnerApiAssets.ACTION-registerUpload`), confirmed 2026-10-02. That's why Share on LinkedIn is requested.
 
+**Publishing:** LinkedIn hides an event until it's posted. Without `w_organization_social`
+the tool can't post as the page, so it publishes with a post from the admin's own profile.
+Verified 2026-10-02 with the 10/13 event. Hidden member posts (`feedDistribution: NONE`) are
+rejected as sponsored content, and DRAFT posts can't be created through the API. The page
+reshares the admin's post manually.
+
 **Not requested:** Community Management API (`w_organization_social`) and Advertising API.
-Without them the tool **cannot post as the page**.
+Without them the tool **cannot post as the page**. Community Management would remove the
+manual reshare but is vetted and needs a dedicated app.
 The admin publishes the created event from LinkedIn's UI, and that is the human approval step.
 Community Management is vetted, limited to registered legal organizations, and must be
 requested on a new app with no other products. Revisit it only if the one-click publish
