@@ -19,7 +19,7 @@ One app at https://www.linkedin.com/developers/apps, associated with the BOCC pa
 | Product | Access | Why |
 |---|---|---|
 | Event Management API | Self-serve, on request | `r_events`, `rw_events`: list and create the page's events |
-| Sign In with LinkedIn using OpenID Connect | Self-serve | `openid` only, to read the admin's member ID, which is the cover-image upload owner |
+| Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the cover-image upload owner. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
 
 **Not requested:** Community Management API (`w_organization_social`), Share on LinkedIn
 (`w_member_social`), Advertising API. Without them the tool **cannot post or reshare**.
@@ -32,7 +32,7 @@ Auth tab: add redirect URL `http://localhost:8765/callback` (override with `LINK
 
 ## OAuth scopes
 
-`r_events rw_events openid`. Nothing else. The authorizing member must be
+`r_events rw_events openid profile`. Nothing else. The authorizing member must be
 **ADMINISTRATOR** or **CONTENT_ADMINISTRATOR** of the BOCC showcase page itself
 (`urn:li:organization:89993057`), not only of a parent company page.
 

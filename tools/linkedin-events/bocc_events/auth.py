@@ -38,9 +38,11 @@ USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 
 # Minimum scopes:
 # - r_events / rw_events (Event Management API): list and create events.
-# - openid (Sign In with LinkedIn using OpenID Connect): only to learn the
-#   admin's member ID, which registerUpload needs as the cover image owner.
-SCOPES = ("r_events", "rw_events", "openid")
+# - openid + profile (Sign In with LinkedIn using OpenID Connect): only to learn
+#   the admin's member ID, which registerUpload needs as the cover image owner.
+#   LinkedIn rejects openid alone ("openid_insufficient_scope_error"); profile
+#   (name/photo) is the less sensitive companion, versus email.
+SCOPES = ("r_events", "rw_events", "openid", "profile")
 DEFAULT_REDIRECT_URI = "http://localhost:8765/callback"
 EXPIRY_WARNING = timedelta(days=7)
 
