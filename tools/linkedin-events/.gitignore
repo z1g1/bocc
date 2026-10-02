@@ -1,0 +1,14 @@
+# Python build/runtime artifacts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+
+# Secrets and local state never belong in git. The tool writes tokens and its
+# idempotency ledger outside the repo, but guard against copies landing here.
+*.env
+.env*
+token*
+ledger*.json
