@@ -1,0 +1,219 @@
+import json
+from datetime import date, datetime, timezone
+
+import pytest
+
+from bocc_events import config, events
+from bocc_events.client import ApiError, LinkedInClient, Response, UncertainResult
+from bocc_events.ledger import CREATED, PENDING, POSTED, Ledger
+
+DAY = date(2026, 10, 6)
+
+
+class Transport:
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def __call__(self, method, url, headers, body, timeout):
+        self.calls.append({"method": method, "url": url, "headers": headers, "body": body})
+        return self.responses.pop(0)
+
+
+def client_with(*responses):
+    transport = Transport(*responses)
+    return LinkedInClient("tok", transport=transport, sleep=lambda s: None), transport
+
+
+def resp(payload, status=200, headers=None):
+    return Response(status, headers or {}, json.dumps(payload).encode())
+
+
+def li_event(name, starts_at_ms, event_id=1):
+    return {"id": event_id, "name": {"localized": {"en_US": name}}, "startsAt": starts_at_ms}
+
+
+# --- payloads ----------------------------------------------------------------------
+
+
+def test_build_spec_matches_weekly_format():
+    spec = events.build_spec(DAY)
+    assert spec.name == "Buffalo Open Coffee Club for 10/6"
+    assert spec.description.startswith("Join us on 10/6 for Buffalo Open Coffee Club,")
+    assert spec.ends_at_ms - spec.starts_at_ms == 90 * 60 * 1000
+    assert spec.discovery_mode == "LISTED"
+
+
+def test_build_spec_rejects_unknown_discovery_mode():
+    with pytest.raises(ValueError):
+        events.build_spec(DAY, "PRIVATE")
+
+
+def test_event_payload_shape():
+    spec = events.build_spec(DAY, events.URL_ONLY)
+    payload = events.build_event_payload(spec, "urn:li:digitalmediaAsset:ABC")
+    assert payload == {
+        "organizer": config.ORGANIZER_URN,
+        "name": {"localized": {"en_US": "Buffalo Open Coffee Club for 10/6"}},
+        "description": {"localized": {"en_US": {"rawText": spec.description}}},
+        "startsAt": 1791286200000,
+        "type": {
+            "inPerson": {
+                "endsAt": 1791291600000,
+                "url": config.EXTERNAL_URL,
+                "address": {
+                    "line1": "1 Seneca St",
+                    "city": "Buffalo",
+                    "geographicArea": "New York",
+                    "postalCode": "14203",
+                    "country": "US",
+                },
+                "venueDetails": {"localized": {"en_US": {"rawText": config.VENUE_DETAILS}}},
+            }
+        },
+        "discoveryMode": "URL_ONLY",
+        "backgroundImage": "urn:li:digitalmediaAsset:ABC",
+    }
+
+
+def test_event_payload_omits_missing_image():
+    assert "backgroundImage" not in events.build_event_payload(events.build_spec(DAY), None)
+
+
+def test_image_upload_payload():
+    assert events.build_image_upload_payload("urn:li:person:me") == {"initializeUploadRequest": {"owner": "urn:li:person:me"}}
+
+
+# --- listing and duplicates ----------------------------------------------------------
+
+
+def test_list_upcoming_events_query():
+    client, transport = client_with(resp({"elements": [li_event("x", 1)]}))
+    assert len(events.list_upcoming_events(client)) == 1
+    url = transport.calls[0]["url"]
+    assert "q=eventsByOrganizer" in url
+    assert "organizer=urn%3Ali%3Aorganization%3A" in url
+    assert "timeBasedFilter=(lifeCycleState:UPCOMING)" in url
+
+
+def test_list_upcoming_events_pages():
+    full = {"elements": [li_event("x", 1)] * events.PAGE_SIZE}
+    client, transport = client_with(resp(full), resp({"elements": [li_event("y", 2)]}))
+    assert len(events.list_upcoming_events(client)) == events.PAGE_SIZE + 1
+    assert "start=50" in transport.calls[1]["url"]
+
+
+def test_list_upcoming_events_page_cap():
+    full = {"elements": [li_event("x", 1)] * events.PAGE_SIZE}
+    client, _ = client_with(*[resp(full)] * events.MAX_PAGES)
+    with pytest.raises(ApiError, match="refusing"):
+        events.list_upcoming_events(client)
+
+
+def test_find_duplicates_by_name_or_day():
+    spec = events.build_spec(DAY)
+    same_name = li_event("buffalo open coffee club for 10/6", 0, 1)
+    same_day = li_event("Something else", spec.starts_at_ms + 3600_000, 2)
+    other = li_event("Buffalo Open Coffee Club for 10/13", events.build_spec(date(2026, 10, 13)).starts_at_ms, 3)
+    assert [e["id"] for e in events.find_duplicates([same_name, same_day, other], spec)] == [1, 2]
+
+
+def test_event_day_uses_eastern_time():
+    # 2026-10-07 01:00 UTC is still the evening of 10/6 in Buffalo.
+    late = int(datetime(2026, 10, 7, 1, 0, tzinfo=timezone.utc).timestamp() * 1000)
+    assert events.event_day(li_event("x", late)) == DAY
+
+
+# --- writes ---------------------------------------------------------------------------
+
+
+def test_image_upload_returns_asset_urn_for_image():
+    body = {"value": {"uploadUrl": "https://www.linkedin.com/dms-uploads/up", "image": "urn:li:image:D5610AQH"}}
+    client, transport = client_with(resp(body))
+    assert events.initialize_image_upload(client, "urn:li:person:me") == (
+        "https://www.linkedin.com/dms-uploads/up",
+        "urn:li:digitalmediaAsset:D5610AQH",
+    )
+    assert transport.calls[0]["url"].endswith("/rest/images?action=initializeUpload")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [{}, {"uploadUrl": "https://www.linkedin.com/up"}, {"uploadUrl": "https://www.linkedin.com/up", "image": "urn:li:image:a/b"}],
+)
+def test_image_upload_rejects_incomplete_response(value):
+    client, _ = client_with(resp({"value": value}))
+    with pytest.raises(ApiError):
+        events.initialize_image_upload(client, "urn:li:person:me")
+
+
+def test_create_event_returns_id_beyond_float_precision():
+    client, transport = client_with(resp({"id": 7249812613549670400, "vanityName": "x"}, status=201))
+    assert events.create_event(client, {}) == {"id": "7249812613549670400", "vanityName": "x"}
+    assert transport.calls[0]["headers"]["X-RestLi-Method"] == "create"
+
+
+def test_create_event_falls_back_to_restli_header():
+    client, _ = client_with(Response(201, {"x-restli-id": "123"}, b""))
+    assert events.create_event(client, {})["id"] == "123"
+
+
+def test_create_event_without_id_says_check_linkedin():
+    client, _ = client_with(resp({}, status=201))
+    with pytest.raises(UncertainResult, match="check the page"):
+        events.create_event(client, {})
+
+
+# --- ledger ---------------------------------------------------------------------------
+
+
+def test_ledger_lifecycle(tmp_path):
+    ledger = Ledger(tmp_path / "state" / "ledger.json")
+    now = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    assert ledger.get(DAY) is None
+    ledger.record_pending(DAY, "name", now)
+    assert ledger.get(DAY)["status"] == PENDING
+    ledger.record_created(DAY, "123", events.event_url({"id": "123"}), now)
+    entry = ledger.get(DAY)
+    assert (entry["status"], entry["event_id"], entry["name"]) == (CREATED, "123", "name")
+    assert ledger.path.stat().st_mode & 0o777 == 0o600
+    assert ledger.forget(DAY) and ledger.get(DAY) is None
+    assert not ledger.forget(DAY)
+
+
+def test_event_url_prefers_vanity_name():
+    vanity = "buffaloopencoffeeclubfor10-67509297807225167873"
+    assert events.event_url({"id": 7509297807225167873, "vanityName": vanity}) == f"https://www.linkedin.com/events/{vanity}/"
+    assert events.event_url({"id": 5}) == "https://www.linkedin.com/events/5/"
+    assert events.event_url({"id": 5, "vanityName": "../evil"}) == "https://www.linkedin.com/events/5/"
+
+
+def test_member_post_payload_publishes_event_publicly():
+    body = events.build_member_post_payload("urn:li:person:me", "123")
+    assert body["author"] == "urn:li:person:me"
+    assert body["content"] == {"reference": {"id": "urn:li:event:123"}}
+    assert body["commentary"] == config.POST_COMMENTARY
+    assert body["visibility"] == "PUBLIC" and body["lifecycleState"] == "PUBLISHED"
+    assert body["distribution"]["feedDistribution"] == "MAIN_FEED"
+
+
+def test_post_event_returns_post_urn():
+    client, transport = client_with(Response(201, {"x-restli-id": "urn:li:ugcPost:42"}, b""))
+    assert events.post_event(client, "urn:li:person:me", "123") == "urn:li:ugcPost:42"
+    assert json.loads(transport.calls[0]["body"])["content"]["reference"]["id"] == "urn:li:event:123"
+
+
+@pytest.mark.parametrize("header", ["", "urn:li:ugcPost:abc", "https://evil.example"])
+def test_post_event_without_valid_urn_is_uncertain(header):
+    client, _ = client_with(Response(201, {"x-restli-id": header}, b""))
+    with pytest.raises(UncertainResult):
+        events.post_event(client, "urn:li:person:me", "123")
+
+
+def test_ledger_records_post(tmp_path):
+    ledger = Ledger(tmp_path / "ledger.json")
+    now = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    ledger.record_created(DAY, "123", "url", now)
+    ledger.record_posted(DAY, "urn:li:ugcPost:1", now)
+    entry = ledger.get(DAY)
+    assert (entry["status"], entry["event_id"], entry["post_urn"]) == (POSTED, "123", "urn:li:ugcPost:1")

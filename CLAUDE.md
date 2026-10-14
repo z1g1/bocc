@@ -17,6 +17,8 @@ Monorepo for Buffalo Open Coffee Club (BOCC) — a weekly Tuesday morning networ
 bocc/
 ├── website/          Jekyll static site (Netlify Site #1)
 ├── backend/          Netlify Functions API (Netlify Site #2)
+├── tools/
+│   └── linkedin-events/  `bocc-event` Python CLI: creates the weekly LinkedIn event (not deployed; see its README)
 └── docs/             All documentation
     ├── onboarding.md
     ├── architecture.md
