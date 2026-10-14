@@ -92,18 +92,14 @@ def build_member_post_payload(author_urn: str, event_id: str, commentary: str = 
     }
 
 
-def build_register_upload_payload(owner_urn: str) -> dict:
-    """POST /rest/assets?action=registerUpload body for an event background image."""
-    return {
-        "registerUploadRequest": {
-            "owner": owner_urn,
-            "recipes": ["urn:li:digitalmediaRecipe:event-background-image"],
-            "serviceRelationships": [
-                {"identifier": "urn:li:userGeneratedContent", "relationshipType": "OWNER"}
-            ],
-            "supportedUploadMechanism": ["SYNCHRONOUS_UPLOAD"],
-        }
-    }
+def build_image_upload_payload(owner_urn: str) -> dict:
+    """POST /rest/images?action=initializeUpload body for the cover image.
+
+    The Events docs use /rest/assets?action=registerUpload, but LinkedIn gates that
+    (partnerApiAssets) to partner apps: it 403s for us even with w_member_social
+    (confirmed 2026-10-14). The Images API accepts w_member_social.
+    """
+    return {"initializeUploadRequest": {"owner": owner_urn}}
 
 
 # --- Reading -----------------------------------------------------------------
@@ -164,15 +160,23 @@ def event_url(event: dict) -> str:
 # --- Writing -------------------------------------------------------------------
 
 
-def register_upload(client: LinkedInClient, owner_urn: str) -> tuple[str, str]:
-    """Return (upload_url, asset_urn) for a new event background image."""
-    resp = client.post_json("/rest/assets", build_register_upload_payload(owner_urn), query="action=registerUpload")
+IMAGE_URN_PREFIX = "urn:li:image:"
+ASSET_URN_PREFIX = "urn:li:digitalmediaAsset:"
+
+
+def initialize_image_upload(client: LinkedInClient, owner_urn: str) -> tuple[str, str]:
+    """Return (upload_url, asset_urn) for a new cover image.
+
+    backgroundImage takes a digitalmediaAsset URN; an image URN shares its id with
+    the underlying digital media asset, so only the prefix changes.
+    """
+    resp = client.post_json("/rest/images", build_image_upload_payload(owner_urn), query="action=initializeUpload")
     value = resp.json().get("value", {})
-    mechanism = value.get("uploadMechanism", {}).get("com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest", {})
-    upload_url, asset = mechanism.get("uploadUrl"), value.get("asset", "")
-    if not upload_url or not asset.startswith("urn:li:digitalmediaAsset:"):
-        raise ApiError(resp.status, "registerUpload response was missing uploadUrl or asset")
-    return upload_url, asset
+    upload_url, image = value.get("uploadUrl"), value.get("image", "")
+    image_id = image.removeprefix(IMAGE_URN_PREFIX)
+    if not upload_url or not image.startswith(IMAGE_URN_PREFIX) or not image_id or not all(c.isalnum() or c in "-_" for c in image_id):
+        raise ApiError(resp.status, "initializeUpload response was missing uploadUrl or image")
+    return upload_url, ASSET_URN_PREFIX + image_id
 
 
 def create_event(client: LinkedInClient, payload: dict) -> dict:

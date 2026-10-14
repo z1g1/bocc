@@ -19,12 +19,16 @@ One app at https://www.linkedin.com/developers/apps, associated with the BOCC pa
 | Product | Access | Why |
 |---|---|---|
 | Event Management API | Self-serve, on request | `r_events`, `rw_events`: list and create the page's events |
-| Share on LinkedIn | Self-serve | `w_member_social`: (1) the Assets API cover upload; (2) the public post from the admin's profile that publishes each event (the page stays organizer). **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 |
+| Share on LinkedIn | Self-serve | `w_member_social`: (1) the Images API cover upload; (2) the public post from the admin's profile that publishes each event (the page stays organizer). **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 |
 | Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the cover-image upload owner. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
 
-**Cover images:** the Assets API (`/rest/assets?action=registerUpload`) requires `w_member_social`,
-`w_organization_social` or `rw_ads`. Event Management's `rw_events` alone returns 403
-(`partnerApiAssets.ACTION-registerUpload`), confirmed 2026-10-02. That's why Share on LinkedIn is requested.
+**Cover images:** the Events docs upload covers through the Assets API
+(`/rest/assets?action=registerUpload`), but LinkedIn restricts that endpoint to partner apps. It
+returns 403 (`partnerApiAssets.ACTION-registerUpload`) with `rw_events` alone (2026-10-02) and still
+with `w_member_social` (2026-10-14). The tool uses the Images API instead
+(`/rest/images?action=initializeUpload`, then a PUT to the returned URL), which accepts
+`w_member_social`, and passes the image's id to `backgroundImage` as `urn:li:digitalmediaAsset:{id}`.
+That's why Share on LinkedIn is requested.
 
 **Publishing:** LinkedIn hides an event until it's posted. Without `w_organization_social`
 the tool can't post as the page, so it publishes with a post from the admin's own profile.

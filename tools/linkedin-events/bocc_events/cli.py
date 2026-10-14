@@ -24,7 +24,7 @@ from .dates import DateError, resolve_event_date
 from .images import CoverImage, ImageError, load_cover_image
 from .ledger import CREATED, POSTED, Ledger, default_path
 
-ASSET_PLACEHOLDER = "<urn:li:digitalmediaAsset from registerUpload>"
+ASSET_PLACEHOLDER = "<urn:li:digitalmediaAsset from initializeUpload>"
 OWNER_PLACEHOLDER = "<your urn:li:person from `bocc-event auth`>"
 
 
@@ -128,8 +128,8 @@ def cmd_create(args) -> int:
     if not args.live:
         # Dry run: no credentials are read and nothing touches the network.
         if image:
-            _dump("POST /rest/assets?action=registerUpload", events.build_register_upload_payload(OWNER_PLACEHOLDER))
-            print(f"\n--- POST <uploadUrl>: {len(image.data):,} bytes of {image.content_type} ---")
+            _dump("POST /rest/images?action=initializeUpload", events.build_image_upload_payload(OWNER_PLACEHOLDER))
+            print(f"\n--- PUT <uploadUrl>: {len(image.data):,} bytes of {image.content_type} ---")
         _dump("POST /rest/events", events.build_event_payload(spec, ASSET_PLACEHOLDER if image else None))
         if not args.no_post:
             _dump("POST /rest/posts", events.build_member_post_payload(OWNER_PLACEHOLDER, "<event id from create>"))
@@ -165,17 +165,15 @@ def cmd_create(args) -> int:
     asset = None
     if image:
         try:
-            upload_url, asset = events.register_upload(client, creds.person_urn)
+            upload_url, asset = events.initialize_image_upload(client, creds.person_urn)
         except ApiError as err:
             if err.status != 403:
                 raise
-            # The Assets API needs w_member_social (Share on LinkedIn) or
-            # w_organization_social; Event Management's rw_events doesn't cover it.
+            # The Images API needs w_member_social (Share on LinkedIn); keep LinkedIn's own words.
             raise ApiError(
                 403,
-                "LinkedIn refused the cover upload (needs w_member_social). Check the app has the"
-                " 'Share on LinkedIn' product and re-run `bocc-event auth`, or use --no-image."
-                " Nothing was created.",
+                f"LinkedIn refused the cover upload ({err.message}). It needs w_member_social: check the app has the 'Share on LinkedIn'"
+                " product and re-run `bocc-event auth`, or use --no-image. Nothing was created.",
             ) from None
         client.upload(upload_url, image.data, image.content_type)
         print(f"Uploaded cover image ({asset}).")

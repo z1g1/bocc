@@ -80,10 +80,8 @@ def test_event_payload_omits_missing_image():
     assert "backgroundImage" not in events.build_event_payload(events.build_spec(DAY), None)
 
 
-def test_register_upload_payload():
-    body = events.build_register_upload_payload("urn:li:person:me")["registerUploadRequest"]
-    assert body["owner"] == "urn:li:person:me"
-    assert body["recipes"] == ["urn:li:digitalmediaRecipe:event-background-image"]
+def test_image_upload_payload():
+    assert events.build_image_upload_payload("urn:li:person:me") == {"initializeUploadRequest": {"owner": "urn:li:person:me"}}
 
 
 # --- listing and duplicates ----------------------------------------------------------
@@ -129,24 +127,24 @@ def test_event_day_uses_eastern_time():
 # --- writes ---------------------------------------------------------------------------
 
 
-def test_register_upload_parses_response():
-    body = {
-        "value": {
-            "asset": "urn:li:digitalmediaAsset:D55",
-            "uploadMechanism": {
-                "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest": {"uploadUrl": "https://api.linkedin.com/up"}
-            },
-        }
-    }
+def test_image_upload_returns_asset_urn_for_image():
+    body = {"value": {"uploadUrl": "https://www.linkedin.com/dms-uploads/up", "image": "urn:li:image:D5610AQH"}}
     client, transport = client_with(resp(body))
-    assert events.register_upload(client, "urn:li:person:me") == ("https://api.linkedin.com/up", "urn:li:digitalmediaAsset:D55")
-    assert transport.calls[0]["url"].endswith("/rest/assets?action=registerUpload")
+    assert events.initialize_image_upload(client, "urn:li:person:me") == (
+        "https://www.linkedin.com/dms-uploads/up",
+        "urn:li:digitalmediaAsset:D5610AQH",
+    )
+    assert transport.calls[0]["url"].endswith("/rest/images?action=initializeUpload")
 
 
-def test_register_upload_rejects_incomplete_response():
-    client, _ = client_with(resp({"value": {}}))
+@pytest.mark.parametrize(
+    "value",
+    [{}, {"uploadUrl": "https://www.linkedin.com/up"}, {"uploadUrl": "https://www.linkedin.com/up", "image": "urn:li:image:a/b"}],
+)
+def test_image_upload_rejects_incomplete_response(value):
+    client, _ = client_with(resp({"value": value}))
     with pytest.raises(ApiError):
-        events.register_upload(client, "urn:li:person:me")
+        events.initialize_image_upload(client, "urn:li:person:me")
 
 
 def test_create_event_returns_id_beyond_float_precision():

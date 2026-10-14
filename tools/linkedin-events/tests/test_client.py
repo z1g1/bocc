@@ -127,6 +127,7 @@ def test_upload_sends_bytes_with_content_type():
     client, transport = client_with(Response(201, {}, b""))
     client.upload("https://api.linkedin.com/mediaUpload/x", b"bytes", "image/jpeg")
     call = transport.calls[0]
+    assert call["method"] == "PUT"
     assert call["body"] == b"bytes" and call["headers"]["Content-Type"] == "image/jpeg"
 
 

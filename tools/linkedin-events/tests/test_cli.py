@@ -15,18 +15,7 @@ def resp(payload, status=200):
     return Response(status, {}, json.dumps(payload).encode())
 
 
-REGISTER_OK = resp(
-    {
-        "value": {
-            "asset": "urn:li:digitalmediaAsset:D55",
-            "uploadMechanism": {
-                "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest": {
-                    "uploadUrl": "https://api.linkedin.com/mediaUpload/x"
-                }
-            },
-        }
-    }
-)
+IMAGE_INIT_OK = resp({"value": {"uploadUrl": "https://www.linkedin.com/dms-uploads/x", "image": "urn:li:image:D55"}})
 NO_EVENTS = resp({"elements": []})
 UPLOAD_OK = Response(201, {}, b"")
 POST_OK = Response(201, {"x-restli-id": "urn:li:ugcPost:7511865991627468800"}, b"")
@@ -37,9 +26,11 @@ class Transport:
     def __init__(self, *responses):
         self.responses = list(responses)
         self.calls = []
+        self.bodies = []
 
     def __call__(self, method, url, headers, body, timeout):
         self.calls.append((method, url))
+        self.bodies.append(body)
         item = self.responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -94,10 +85,11 @@ def test_dry_run_rejects_non_tuesday(env, capsys):
 
 
 def test_live_create_full_flow(env, transport, capsys):
-    t = transport(NO_EVENTS, REGISTER_OK, UPLOAD_OK, CREATE_OK, POST_OK)
+    t = transport(NO_EVENTS, IMAGE_INIT_OK, UPLOAD_OK, CREATE_OK, POST_OK)
     assert cli.main(["create", "--live", "--yes"]) == 0
-    assert [c[0] for c in t.calls] == ["GET", "POST", "POST", "POST", "POST"]
+    assert [c[0] for c in t.calls] == ["GET", "POST", "PUT", "POST", "POST"]
     assert t.calls[3][1].endswith("/rest/events")
+    assert json.loads(t.bodies[3])["backgroundImage"] == "urn:li:digitalmediaAsset:D55"
     assert t.calls[4][1].endswith("/rest/posts")
     entry = ledger(env).get(DAY)
     assert entry["status"] == POSTED and entry["event_id"] == "7249812613549670400"
@@ -210,5 +202,5 @@ def test_cover_upload_403_explains_no_image(env, transport, capsys):
     assert cli.main(["create", "--live", "--yes"]) == 1
     err = capsys.readouterr().err
     assert "--no-image" in err and "Nothing was created" in err and "w_member_social" in err
-    assert len(t.calls) == 2  # duplicate check + registerUpload; no create attempted
+    assert len(t.calls) == 2  # duplicate check + initializeUpload; no create attempted
     assert ledger(env).get(DAY) is None

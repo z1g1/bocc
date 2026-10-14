@@ -39,10 +39,10 @@ USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 # Minimum scopes:
 # - r_events / rw_events (Event Management API): list and create events.
 # - openid + profile (Sign In with LinkedIn using OpenID Connect): only to learn
-#   the admin's member ID, which registerUpload needs as the cover image owner.
+#   the admin's member ID, which initializeUpload needs as the cover image owner.
 #   LinkedIn rejects openid alone ("openid_insufficient_scope_error"); profile
 #   (name/photo) is the less sensitive companion, versus email.
-# - w_member_social (Share on LinkedIn): required by the Assets API to upload
+# - w_member_social (Share on LinkedIn): required by the Images API to upload
 #   the cover image (rw_events alone gets a 403). It also lets this token post
 #   as the admin personally, so guard the token accordingly.
 SCOPES = ("r_events", "rw_events", "openid", "profile", "w_member_social")

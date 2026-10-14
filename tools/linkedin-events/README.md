@@ -87,6 +87,8 @@ The ledger is per machine, so a CI job needs to persist it (or run only on deman
 
 - `check` lists only *posted* events. API-created events don't appear until posted.
 - A cover upload needs `w_member_social`; `rw_events` alone gets a 403.
+- The Assets API (`/rest/assets`) 403s even with `w_member_social` (partner-only, 2026-10-14), so
+  covers go through the Images API (`/rest/images`), whose id is reused as the `digitalmediaAsset` URN.
 - A member post (`author: urn:li:person:...`) referencing `urn:li:event:{id}` publishes a page-organized event.
 - Hidden member posts (`feedDistribution: NONE`) are rejected as sponsored content, and
   the API can't create a DRAFT post, so every publish is a real feed post.

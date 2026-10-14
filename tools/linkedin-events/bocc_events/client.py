@@ -45,6 +45,7 @@ class ApiError(Exception):
 
     def __init__(self, status: int, message: str):
         self.status = status
+        self.message = message
         super().__init__(f"LinkedIn API error {status}: {message}")
 
 
@@ -171,13 +172,13 @@ class LinkedInClient:
         return resp
 
     def upload(self, upload_url: str, data: bytes, content_type: str) -> None:
-        """Upload raw bytes to a URL returned by registerUpload."""
+        """Upload raw bytes to a URL returned by initializeUpload (the Images API takes a PUT)."""
         if not is_linkedin_url(upload_url):
             # Never send the bearer token to a host we didn't expect.
-            raise ApiError(0, "refusing to upload: registerUpload returned a non-linkedin.com URL")
+            raise ApiError(0, "refusing to upload: initializeUpload returned a non-linkedin.com URL")
         try:
             resp = self._transport(
-                "POST", upload_url, self._headers({"Content-Type": content_type}), data, 120
+                "PUT", upload_url, self._headers({"Content-Type": content_type}), data, 120
             )
         except OSError as err:
             # Safe to rerun: an orphaned asset is harmless and nothing references it yet.
