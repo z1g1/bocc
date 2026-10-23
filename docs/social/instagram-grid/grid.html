@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BOCC Instagram 3x3 grid</title>
+<style>
+  /*
+    BOCC Instagram grid, 3 x 3 tiles of 1080px = 3240px square.
+    Palette and type come straight from the 716coffee.club stylesheet
+    (--ink, --cream, --gold, --honey, --ember etc.) so the feed matches the site.
+    Decorative elements (sunrise rays, bean doodles, the gold rule) deliberately
+    cross tile boundaries so the nine posts read as one picture on the profile.
+  */
+  @font-face{font-family:"Bricolage Grotesque";font-weight:600;src:url(src/bricolage-grotesque-latin-600-normal.woff2) format("woff2")}
+  @font-face{font-family:"Bricolage Grotesque";font-weight:700;src:url(src/bricolage-grotesque-latin-700-normal.woff2) format("woff2")}
+  @font-face{font-family:"Bricolage Grotesque";font-weight:800;src:url(src/bricolage-grotesque-latin-800-normal.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:400;src:url(src/hanken-grotesk-latin-400-normal.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:500;src:url(src/hanken-grotesk-latin-500-normal.woff2) format("woff2")}
+  @font-face{font-family:"Hanken Grotesk";font-weight:600;src:url(src/hanken-grotesk-latin-600-normal.woff2) format("woff2")}
+  @font-face{font-family:"Spline Sans Mono";font-weight:500;src:url(src/spline-sans-mono-latin-500-normal.woff2) format("woff2")}
+  @font-face{font-family:"Spline Sans Mono";font-weight:600;src:url(src/spline-sans-mono-latin-600-normal.woff2) format("woff2")}
+
+  :root{
+    --ink:#16120D; --espresso:#241C14; --coffee:#4A3A2C; --mocha:#6E5A46; --latte:#A28A6F;
+    --cream:#F2ECD6; --paper:#FAF5E8; --sand:#DBCBB0;
+    --gold:#F2BB63; --honey:#EBA24A; --amber:#E08A38; --ember:#C9612C; --rust:#B85428;
+    --sunrise:linear-gradient(90deg,var(--ember),var(--amber),var(--gold));
+    --display:"Bricolage Grotesque",sans-serif;
+    --body:"Hanken Grotesk",sans-serif;
+    --mono:"Spline Sans Mono",monospace;
+    --T:1080px;
+  }
+  *{box-sizing:border-box;margin:0}
+  html,body{width:3240px;height:3240px;background:var(--cream);overflow:hidden}
+  body{font-family:var(--body);color:var(--ink);position:relative}
+
+  /* ---- whole-grid background layers ---- */
+  .bg{position:absolute;inset:0;pointer-events:none}
+  /* sunrise rays radiating from the centre tile across the whole grid */
+  .bg--rays{background:repeating-conic-gradient(from 0deg at 50% 50%,
+            rgba(224,138,56,.07) 0deg 2.2deg, transparent 2.2deg 10deg)}
+  /* a soft warm glow behind the logo */
+  .bg--glow{background:radial-gradient(circle at 50% 50%, rgba(242,187,99,.55) 0, rgba(242,187,99,.18) 420px, transparent 900px)}
+
+  .grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,var(--T));grid-template-rows:repeat(3,var(--T))}
+  .tile{position:relative;padding:96px;overflow:hidden}
+  .tile--ink{background:var(--espresso);color:var(--cream)}
+  .tile--ink.sun::before{content:"";position:absolute;inset:0;
+     background:repeating-conic-gradient(from 0deg at 50% 118%, rgba(242,236,214,.06) 0deg 2deg, transparent 2deg 9deg)}
+  .tile>*{position:relative}
+
+  /* type */
+  .stamp{font-family:var(--mono);font-weight:600;font-size:30px;letter-spacing:.16em;text-transform:uppercase;color:var(--ember)}
+  .tile--ink .stamp{color:var(--gold)}
+  h1,h2,h3{font-family:var(--display);line-height:1.02;letter-spacing:-.025em}
+  .lead{font-size:40px;line-height:1.35;color:var(--coffee);max-width:26ch}
+  .tile--ink .lead{color:rgba(242,236,214,.82)}
+  .rule{height:10px;width:180px;background:var(--sunrise);border-radius:5px}
+  .badge{display:inline-flex;align-items:center;gap:18px;padding:16px 34px;border-radius:999px;border:2px solid rgba(242,236,214,.28);color:var(--gold)}
+  .badge .stamp{font-size:28px}
+  .pin{display:inline-flex;align-items:center;gap:18px;padding:16px 34px;border-radius:999px;border:2px solid var(--sand);background:var(--paper)}
+
+  /* photo shapes */
+  .arch{width:760px;height:860px;border-radius:380px 380px 48px 48px;background-size:cover;background-position:center;
+        box-shadow:0 30px 60px rgba(22,18,13,.18)}
+  .blob{width:820px;height:760px;border-radius:52% 48% 44% 56% / 48% 50% 50% 52%;background-size:cover;background-position:center;
+        box-shadow:0 30px 60px rgba(22,18,13,.18)}
+  .polaroid{background:var(--paper);padding:34px 34px 110px;box-shadow:0 34px 70px rgba(22,18,13,.22);width:720px;transform:rotate(-4deg)}
+  .polaroid .ph{width:652px;height:652px;background-size:cover;background-position:center}
+  .polaroid .cap{font-family:var(--mono);font-size:30px;letter-spacing:.14em;text-transform:uppercase;color:var(--coffee);text-align:center;margin-top:44px}
+
+  /* stat strip */
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:40px}
+  .stat{background:var(--paper);border:2px solid var(--sand);border-radius:36px;padding:56px 44px}
+  .stat b{display:block;font-family:var(--display);font-size:88px;white-space:nowrap;font-weight:800;letter-spacing:-.03em;line-height:1;color:var(--ink)}
+  .stat span{display:block;margin-top:18px;font-size:34px;line-height:1.3;color:var(--mocha)}
+
+  /* doodles: thin line-art that straddles tile edges */
+  svg.doodle{position:absolute;pointer-events:none;overflow:visible}
+  svg.doodle path, svg.doodle ellipse{fill:none;stroke:var(--ember);stroke-width:7;stroke-linecap:round;stroke-linejoin:round;opacity:.55}
+</style>
+</head>
+<body>
+<div class="bg bg--rays"></div>
+<div class="bg bg--glow"></div>
+
+<!-- coffee bean + steam doodles, placed in grid coordinates so they cross tiles -->
+<svg class="doodle" style="left:980px;top:880px;width:260px;height:300px" viewBox="0 0 260 300">
+  <ellipse cx="80" cy="90" rx="52" ry="78" transform="rotate(-28 80 90)"/>
+  <path d="M60 32 C 112 70, 48 118, 100 152"/>
+  <ellipse cx="190" cy="210" rx="52" ry="78" transform="rotate(22 190 210)"/>
+  <path d="M212 150 C 160 190, 226 240, 170 272"/>
+</svg>
+<svg class="doodle" style="left:2050px;top:1020px;width:220px;height:220px" viewBox="0 0 220 220">
+  <ellipse cx="110" cy="110" rx="52" ry="78" transform="rotate(35 110 110)"/>
+  <path d="M138 44 C 92 92, 150 128, 92 176"/>
+</svg>
+<svg class="doodle" style="left:1000px;top:2080px;width:240px;height:260px" viewBox="0 0 240 260">
+  <ellipse cx="120" cy="130" rx="52" ry="78" transform="rotate(-18 120 130)"/>
+  <path d="M100 70 C 150 108, 90 158, 140 190"/>
+</svg>
+<!-- steam curls over the top-right photo edge -->
+<svg class="doodle" style="left:1560px;top:60px;width:260px;height:300px" viewBox="0 0 260 300">
+  <path d="M40 280 C 10 230, 80 200, 50 150 C 20 100, 90 70, 60 20"/>
+  <path d="M130 290 C 100 240, 170 210, 140 160 C 110 110, 180 80, 150 30"/>
+  <path d="M220 280 C 190 230, 260 200, 230 150 C 200 100, 270 70, 240 20"/>
+</svg>
+<svg class="doodle" style="left:2300px;top:2060px;width:240px;height:280px" viewBox="0 0 240 280">
+  <path d="M40 260 C 10 210, 80 180, 50 130 C 20 80, 90 50, 60 0"/>
+  <path d="M130 270 C 100 220, 170 190, 140 140 C 110 90, 180 60, 150 10"/>
+</svg>
+
+<div class="grid">
+
+  <!-- 1. Headline (site hero title, sentence case per brand guide) -->
+  <section class="tile" style="display:flex;flex-direction:column;justify-content:space-between">
+    <div class="stamp">Buffalo Open Coffee Club</div>
+    <div>
+      <h1 style="font-size:132px;font-weight:800;max-width:11ch">Your first free entrepreneurial step in Buffalo.</h1>
+      <div class="rule" style="margin-top:52px"></div>
+    </div>
+    <p class="lead">A free, no-frills coffee meetup for the people building businesses in the 716.</p>
+  </section>
+
+  <!-- 2. Photo: arch -->
+  <section class="tile" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:56px">
+    <div class="arch" style="background-image:url(src/photo-01.jpg)"></div>
+    <div class="stamp" style="font-size:28px">Every Tuesday morning</div>
+  </section>
+
+  <!-- 3. When and where (dark) -->
+  <section class="tile tile--ink sun" style="display:flex;flex-direction:column;justify-content:space-between">
+    <span class="badge"><span class="stamp">How it works</span></span>
+    <div>
+      <h2 style="font-size:150px;font-weight:800;color:var(--cream)">Tuesdays<br><span style="color:var(--gold)">7:30-9 AM</span></h2>
+      <p class="lead" style="margin-top:44px">Seneca One Tower lobby. Grab a coffee, grab a name tag, say hi to a stranger.</p>
+    </div>
+    <div class="stamp">Free. Always.</div>
+  </section>
+
+  <!-- 4. Photo: sunlit lobby, blob -->
+  <section class="tile" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:52px">
+    <div class="blob" style="background-image:url(src/photo-04.jpg)"></div>
+    <span class="pin"><span class="stamp" style="font-size:26px">Seneca One lobby</span></span>
+  </section>
+
+  <!-- 5. Centre: logo + the site's schedule heading -->
+  <section class="tile" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:60px">
+    <img src="src/bocc-logo.png" alt="Buffalo Open Coffee Club" style="width:640px;filter:drop-shadow(0 30px 50px rgba(22,18,13,.25))">
+    <h2 style="font-size:92px;font-weight:800;max-width:12ch">No badges. No pitches. Just coffee.</h2>
+  </section>
+
+  <!-- 6. Quote from the hero carousel -->
+  <section class="tile" style="display:flex;flex-direction:column;justify-content:center">
+    <div style="font-family:var(--display);font-size:360px;font-weight:800;line-height:.6;color:var(--gold);margin-bottom:40px">&ldquo;</div>
+    <h2 style="font-size:124px;font-weight:700;max-width:12ch">Almost felt like a family reunion.</h2>
+    <div class="rule" style="margin:56px 0 40px"></div>
+    <div class="stamp" style="font-size:28px">Lena Levine, via LinkedIn</div>
+  </section>
+
+  <!-- 7. Stat strip -->
+  <section class="tile" style="display:flex;flex-direction:column;justify-content:space-between">
+    <div class="stamp">At a glance</div>
+    <div class="stats">
+      <div class="stat"><b>Free</b><span>always, for everyone</span></div>
+      <div class="stat"><b>Weekly</b><span>if BPS is open, we're there</span></div>
+      <div class="stat"><b>90 min</b><span>coffee + connection</span></div>
+      <div class="stat"><b>716</b><span>born in Buffalo</span></div>
+    </div>
+    <p class="lead" style="font-size:34px">Built by neighbors, for neighbors.</p>
+  </section>
+
+  <!-- 8. Photo: polaroid, Gives and Asks -->
+  <section class="tile" style="display:flex;align-items:center;justify-content:center">
+    <div class="polaroid">
+      <div class="ph" style="background-image:url(src/photo-03.jpg)"></div>
+      <div class="cap">Gives and Asks &middot; 8:15 AM</div>
+    </div>
+  </section>
+
+  <!-- 9. Sign-up close (dark), mirrors the site's closing section -->
+  <section class="tile tile--ink sun" style="display:flex;flex-direction:column;justify-content:space-between">
+    <span class="badge"><span class="stamp">Reserve a spot</span></span>
+    <div>
+      <h2 style="font-size:170px;font-weight:800;color:var(--cream)">See you<br>Tuesday.</h2>
+      <p class="lead" style="margin-top:44px">Grab a free ticket so we know to expect you. Walk-ins are always welcome, too.</p>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div class="stamp" style="font-size:40px;color:var(--gold)">716coffee.club</div>
+      <img src="src/bocc-mug-logo.png" alt="" style="height:120px;filter:invert(1);opacity:.9">
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
