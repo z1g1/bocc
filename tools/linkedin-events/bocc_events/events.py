@@ -40,9 +40,11 @@ class EventSpec:
     starts_at_ms: int
     ends_at_ms: int
     discovery_mode: str
+    venue_details: str = config.VENUE_DETAILS
+    commentary: str = config.POST_COMMENTARY
 
 
-def build_spec(day: date, discovery_mode: str = LISTED) -> EventSpec:
+def build_spec(day: date, discovery_mode: str = LISTED, alternate_location: bool = False) -> EventSpec:
     if discovery_mode not in DISCOVERY_MODES:
         raise ValueError(f"discovery mode must be one of {DISCOVERY_MODES}")
     start, end = event_window(day)
@@ -50,10 +52,12 @@ def build_spec(day: date, discovery_mode: str = LISTED) -> EventSpec:
     return EventSpec(
         day=day,
         name=config.NAME_TEMPLATE.format(md=md),
-        description=config.DESCRIPTION_TEMPLATE.format(md=md),
+        description=config.ALTERNATE_LOCATION_TEXT if alternate_location else config.DESCRIPTION_TEMPLATE.format(md=md),
         starts_at_ms=to_epoch_ms(start),
         ends_at_ms=to_epoch_ms(end),
         discovery_mode=discovery_mode,
+        venue_details=config.ALTERNATE_VENUE_DETAILS if alternate_location else config.VENUE_DETAILS,
+        commentary=config.ALTERNATE_LOCATION_TEXT if alternate_location else config.POST_COMMENTARY,
     )
 
 
@@ -69,7 +73,7 @@ def build_event_payload(spec: EventSpec, background_asset: str | None) -> dict:
                 "endsAt": spec.ends_at_ms,
                 "url": config.EXTERNAL_URL,
                 "address": dict(config.EVENT_ADDRESS),
-                "venueDetails": {"localized": {"en_US": {"rawText": config.VENUE_DETAILS}}},
+                "venueDetails": {"localized": {"en_US": {"rawText": spec.venue_details}}},
             }
         },
         "discoveryMode": spec.discovery_mode,
@@ -190,9 +194,9 @@ def create_event(client: LinkedInClient, payload: dict) -> dict:
     return {"id": event_id, "vanityName": body.get("vanityName")}
 
 
-def post_event(client: LinkedInClient, author_urn: str, event_id: str) -> str:
+def post_event(client: LinkedInClient, author_urn: str, event_id: str, commentary: str = config.POST_COMMENTARY) -> str:
     """Publish the event with a post by `author_urn`; return the post URN. Never retried."""
-    resp = client.post_json("/rest/posts", build_member_post_payload(author_urn, event_id))
+    resp = client.post_json("/rest/posts", build_member_post_payload(author_urn, event_id, commentary))
     post_urn = resp.headers.get("x-restli-id", "")
     if not post_urn.startswith(("urn:li:ugcPost:", "urn:li:share:")) or not post_urn.split(":")[-1].isdigit():
         raise UncertainResult("LinkedIn accepted the post but returned no post id; check your profile's activity")

@@ -50,9 +50,12 @@ class Ledger:
     def get(self, day: date) -> dict | None:
         return self._read().get(day.isoformat())
 
-    def record_pending(self, day: date, name: str, now: datetime) -> None:
+    def record_pending(self, day: date, name: str, now: datetime, commentary: str | None = None) -> None:
         events = self._read()
-        events[day.isoformat()] = {"status": PENDING, "name": name, "attempted_at": now.isoformat()}
+        entry = {"status": PENDING, "name": name, "attempted_at": now.isoformat()}
+        if commentary:
+            entry["commentary"] = commentary  # so `bocc-event post` publishes with the same text
+        events[day.isoformat()] = entry
         self._write(events)
 
     def record_created(self, day: date, event_id: str, url: str, now: datetime) -> None:

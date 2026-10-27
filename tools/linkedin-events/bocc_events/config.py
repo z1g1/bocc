@@ -53,6 +53,15 @@ DESCRIPTION_TEMPLATE = (
 # Commentary on the admin's personal post that publishes the event.
 POST_COMMENTARY = "Please join me at Buffalo Open Coffee Club"
 
+# Alternate location (`create --alternate-location`, off by default): same
+# building, but in the food hall instead of the lobby. This text replaces both
+# the event description and the post commentary for that week.
+ALTERNATE_LOCATION_TEXT = (
+    "Please join me at Buffalo Open Coffee Club. This week the event will be in the "
+    "Seneca One Food hall vs our normal lobby location"
+)
+ALTERNATE_VENUE_DETAILS = "This week BOCC is in the Seneca One Food hall, not the lobby"
+
 # Cover image used when --image isn't given. It lives in the tool's own
 # directory (tools/linkedin-events/, one level above this package) so the CLI
 # doesn't depend on the website's asset layout.

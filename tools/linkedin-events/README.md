@@ -50,6 +50,10 @@ Options: `--date YYYY-MM-DD` (must be a future Tuesday; defaults to next Tuesday
 `--no-image` (use LinkedIn's default cover), `--url-only` (unlisted),
 `--no-post` (create only, then publish later with `bocc-event post --date ...`),
 `--yes` (skip the prompt; required when there's no terminal).
+`--alternate-location` (off by default: for a week in the Seneca One Food hall instead of the
+lobby, the event description and your post both read "Please join me at Buffalo Open Coffee Club.
+This week the event will be in the Seneca One Food hall vs our normal lobby location", and the venue
+details say so too; a later `post --date` reuses that text).
 Without `--image` the tool uses `default-bocc-image.png` from this directory (replace that file to change the default). Images must be real PNG/JPEG files,
 at least 480x270 and no larger than 8 MiB. 16:9 is recommended.
 
