@@ -1,227 +1,176 @@
 # Plan: Replace the Circle.so integration with Zeffy
 
-Status: **Proposed** (2026-10-27). Nothing here is built yet.
+Status: **Proposed** (2026-10-27, revised the same day to a smaller scope). Nothing here is
+built yet.
 
 ## Goal
 
-1. BOCC attendees live in **Bootsector's Zeffy account**, held apart in a BOCC list.
-2. A one-time script imports the attendees already in Neon.
-3. A new attendee who checks in and ticks "send me updates" is added to Zeffy, gets a
-   welcome email, and lands on the BOCC email list.
-4. Every marketing email can be unsubscribed from (CAN-SPAM; CASL for Canadian attendees).
+1. BOCC's email audience lives in **Bootsector's Zeffy account** as a BOCC list.
+2. A one-time import moves the attendees already in Neon who opted in.
+3. A new attendee who checks in and wants updates gets onto that list.
+4. **Zeffy does the rest:** welcome email, list assignment, communication preferences,
+   newsletters and unsubscribes. Our code sends no email and keeps no mailing state.
 5. The Circle.so integration (invites, check-in counter, photo enforcement) is retired.
 
-## What the Zeffy API can and cannot do
+## The constraint that shapes the design
 
-Source: the OpenAPI 3.1 spec embedded in https://www.zeffy.com/api/docs (base URL
-`https://api.zeffy.com`, v1), plus Zeffy's help center (support.zeffy.com).
+Zeffy's automated emails start **only when someone submits a Zeffy sign-up form**:
 
-| Need | API? | Notes |
-|---|---|---|
-| Create / update a contact | **Yes** | `PUT /api/v1/contacts` upserts by email (201 created / 200 updated). Fields: `email`, `first_name`, `last_name`, `phone_number`, `address`. |
-| Find a contact by email | **Yes** | `GET /api/v1/contacts?email=` |
-| Put a contact on a list or tag | **No** | The API has no lists, tags or segments. `metadata` is "reserved for future" and custom fields are not writable. |
-| Send an email (welcome or other) | **No** | No email endpoint. The one exception: `POST /api/v1/payments` with `send_confirmation_email: true` sends a campaign's confirmation email (see below). |
-| Read or set subscribed / unsubscribed | **No** | Not in the contact schema. CSV import *can* set `Subscription Status`. |
-| Webhooks | Yes | `contact.created/updated/deleted`, `payment.*`, HMAC-SHA256 signed (`Zeffy-Signature`). Not needed for v1. |
-| Rate limits | | 100 req/min and 20 req/s **per organization**, shared with everything else Bootsector runs. |
+> "Automations currently work with sign-up forms only. Every contact who signs up through
+> the form is enrolled automatically…"
+> ([Set up automated emails](https://support.zeffy.com/set-up-automated-emails-for-a-newsletter-sign-up-form-b9tb3))
 
-Zeffy features that exist only in the dashboard:
+The public API ([api docs](https://www.zeffy.com/api/docs)) can create contacts, but it
+cannot put them on a list, enroll them in an automation, send email, or set subscription
+status. A contact our backend pushed in through the API would sit in Zeffy with no welcome
+email and no BOCC list.
 
-- **Lists.** *Manual* lists are snapshots; *automatic* lists re-evaluate filters
-  (Fundraising Campaign, Manual List, Email, Company, Location…). Tags became manual lists.
-- **CSV import.** Up to 5,000 rows per file (one page says 15,000). It can assign `Lists`
-  and set `Subscription Status`. Re-importing an email **overwrites** the existing fields.
-- **Email.** Every bulk email gets an unsubscribe link and footer automatically.
-  Unsubscribes are **account-wide**: they apply to the whole Bootsector organization, not
-  to one list. Receipts and confirmations ignore unsubscribes.
-- **Automation.** Zeffy's own FAQ says a welcome series triggered by joining a list
-  "isn't there yet" (its marketing bullets claim otherwise).
+So the attendee has to submit the Zeffy form themselves. **Our job is to put the form in
+front of them at the right moment**, right after a first check-in.
 
-### Consequences for the design
+This also means **no Zeffy API key is needed**. That removes the biggest risk in the first
+draft: Zeffy keys are created by the organization owner, have no scopes, and could read or
+delete all of Bootsector's donor and payment data.
 
-- The API alone cannot put someone on a BOCC list or send a welcome email.
-- **Proposed mechanism: a free BOCC ticketing campaign.** Bootsector creates a free
-  Zeffy ticketing campaign called "BOCC Community". For each newly opted-in attendee, the
-  backend calls `POST /api/v1/payments` with a $0 ticket on that campaign and
-  `send_confirmation_email: true`.
-  - Zeffy creates or finds the contact by email.
-  - Zeffy sends the campaign's confirmation email. Its custom message *is* the welcome.
-  - An **automatic list** "BOCC" filtered on *Fundraising Campaign = BOCC Community*
-    picks the contact up without any further call.
-  - Cost: one $0 "payment" per new subscriber appears in Bootsector's payment records
-    (`payment_method: other`, source `PublicApi`). Bootsector has to accept that.
-- **Fallback if Phase 0 rules this out:** upsert the contact with `PUT /contacts`, send
-  the welcome from a transactional email service with its own unsubscribe link, and add
-  the contact to a manual BOCC list in a weekly batch CSV import. This is worse because it
-  needs a second vendor, a second suppression list, and a manual weekly step.
+## How it works
 
-## Decisions needed before building
+```
+Check-in form (716coffee.club)
+  └─ POST /.netlify/functions/checkin  → Neon (unchanged; Circle call removed)
+  └─ Thank-you screen
+       └─ if first check-in AND "send me updates" ticked:
+            show the embedded Zeffy sign-up form (sponsor redirect waits)
+              └─ attendee submits → Zeffy:
+                   • adds contact to the "BOCC" list (+ preference lists)
+                   • runs the BOCC welcome automation
+                   • handles unsubscribe from then on
+```
 
-1. **Account-wide unsubscribe.** Someone who unsubscribes from a BOCC email is also
-   unsubscribed from all Bootsector bulk email, and a Bootsector unsubscriber won't get BOCC
-   mail. Is that acceptable? The only alternative is a separate Zeffy organization for
-   BOCC, which Zeffy ties to a registered nonprofit, so it is probably not an option.
-2. **Bootsector's own sends.** Bootsector staff must not email "all contacts" without
-   excluding the BOCC list, or BOCC attendees get mail they never agreed to. This needs an
-   agreement with Bootsector, not code.
-3. **API key scope.** The Zeffy key is created by the **organization owner** and has *no
-   scopes*. It can read every Bootsector donor and **delete payments and contacts**. That
-   breaks our least-privilege rule, and nothing on our side fixes it. Mitigations are
-   listed below, but someone should ask Zeffy support for a scoped key first. Rate this a
-   **medium** risk to accept with eyes open.
-4. **Circle community.** Does 716.social (Circle) shut down, or keep running without the
-   backend sync? This plan removes the backend integration either way. Whether the website
-   keeps linking to the community is the remaining question.
-5. **$0 payments.** Is Bootsector's bookkeeper OK with a $0 ticket record per new
-   subscriber?
+Existing attendees reach the same "BOCC" list through a one-time CSV import. An import does
+not trigger the automation, so they get no welcome email, which is what we want for people
+who already know BOCC.
 
 ## Phases
 
-### Phase 0: Spike in Zeffy (manual, ~1 hour, needs the Bootsector owner)
+### Phase 0: Set up in Zeffy (Bootsector owner or admin; no code)
 
-Use a test email throughout, and delete the test records afterwards.
+- [ ] **Contacts → Sign-up Forms → Create Form** "BOCC Updates". Keep first name, last
+      name and email.
+- [ ] Set the form's default list to a new manual list **"BOCC"**, so every submission
+      lands there.
+- [ ] Optional: add a **Communication Preferences** question whose options are assigned
+      to their own lists (e.g. "Weekly event reminders", "Sponsor & community news").
+- [ ] **Set up automations:** a Welcome sequence (email, then a delay, then a follow-up
+      if wanted), with objective **No objective**. Save & turn on.
+- [ ] Copy the **Embed** code and the **Share link**.
+- [ ] Verify the things the help pages don't say, using a test email:
+  - which domains the embed loads from (for our CSP),
+  - whether fields can be prefilled (URL parameters), so attendees don't retype name
+    and email,
+  - whether the welcome email has an unsubscribe link and Bootsector's postal address
+    (CAN-SPAM),
+  - what happens when an existing contact, or one who has unsubscribed, submits the form
+    again (re-subscribe? duplicate welcome?),
+  - whether there's a double opt-in option.
 
-- [ ] Create the free "BOCC Community" ticketing campaign with one $0 rate. Write the
-      welcome text into its confirmation email.
-- [ ] Generate the API key (Settings → Integrations). Store it only in Netlify env and
-      a gitignored `.env.zeffy`.
-- [ ] `GET /api/v1/campaigns/{id}` to get the `rate_id`. Then `POST /api/v1/payments` with
-      a $0 ticket and `send_confirmation_email: true`. Confirm that the email arrives, what
-      it looks like, and whether it has an unsubscribe link.
-- [ ] Create the automatic list "BOCC" (Fundraising Campaign = BOCC Community) and
-      confirm the test contact appears in it.
-- [ ] Check what subscription status an API-created contact starts with.
-- [ ] Send a test bulk email to the list. Confirm the unsubscribe link and footer,
-      including Bootsector's postal address (CAN-SPAM).
-- [ ] Check whether an automatic list can combine "Manual List = BOCC Import" OR
-      "Fundraising Campaign = BOCC Community". This decides how the import joins the
-      same list.
+### Phase 1: Show the Zeffy form after check-in (website)
 
-If any box fails, switch to the fallback above before writing code.
+`website/js/checkin.js`, `website/checkin/bocc.html`, `bocc-afternoon.html`:
 
-### Phase 1: Consent wording (website)
+- Keep the "send me updates" checkbox as the trigger. Reword its label to say the
+  updates come from Bootsector, e.g. *"Email me about future BOCC events (BOCC is a
+  program of Bootsector)."* Zeffy's form records the real consent.
+- In `showThankYou`, when the check-in succeeded, the box was ticked, it's the attendee's
+  **first** check-in, and this browser hasn't already shown the form:
+  - render the Zeffy embed in the thank-you area,
+  - hold the sponsor countdown until the form is submitted or the attendee taps "Skip",
+  - set a `localStorage` flag (in try/catch) so the form isn't shown to them again.
+- "First check-in": the thank-you screen already gets a streak and celebration from the
+  API, and "Welcome to the community!" is the first-visit message. Reuse that signal. If
+  it can't tell first visits apart reliably, add a `firstCheckin` boolean to the check-in
+  response. That is the only backend change Phase 1 might need.
+- If prefill works (Phase 0), pass the name and email the attendee just typed.
+- Fallback: if the embed fails to load, show the Zeffy share link instead.
+- Update the CSP in `website/_includes/head/custom.html`: add the Zeffy embed domains to
+  `frame-src`, plus `script-src` if the embed is a script. Add only the exact domains
+  found in Phase 0.
+- Also put the share link somewhere permanent, such as the site footer or a printed QR
+  code at the event, for people who skip it at check-in.
 
-The checkbox on `website/checkin/bocc.html` (and `bocc-afternoon.html`) currently reads
-"Send me updates about future BOCC events". The data now goes to Bootsector, so the label
-should say so:
-
-> Email me about future BOCC events. BOCC is a program of Bootsector; unsubscribe anytime.
-
-The checkbox stays unchecked by default, which is express consent under CASL. Link a short
-privacy note. Only attendees with `ok_to_email = true` are ever sent to Zeffy.
+Nothing in Phase 1 needs a server secret.
 
 ### Phase 2: One-time import of existing attendees
 
-`backend/scripts/zeffy-export.js` (operator-only, not deployed):
+`backend/scripts/zeffy-export.js` (run by an operator, not deployed):
 
-- Reads Neon using the owner URL from `.env.local`, or better, a new read-only role.
+- Reads Neon (owner URL from `.env.local`, or a read-only role).
 - Selects `attendees WHERE ok_to_email AND NOT debug`, de-duplicated by lowercased email.
-- Splits `name` into first and last name. Columns: `First Name, Last Name, Email,
-  Phone, Company Name, Lists, Subscription Status`, with `Lists = BOCC Import` and
+- Writes Zeffy's import template columns: `First Name, Last Name, Email, Phone,
+  Company Name, Lists, Subscription Status`. `Lists = BOCC` and
   `Subscription Status = subscribed`.
-- **Excludes emails already in Bootsector's Zeffy.** It looks each one up with
-  `GET /contacts?email=` (throttled to 100/min). Re-importing overwrites fields and
-  would **re-subscribe** someone who had unsubscribed from Bootsector. The excluded
-  emails go in a separate report; whether they join the BOCC list is a manual decision.
-- Writes to a gitignored path, prints counts only (no PII in logs), and reminds the
-  operator to delete the file after uploading.
-- Dry-run by default. Unit-tested for the name split, filtering and CSV escaping
-  (formula-injection: prefix cells starting with `= + - @`).
+- **Skips emails already in Bootsector's Zeffy.** The operator exports Bootsector's
+  contacts from the Zeffy dashboard and passes that file to the script. Re-importing an
+  existing email overwrites its fields and could re-subscribe someone who unsubscribed
+  from Bootsector. Skipped emails go to a separate count; adding them to the BOCC list is
+  a manual decision in the dashboard.
+- Escapes CSV formula injection (cells starting with `= + - @`), logs counts only (no
+  PII), writes to a gitignored path, and is dry-run by default. Unit-tested.
 
-Then upload the CSV in Zeffy (Contacts → Import), in chunks of 5,000 rows or fewer.
-Imported contacts get **no** welcome email; they already know BOCC.
+The operator uploads it under Contacts → Import, 5,000 rows or fewer per file, then deletes
+the local files.
 
-### Phase 3: Check-in → Zeffy (backend)
+### Phase 3: Remove Circle (backend)
 
-**New migration** `db/migrations/<ts>_zeffy_sync.sql`:
-
-```sql
-create table zeffy_sync (
-  attendee_id      uuid primary key references attendees(id),
-  zeffy_contact_id text,
-  zeffy_payment_id text,
-  synced_at        timestamptz not null default now()
-);
-grant select, insert on zeffy_sync to checkin_writer;
-```
-
-It is insert-only, so `checkin_writer` stays SELECT/INSERT. A row means "welcomed once",
-which makes the sync idempotent. Imported attendees get rows too (with null payment id),
-so they are never welcomed.
-
-**New `utils/zeffy.js`.** It deliberately exposes only two operations, and has no
-generic request helper:
-- `findContactByEmail(email)` → `GET /api/v1/contacts?email=`
-- `enrollInBocc({ email, firstName, lastName })` → `POST /api/v1/payments` (free ticket,
-  `send_confirmation_email: true`, `generate_tax_receipt: false`, `payment_method: 'other'`)
-- It honors `Retry-After` on 429, uses a timeout, and never logs PII. A test asserts the
-  module cannot issue `DELETE`, `PATCH` or `PUT` against payments.
-
-**`utils/check-in.js`:** replace `syncCheckinToCircle` with `syncCheckinToZeffy`:
-- Skip if `debug`, if `!okToEmail`, or if a `zeffy_sync` row exists.
-- Otherwise call `enrollInBocc`, then insert the `zeffy_sync` row.
-- Non-blocking, like Circle today: a failure is logged and never fails the check-in.
-- The result field `circleSynced` becomes `zeffySynced`.
-
-**Retry:** a scheduled function `zeffy-reconcile.js` takes over the Monday cron slot that
-photo enforcement frees up. It enrolls opted-in, non-debug attendees that have no
-`zeffy_sync` row, capped at 50 per run to stay well under the shared rate limit.
-
-**Config (`utils/config.js`):** add `ZEFFY_API_KEY`, `ZEFFY_BOCC_CAMPAIGN_ID` and
-`ZEFFY_BOCC_RATE_ID`, which fail fast at import (ADR 0001). Remove the Circle secrets.
-
-**Docs:** create `docs/backend/ZEFFY_PERMISSIONS.md` (who creates the key, the fact that it
-has no scopes, what our code is allowed to call, the rotation procedure, and whom to tell
-if it leaks). Add an ADR "0006 Zeffy replaces Circle". Update `CLAUDE.md`,
-`architecture.md` and `onboarding.md`.
-
-**Tests:** unit tests for `zeffy.js` (mocked HTTP: 201/200/409/429/500 and timeout), for
-the check-in branches (debug, no consent, already synced, success, Zeffy failure still
-returns `created`), and for the reconcile job. Add a gated integration test that uses the
-test email against the real campaign.
-
-### Phase 4: Remove Circle
-
-Do this in the same release as Phase 3, or straight after it:
-
+- `utils/check-in.js`: delete `syncCheckinToCircle` and the `circleSynced` result field.
+  Check-in becomes validate → Neon → streak.
 - Delete `circle.js`, `circle-http.js`, `circle-member-api.js`,
-  `profile-photo-enforcement*.js`, `enforcement-logic.js`, `message-templates.js`,
-  `airtable-warnings.js`, their tests, and the cron in `netlify.toml`.
-- Remove `CIRCLE_API_TOKEN`, `CIRCLE_HEADLESS_API` and `ADMIN_MEMBER_ID` from Netlify, and
-  **revoke the tokens in Circle**.
-- Archive the Circle docs (`CIRCLE_*.md`, `716-bot-final-messaging.md`, the epics) under
-  `docs/backend/archive/`.
-- Update any website copy that promises a 716.social invite (depends on decision 4).
-- The Airtable "No Photo Warnings" table is no longer used. Keep it read-only as history.
+  `profile-photo-enforcement.js`, `profile-photo-enforcement-manual.js`,
+  `enforcement-logic.js`, `message-templates.js`, `airtable-warnings.js`, their tests,
+  and the enforcement cron in `netlify.toml`.
+- `utils/config.js`: remove `CIRCLE_API_TOKEN`, `CIRCLE_HEADLESS_API`, `ADMIN_MEMBER_ID`.
+  Remove them from Netlify and **revoke the tokens in Circle**.
+- Archive the Circle docs (`CIRCLE_*.md`, `716-bot-final-messaging.md`, related epics) in
+  `docs/backend/archive/`. Add ADR 0006 "Zeffy sign-up form replaces Circle". Update
+  `CLAUDE.md`, `architecture.md` and `onboarding.md`.
+- The Airtable "No Photo Warnings" table stops being used. Leave it as read-only history.
 
-### Phase 5: Release
+### Phase 4: Release
 
-- Run `npm test` and the Jekyll build. Apply the migration to Neon **before** merging.
-- Set the Netlify env vars, then merge `dev` → `main` once (15 credits).
-- Run `test:smoke-prod` with a debug check-in. It must **not** reach Zeffy.
-- Run one real opt-in check-in with a test email and confirm the welcome email arrives,
-  the contact is on the automatic list, and the `zeffy_sync` row exists. Then delete the
-  test contact and the $0 payment in Zeffy.
+- `npm test` and the Jekyll build pass. Merge `dev` → `main` once (15 credits).
+- A debug check-in on production still works (`test:smoke-prod`).
+- One real first check-in with a test email: the form appears, submitting it puts the
+  contact on "BOCC", and the welcome email arrives. Delete the test contact afterwards.
 
-## Unsubscribe and compliance checklist
+## Decisions for you and Bootsector
 
-- Opt-in is an unchecked box with clear wording naming BOCC and Bootsector (Phase 1).
-- Only opted-in attendees are sent to Zeffy, in the import and on check-in.
-- Bulk BOCC emails are sent from Zeffy, which adds the unsubscribe link and footer.
-- Zeffy owns subscription status from now on. Our code never sets it, and the API can't.
-  `PUT`/`POST` never re-subscribe anyone, and the import skips existing contacts so it
-  can't either.
-- The welcome (confirmation) email is transactional and ignores unsubscribes, so keep
-  it a plain welcome with no promotions. Ask Zeffy whether a footer line pointing to
-  email preferences can be added.
-- Our `ok_to_email` column records consent at capture. It is not a live subscription
-  flag, and docs should say so.
+1. **Unsubscribes cover all of Bootsector.** Zeffy unsubscribes are account-wide, so
+   leaving BOCC email stops all Bootsector bulk email too, and the reverse.
+   Communication-preference lists help people choose *what* they get, but they are not a
+   per-list unsubscribe.
+2. **Bootsector's own sends.** Bootsector staff need to leave the BOCC list out of "all
+   contacts" sends, or BOCC attendees get mail they didn't sign up for.
+3. **The 716.social community.** Shut it down, or keep it running without automatic
+   invites? Phase 3 removes the integration either way. The answer decides what the
+   website says about the community.
+4. **The extra step at check-in.** Showing a second form is friction at a coffee event,
+   and prefill (Phase 0) would make it small. The alternative is the share link or QR
+   only, which is less friction but means fewer sign-ups.
+
+## Compliance checklist
+
+- Consent comes from the attendee submitting Zeffy's form. Our checkbox only decides
+  whether the form is shown, and stays unchecked by default.
+- Zeffy owns subscription status; our code never touches it. `ok_to_email` in Neon is
+  consent at capture, used only for the one-time import.
+- The import never overwrites existing Zeffy contacts, so it can't re-subscribe anyone.
+- Every Zeffy bulk email carries an unsubscribe link automatically. Phase 0 confirms that
+  the welcome automation emails do too.
 
 ## Sources
 
-- Zeffy API reference (OpenAPI spec embedded in the page): https://www.zeffy.com/api/docs
+- Newsletter sign-up form: https://support.zeffy.com/create-a-newsletter-sign-up-form-93zh0
+- Automated emails for sign-up forms: https://support.zeffy.com/set-up-automated-emails-for-a-newsletter-sign-up-form-b9tb3
 - Lists: https://support.zeffy.com/creating-segments-and-lists-1qg9z
 - Importing contacts: https://support.zeffy.com/importing-contacts-into-zeffy-po19h
-- Email, unsubscribes, automation FAQ: https://www.zeffy.com/en-au/home/newsletter-emailing
-- How contacts are created: https://support.zeffy.com/how-contacts-are-created-in-zeffy-5opxn
+- Email and unsubscribes: https://www.zeffy.com/en-au/home/newsletter-emailing
+- Zeffy API reference: https://www.zeffy.com/api/docs
