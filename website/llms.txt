@@ -44,5 +44,6 @@ Key facts:
 
 - [Sponsorship]({{ site.url }}/sponsorship/): Sponsor BOCC for $500 a month, tax-deductible through {{ site.event.organizer }}
 - [LinkedIn](https://www.linkedin.com/showcase/buffalo-open-coffee): BOCC on LinkedIn
-- [Instagram](https://www.instagram.com/buffaloopencoffeeclub): BOCC on Instagram
-- [Facebook](https://www.facebook.com/buffaloopencoffeeclub): BOCC on Facebook
+- [Instagram](https://www.instagram.com/716coffeeclub): BOCC on Instagram
+- [Facebook](https://www.facebook.com/716coffeeclub): BOCC on Facebook
+- [Threads](https://www.threads.com/@716coffeeclub): BOCC on Threads

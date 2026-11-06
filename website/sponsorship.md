@@ -19,8 +19,8 @@ actions:
     variant: ghost-gold
 glance:
   - { value: "$500", label: "per month" }
-  - { value: "~32",  label: "attendees / week" }
-  - { value: "52",   label: "Tuesdays a year" }
+  - { value: "~35",  label: "attendees / week" }
+  - { value: "50",   label: "Tuesdays a year" }
   - { value: "100%", label: "tax-deductible" }
 
 blocks:
@@ -42,7 +42,7 @@ blocks:
   - type: stats
     label: Attendee snapshot
     items:
-      - { value: "~32",   label: "attendees each week" }
+      - { value: "~35",   label: "attendees each week" }
       - { value: "3",     label: "local universities" }
       - { value: "50:50", label: "men & women" }
       - { value: "716",   label: "born in Buffalo" }
@@ -51,7 +51,7 @@ blocks:
     label: Who attends
     title: Buffalo's broad, growing startup crowd.
     body: >-
-      In 2024, BOCC averaged 32 attendees each week — a diverse audience of small business owners,
+      In 2025, BOCC averaged 35 attendees each week — a diverse audience of small business owners,
       founders, freelancers, and students from [Buffalo State](https://suny.buffalostate.edu/),
       [Canisius University](https://www.canisius.edu/), and
       [University at Buffalo](https://www.buffalo.edu/), in an approximate 50:50 split of men and women.
