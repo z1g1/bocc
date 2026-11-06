@@ -33,7 +33,7 @@ defaults:
 
 # ---- Analytics ----
 # GA4 measurement ID (G-XXXXXXXXXX). Public by design. Leave empty to disable.
-google_analytics_id:
+google_analytics_id: G-KJR4VN66ME
 
 # ---- Event data (consumed by _includes/event-jsonld.html + home/signup) ----
 event:
