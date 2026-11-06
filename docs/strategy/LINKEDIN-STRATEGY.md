@@ -67,7 +67,6 @@ WHO SHOWS UP:
 -- Established business owners looking for vendors, partners, and talent
 -- Freelancers and consultants building their client base
 -- Students from UB, Buffalo State, and Canisius exploring entrepreneurship
--- Approximate 50:50 men and women
 
 WHAT MAKES IT DIFFERENT:
 -- It's actually free. Coffee included.
@@ -946,7 +945,6 @@ The best sponsorship pitch is a LinkedIn feed full of evidence that BOCC works. 
 Specifically, posts that include real numbers attract sponsor attention:
 - "32 attendees this week"
 - "14 freelancer-client connections in 3 months"
-- "50:50 men and women"
 - "Students from UB, Buffalo State, and Canisius"
 
 Sponsors want audience quality and consistency. The content should prove both.
@@ -966,7 +964,7 @@ Sponsors want audience quality and consistency. The content should prove both.
 ### Cross-Promotion Tactics
 
 **LinkedIn to Instagram:**
-- "More photos from this morning on our Instagram -- @buffaloopencoffeeclub"
+- "More photos from this morning on our Instagram -- @716coffeeclub"
 - Repurpose Instagram Reels as LinkedIn native video (re-upload, do not link)
 
 **Instagram to LinkedIn:**

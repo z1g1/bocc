@@ -217,3 +217,22 @@ def test_ledger_records_post(tmp_path):
     ledger.record_posted(DAY, "urn:li:ugcPost:1", now)
     entry = ledger.get(DAY)
     assert (entry["status"], entry["event_id"], entry["post_urn"]) == (POSTED, "123", "urn:li:ugcPost:1")
+
+
+def test_alternate_location_is_off_by_default():
+    spec = events.build_spec(DAY)
+    assert spec.venue_details == config.VENUE_DETAILS
+    assert spec.commentary == config.POST_COMMENTARY
+
+
+def test_alternate_location_changes_description_venue_and_post():
+    text = (
+        "Please join me at Buffalo Open Coffee Club. This week the event will be in the "
+        "Seneca One Food hall vs our normal lobby location"
+    )
+    spec = events.build_spec(DAY, alternate_location=True)
+    assert spec.description == text and spec.commentary == text
+    payload = events.build_event_payload(spec, None)
+    assert payload["description"]["localized"]["en_US"]["rawText"] == text
+    assert payload["type"]["inPerson"]["venueDetails"]["localized"]["en_US"]["rawText"] == config.ALTERNATE_VENUE_DETAILS
+    assert payload["type"]["inPerson"]["address"] == config.EVENT_ADDRESS  # same building

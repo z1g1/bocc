@@ -1,21 +1,13 @@
 # Future Work & Open Questions
 
-## Automated Event startDate in Structured Data
+## Event Pages
 
-The JSON-LD in `_includes/head/custom.html` has a hardcoded `startDate` for the next event occurrence. The `eventSchedule` property with `repeatFrequency: P1W` and `byDay: Tuesday` handles the recurring signal for Google, but `startDate` should ideally stay near-future.
+`website/scripts/generate_event_pages.rb` runs before each Netlify build and creates a page for each of the next 13 Tuesdays at `/events/YYYY-MM-DD/`, skipping Dec 20 through Jan 2. Each page carries one Event in its structured data, because Google wants one event per URL. They are in the sitemap but not in site navigation. Expired URLs redirect to the home page.
 
-### Recommended approach
-GitHub Actions weekly cron + Liquid template to calculate next Tuesday at build time.
+The site needs a deploy at least once a quarter or the dates run out. Run the script locally to preview the pages.
 
-### Concerns
-1. **Google doesn't crawl on your schedule.** Even with weekly rebuilds, Google may cache old pages for days/weeks. `eventSchedule` is more important than `startDate` for recurring events.
-2. **Christmas exclusion logic.** Event skips the last 2 weeks of December. Need to define exact dates (Dec 18-31? Dec 22-31?) — varies by year.
-3. **GitHub Actions cron is best-effort.** Not SLA-backed; may be delayed or skipped during high load.
-4. **Silent build failures.** If a cron-triggered build fails, the site stays on the old version. Need failure notifications.
-5. **Effort vs benefit.** Google uses `eventSchedule` as the primary signal for recurring events. Manual updates once or twice a year may be sufficient.
-
-### Decision
-Deferred — `eventSchedule` is doing the heavy lifting. Revisit if Google Search Console shows issues with event rich results.
+### Open question
+The pages are nearly identical and nothing links to them. Check the Events and Pages reports in Search Console a few weeks after deploying. If Google doesn't index them, link to the next event from the home page.
 
 ---
 

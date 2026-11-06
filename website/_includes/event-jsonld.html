@@ -1,20 +1,22 @@
 {%- comment -%}
-  _includes/event-jsonld.html — structured data for the recurring meetup.
-  Emits schema.org/Event (with a weekly Schedule) + Organization so Google can
-  show event rich results. All values pull from _config.yml (site.event, site.url,
-  site.social) — no hardcoded copy. jekyll-seo-tag handles the page/website JSON-LD;
-  this adds the domain-specific Event + Organization graph.
+  _includes/event-jsonld.html — structured data. Each generated event page emits
+  one schema.org/Event, since Google wants one event per URL. Every page emits
+  Organization. Values pull from _config.yml (site.event, site.url, site.social)
+  and the event page's front matter. jekyll-seo-tag handles the page/website JSON-LD.
 {%- endcomment -%}
 {%- assign e = site.event -%}
 {%- assign logo = site.url | append: '/assets/images/bocc-logo-square.png' -%}
+{%- if page.layout == 'event' %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "Event",
-  "name": {{ site.title | jsonify }},
+  "name": {{ page.event_name | jsonify }},
   "description": {{ e.description | default: site.description | jsonify }},
   "image": [{{ site.url | append: site.og_image | jsonify }}],
-  "url": {{ site.url | append: site.baseurl | jsonify }},
+  "url": {{ page.url | absolute_url | jsonify }},
+  "startDate": {{ page.start_date | jsonify }},
+  "endDate": {{ page.end_date | jsonify }},
   "eventStatus": "https://schema.org/EventScheduled",
   "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
   "eventSchedule": {
@@ -55,10 +57,12 @@
     "price": "0",
     "priceCurrency": "USD",
     "availability": "https://schema.org/InStock",
-    "url": {{ e.registration_url | jsonify }}
+    "url": {{ e.registration_url | jsonify }},
+    "validFrom": {{ e.offer_valid_from | jsonify }}
   }
 }
 </script>
+{%- endif %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",

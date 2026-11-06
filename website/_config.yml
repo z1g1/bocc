@@ -16,15 +16,15 @@ domain: "716coffee.club"
 # ---- SEO (jekyll-seo-tag) ----
 author: Buffalo Open Coffee Club
 og_image: /assets/images/BOCC-header-image-coffee-background.png
-twitter:
-  username: buffaloopencoffeeclub
-  card: summary_large_image
+webmaster_verifications:
+  facebook: t51awk99p8trr238b67f5jx5u7v1cn
 social:
   name: Buffalo Open Coffee Club
   links:
     - https://www.linkedin.com/showcase/buffalo-open-coffee
-    - https://www.instagram.com/buffaloopencoffeeclub
-    - https://www.facebook.com/buffaloopencoffeeclub
+    - https://www.instagram.com/716coffeeclub
+    - https://www.facebook.com/716coffeeclub
+    - https://www.threads.com/@716coffeeclub
 
 # Default social-share image for every page (override per-page with `image:`).
 # TODO: replace with the client's 1200×630 og-default.png when delivered (README §Assets).
@@ -32,6 +32,10 @@ defaults:
   - scope: { path: "" }
     values:
       image: /assets/images/BOCC-header-image-coffee-background.png
+
+# ---- Analytics ----
+# GA4 measurement ID (G-XXXXXXXXXX). Public by design. Leave empty to disable.
+google_analytics_id: G-KJR4VN66ME
 
 # ---- Event data (consumed by _includes/event-jsonld.html + home/signup) ----
 event:
@@ -41,6 +45,7 @@ event:
   organizer_url: https://joinbootsector.com/
   registration_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
   eventbrite_id: "1983098086761"
+  offer_valid_from: "2024-01-01T00:00:00-05:00"
   performer:
     name: Zack Glick
     url: https://www.linkedin.com/in/zglick/
@@ -50,6 +55,12 @@ event:
     addressRegion: NY
     postalCode: "14203"
     addressCountry: US
+
+# Event pages are generated into _events/ by scripts/generate_event_pages.rb.
+collections:
+  events:
+    output: true
+    permalink: /events/:name/
 
 # ---- Build settings ----
 markdown: kramdown
@@ -70,6 +81,7 @@ exclude:
   - vendor/
   - output/
   - README.md
+  - scripts/
 
 # No gem theme: all layouts/includes/sass are local (overrides github-pages default primer theme).
 theme: null

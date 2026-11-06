@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from bocc_events import auth, cli, events
+from bocc_events import auth, cli, config, events
 from bocc_events.client import LinkedInClient, Response
 from bocc_events.ledger import CREATED, PENDING, POSTED, Ledger
 
@@ -204,3 +204,27 @@ def test_cover_upload_403_explains_no_image(env, transport, capsys):
     assert "--no-image" in err and "Nothing was created" in err and "w_member_social" in err
     assert len(t.calls) == 2  # duplicate check + initializeUpload; no create attempted
     assert ledger(env).get(DAY) is None
+
+
+def test_alternate_location_flows_to_event_post_and_ledger(env, transport, capsys):
+    t = transport(NO_EVENTS, CREATE_OK, POST_OK)
+    assert cli.main(["create", "--live", "--yes", "--no-image", "--alternate-location"]) == 0
+    event_body, post_body = json.loads(t.bodies[1]), json.loads(t.bodies[2])
+    assert event_body["description"]["localized"]["en_US"]["rawText"] == config.ALTERNATE_LOCATION_TEXT
+    assert post_body["commentary"] == config.ALTERNATE_LOCATION_TEXT
+    assert ledger(env).get(DAY)["commentary"] == config.ALTERNATE_LOCATION_TEXT
+
+
+def test_post_command_reuses_alternate_commentary(env, transport):
+    ledger(env).record_pending(DAY, "x", FIXED_NOW, config.ALTERNATE_LOCATION_TEXT)
+    ledger(env).record_created(DAY, "123", events.event_url({"id": "123"}), FIXED_NOW)
+    t = transport(POST_OK)
+    assert cli.main(["post", "--date", "2026-10-06", "--yes"]) == 0
+    assert json.loads(t.bodies[0])["commentary"] == config.ALTERNATE_LOCATION_TEXT
+
+
+def test_post_command_defaults_commentary_for_old_entries(env, transport):
+    ledger(env).record_created(DAY, "123", events.event_url({"id": "123"}), FIXED_NOW)
+    t = transport(POST_OK)
+    assert cli.main(["post", "--date", "2026-10-06", "--yes"]) == 0
+    assert json.loads(t.bodies[0])["commentary"] == config.POST_COMMENTARY

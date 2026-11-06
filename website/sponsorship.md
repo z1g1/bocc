@@ -19,8 +19,8 @@ actions:
     variant: ghost-gold
 glance:
   - { value: "$500", label: "per month" }
-  - { value: "~32",  label: "attendees / week" }
-  - { value: "52",   label: "Tuesdays a year" }
+  - { value: "~35",  label: "attendees / week" }
+  - { value: "50",   label: "Tuesdays a year" }
   - { value: "100%", label: "tax-deductible" }
 
 blocks:
@@ -42,19 +42,19 @@ blocks:
   - type: stats
     label: Attendee snapshot
     items:
-      - { value: "~32",   label: "attendees each week" }
+      - { value: "~35",   label: "attendees each week" }
       - { value: "3",     label: "local universities" }
-      - { value: "50:50", label: "men & women" }
+      - { value: "Free",  label: "always, for everyone" }
       - { value: "716",   label: "born in Buffalo" }
 
   - type: prose
     label: Who attends
     title: Buffalo's broad, growing startup crowd.
     body: >-
-      In 2024, BOCC averaged 32 attendees each week — a diverse audience of small business owners,
+      In 2025, BOCC averaged 35 attendees each week — a diverse audience of small business owners,
       founders, freelancers, and students from [Buffalo State](https://suny.buffalostate.edu/),
       [Canisius University](https://www.canisius.edu/), and
-      [University at Buffalo](https://www.buffalo.edu/), in an approximate 50:50 split of men and women.
+      [University at Buffalo](https://www.buffalo.edu/).
 
 
       BOCC is often the first stop for those exploring Buffalo's startup ecosystem. Many attendees
@@ -76,7 +76,7 @@ blocks:
       BOCC is entirely sponsor-funded. Your support covers weekly coffee, promotion to new
       audiences, and the expansion of our free programming.
     items:
-      - { icon: users,   title: "100–120 impressions / month", body: "Within Buffalo's small-business community, every single week." }
+      - { icon: users,   title: "~140 impressions / month", body: "Within Buffalo's small-business community, every single week." }
       - { icon: arrow,   title: "Redirect link on the Check-in App", body: "A tap-through from BOCC's digital check-in straight to your site or ad." }
       - { icon: sunrise, title: "Social media promotion", body: "Featured across BOCC's LinkedIn, Instagram, and Facebook." }
       - { icon: coffee,  title: "Live event mention", body: "Read aloud during Gives & Asks — by the host or your own team." }

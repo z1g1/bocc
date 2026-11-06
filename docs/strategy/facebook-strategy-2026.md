@@ -1,7 +1,7 @@
 # Buffalo Open Coffee Club -- Facebook Strategy Review
 
 **Prepared:** March 21, 2026
-**Platform:** facebook.com/buffaloopencoffeeclub
+**Platform:** facebook.com/716coffeeclub
 **Organization:** Buffalo Open Coffee Club (BOCC), operated by BootSector 501(c)(3)
 **Organizer:** Zack Glick
 
@@ -377,7 +377,7 @@ Before tagging, establish a simple permission system:
 
 Encourage attendees to:
 - Check in at Seneca One Tower on Facebook when they arrive
-- Share their own photos and tag @buffaloopencoffeeclub
+- Share their own photos and tag @716coffeeclub
 - Post about BOCC on their personal profiles (this is more valuable than any page post)
 
 Amplify UGC by:
@@ -468,7 +468,7 @@ BOCC's LinkedIn presence (linkedin.com/showcase/buffalo-open-coffee) likely reac
 
 ### Instagram to Facebook
 
-Instagram (@buffaloopencoffeeclub) is visual-first. Use the automatic cross-posting feature for Reels and Stories, but be selective.
+Instagram (@716coffeeclub) is visual-first. Use the automatic cross-posting feature for Reels and Stories, but be selective.
 
 **Cross-post from Instagram to Facebook:**
 - Reels (these get boosted on both platforms)
@@ -647,7 +647,7 @@ For a nonprofit community event, even $50-100/month in Facebook Ads can meaningf
 
 | Metric | What to Track | Target |
 |--------|--------------|--------|
-| Audience Demographics | Age, gender, location of followers | Should mirror attendee demo (25-55, 50/50 M/F, Buffalo area) |
+| Audience Demographics | Age, gender, location of followers | Should mirror attendee demo (25-55, Buffalo area) |
 | Content Pillar Performance | Which pillar drives the most engagement | Rebalance content mix accordingly |
 | Cross-Platform Attribution | Are Facebook followers also on Instagram/LinkedIn/716.social | Track overlap |
 | Ad Performance | Cost per event response, cost per page follow | Optimize spend |

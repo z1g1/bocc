@@ -7,7 +7,7 @@
   # Base stays at the repo root so both website/ and backend/ are in scope.
   base = ""
   # Build the Jekyll site. Ruby deps (Gemfile) live in website/.
-  command = "cd website && bundle install && bundle exec jekyll build"
+  command = "cd website && bundle install && ruby scripts/generate_event_pages.rb && bundle exec jekyll build"
   publish = "website/_site"
 
 [build.environment]
@@ -31,6 +31,12 @@
   from = "https://www.716coffee.club/*"
   to = "https://716coffee.club/:splat"
   status = 301
+
+# Expired event pages. Current ones exist as files, so this rule skips them.
+[[redirects]]
+  from = "/events/*"
+  to = "/"
+  status = 302
 
 # Security headers for all static assets and pages.
 [[headers]]

@@ -147,7 +147,7 @@ Every piece of content should be traceable back to this sentence. It contains th
 | **First-timers / curious** | "Show up, grab a coffee, meet people. It is free and you do not need to know anyone." | No signup required. Name tags provided. Format explained at the event. |
 | **Regular attendees** | "This is your community. Bring someone new." | Gives and Asks creates real connections. People launch projects together. Lasting relationships form here. |
 | **Potential sponsors** | "Reach 100-120 entrepreneurs per month in an authentic, high-trust environment." | Tax-deductible via BootSector 501(c)(3). Multiple touchpoints (live mention, check-in app, social media). |
-| **Buffalo media / ecosystem** | "BOCC is where Buffalo's entrepreneurial community gathers. Every week, for free." | Origin story back to 2010. 32+ average weekly attendance. University engagement. Diverse 50/50 gender split. |
+| **Buffalo media / ecosystem** | "BOCC is where Buffalo's entrepreneurial community gathers. Every week, for free." | Origin story back to 2010. 32+ average weekly attendance. University engagement. |
 
 ### Proof points to weave into content regularly
 
@@ -158,7 +158,6 @@ These should appear across platforms over time, not crammed into every post:
 - 32+ average weekly attendees in 2024
 - Seneca One Tower lobby -- a real, recognizable Buffalo landmark
 - 501(c)(3) nonprofit backing through BootSector
-- 50/50 gender split (organically, not by design)
 - University student engagement (Buffalo State, Canisius, UB)
 - Gives and Asks format is unique -- people help each other, not pitch each other
 - The Afternoon Edition is expanding the format to new times and locations
@@ -169,7 +168,7 @@ These should appear across platforms over time, not crammed into every post:
 
 The brand voice stays consistent. The register shifts.
 
-### Instagram (@buffaloopencoffeeclub)
+### Instagram (@716coffeeclub)
 
 **Register**: Most casual. Visual-first. Energetic.
 
@@ -182,7 +181,7 @@ The brand voice stays consistent. The register shifts.
 | **CTAs** | "Link in bio" / "Grab a free ticket -- link in bio" / "Tag someone who needs to be here Tuesday" |
 | **Avoid** | Long paragraphs, corporate language, posting without a photo or video (Instagram is a visual platform -- every post needs strong imagery) |
 
-### Facebook (@buffaloopencoffeeclub)
+### Facebook (@716coffeeclub)
 
 **Register**: Slightly warmer, more community-oriented. Conversational but a touch more informational.
 

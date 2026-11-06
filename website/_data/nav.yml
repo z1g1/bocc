@@ -31,6 +31,8 @@ footer:
     url: /sponsorship/
   - label: Code of Conduct
     url: /code-of-conduct/
+  - label: Privacy Policy
+    url: /privacy/
   - label: Contact
     url: https://docs.google.com/forms/d/e/1FAIpQLSfDqOoB3eLfUJe2bST_3hzpHFPNxR8zNRARXSpbpLkvJrjmyw/viewform?usp=header
 
@@ -39,8 +41,10 @@ social:
   - label: LinkedIn
     url: https://www.linkedin.com/showcase/buffalo-open-coffee
   - label: Instagram
-    url: https://www.instagram.com/buffaloopencoffeeclub
+    url: https://www.instagram.com/716coffeeclub
   - label: Facebook
-    url: https://www.facebook.com/buffaloopencoffeeclub
+    url: https://www.facebook.com/716coffeeclub
+  - label: Threads
+    url: https://www.threads.com/@716coffeeclub
   - label: 716.social
     url: https://www.716.social/

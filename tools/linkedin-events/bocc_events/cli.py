@@ -100,6 +100,8 @@ def _print_plan(spec: events.EventSpec, image: CoverImage | None) -> None:
     print(f"Event:    {spec.name}")
     print(f"When:     {spec.day:%A %Y-%m-%d}, {config.EVENT_START:%-I:%M}-{config.EVENT_END:%-I:%M} AM Eastern")
     print(f"Organizer {config.ORGANIZER_URN}, discovery {spec.discovery_mode}")
+    if spec.venue_details != config.VENUE_DETAILS:
+        print(f"Location: ALTERNATE ({spec.venue_details})")
     if image:
         print(f"Cover:    {image.path} ({image.content_type}, {image.width}x{image.height})")
         for warning in image.warnings:
@@ -113,7 +115,7 @@ def _confirm(spec: events.EventSpec, no_post: bool) -> bool:
         print("Refusing to create without a terminal to confirm; pass --yes for unattended runs.", file=sys.stderr)
         return False
     print(f"\nThis creates '{spec.name}' and publishes it with a PUBLIC post from your profile:")
-    print(f"  \"{config.POST_COMMENTARY}\"" if not no_post else "  (skipped: --no-post)")
+    print(f"  \"{spec.commentary}\"" if not no_post else "  (skipped: --no-post)")
     answer = input("Type 'yes' to continue: ")
     return answer.strip().lower() == "yes"
 
@@ -122,7 +124,7 @@ def cmd_create(args) -> int:
     now = _now()
     day = resolve_event_date(args.date, now)
     image = None if args.no_image else load_cover_image(Path(args.image) if args.image else config.DEFAULT_IMAGE)
-    spec = events.build_spec(day, events.URL_ONLY if args.url_only else events.LISTED)
+    spec = events.build_spec(day, events.URL_ONLY if args.url_only else events.LISTED, args.alternate_location)
     _print_plan(spec, image)
 
     if not args.live:
@@ -132,7 +134,7 @@ def cmd_create(args) -> int:
             print(f"\n--- PUT <uploadUrl>: {len(image.data):,} bytes of {image.content_type} ---")
         _dump("POST /rest/events", events.build_event_payload(spec, ASSET_PLACEHOLDER if image else None))
         if not args.no_post:
-            _dump("POST /rest/posts", events.build_member_post_payload(OWNER_PLACEHOLDER, "<event id from create>"))
+            _dump("POST /rest/posts", events.build_member_post_payload(OWNER_PLACEHOLDER, "<event id from create>", spec.commentary))
         print("\nDry run: nothing was sent. Re-run with --live to create and publish the event.")
         return 0
 
@@ -178,7 +180,7 @@ def cmd_create(args) -> int:
         client.upload(upload_url, image.data, image.content_type)
         print(f"Uploaded cover image ({asset}).")
 
-    ledger.record_pending(day, spec.name, now)
+    ledger.record_pending(day, spec.name, now, spec.commentary)
     try:
         created = events.create_event(client, events.build_event_payload(spec, asset))
     except ApiError:
@@ -195,11 +197,16 @@ def cmd_create(args) -> int:
     return _publish(client, creds, ledger, day, now)
 
 
+def _commentary(entry: dict) -> str:
+    """The post text chosen at create time; entries from before it was recorded use the default."""
+    return entry.get("commentary") or config.POST_COMMENTARY
+
+
 def _publish(client: LinkedInClient, creds: auth.Credentials, ledger: Ledger, day: date, now: datetime) -> int:
     """Post the ledger's event for `day` from the admin's profile and record the result."""
     entry = ledger.get(day)
     try:
-        post_urn = events.post_event(client, creds.person_urn, entry["event_id"])
+        post_urn = events.post_event(client, creds.person_urn, entry["event_id"], _commentary(entry))
     except ApiError as err:
         # Ledger stays `created`: nothing was posted, so retrying is safe.
         raise ApiError(err.status, f"{err}. The event exists but isn't published; fix and run `bocc-event post --date {day}`.") from None
@@ -233,7 +240,7 @@ def cmd_post(args) -> int:
         if not sys.stdin.isatty():
             print("Refusing to post without a terminal to confirm; pass --yes.", file=sys.stderr)
             return 1
-        print(f"This publishes {entry['url']} with a PUBLIC post from your profile:\n  \"{config.POST_COMMENTARY}\"")
+        print(f"This publishes {entry['url']} with a PUBLIC post from your profile:\n  \"{_commentary(entry)}\"")
         if input("Type 'yes' to continue: ").strip().lower() != "yes":
             print("Cancelled; nothing was posted.")
             return 1
@@ -272,6 +279,9 @@ def build_parser() -> argparse.ArgumentParser:
     image.add_argument("--image", help="cover photo, PNG or JPEG (default: default-bocc-image.png)")
     image.add_argument("--no-image", action="store_true", help="use LinkedIn's default cover")
     p_create.add_argument("--url-only", action="store_true", help="unlisted: reachable only by link (for tests)")
+    p_create.add_argument(
+        "--alternate-location", action="store_true", help="this week is in the Seneca One Food hall, not the lobby"
+    )
     p_create.add_argument("--live", action="store_true", help="actually call LinkedIn (default is a dry run)")
     p_create.add_argument("--no-post", action="store_true", help="create only; publish later with `post`")
     p_create.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
