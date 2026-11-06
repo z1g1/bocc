@@ -16,6 +16,8 @@ domain: "716coffee.club"
 # ---- SEO (jekyll-seo-tag) ----
 author: Buffalo Open Coffee Club
 og_image: /assets/images/BOCC-header-image-coffee-background.png
+webmaster_verifications:
+  facebook: t51awk99p8trr238b67f5jx5u7v1cn
 social:
   name: Buffalo Open Coffee Club
   links:
