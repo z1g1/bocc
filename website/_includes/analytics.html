@@ -1,0 +1,9 @@
+{%- comment -%}
+  _includes/analytics.html — Google Analytics 4. Emits nothing until
+  site.google_analytics_id is set. Check-in pages are excluded because they
+  collect attendee contact details and carry tokens in the URL. The matching
+  CSP origins in _layouts/default.html use the same condition.
+{%- endcomment -%}
+{%- if site.google_analytics_id and page.layout != 'checkin' %}
+<script src="{{ '/assets/js/analytics.js' | relative_url }}" data-ga-id="{{ site.google_analytics_id }}" defer></script>
+{%- endif -%}

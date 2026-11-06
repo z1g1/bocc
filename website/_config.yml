@@ -31,6 +31,10 @@ defaults:
     values:
       image: /assets/images/BOCC-header-image-coffee-background.png
 
+# ---- Analytics ----
+# GA4 measurement ID (G-XXXXXXXXXX). Public by design. Leave empty to disable.
+google_analytics_id:
+
 # ---- Event data (consumed by _includes/event-jsonld.html + home/signup) ----
 event:
   description: Free weekly networking for Buffalo's entrepreneurs, small business owners, and startup founders. Open networking followed by community Gives and Asks.

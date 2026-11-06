@@ -52,7 +52,7 @@ SSL certs are generated locally (see README.md). Ruby version managed via `websi
 
 - **Static site generator**: Jekyll with `github-pages` gem, using `minimal-mistakes` remote theme (v4.26.2, `sunrise` skin)
 - **Hosting**: Netlify (base directory: `website/`, build command: `bundle exec jekyll build`)
-- **Custom domain**: `716coffee.club` (DNS managed in Netlify)
+- **Custom domain**: `716coffee.club` (DNS managed at Hover)
 
 ### Key Pages
 
@@ -71,7 +71,7 @@ All Markdown with YAML front matter:
   - URL parameters: `debug`, `token`, `eventId`, `local` (set `local=1` to skip API calls)
   - Input sanitization, honeypot spam detection, sponsor redirect countdown
 - `_data/sponsor.yml` — Sponsor redirect configuration
-- `_includes/head/custom.html` — CSP headers, structured data, Google Analytics
+- `_layouts/default.html` — CSP; `_includes/event-jsonld.html` — structured data; `_includes/analytics.html` — GA4 (off until `google_analytics_id` is set in `_config.yml`, never on check-in pages)
 
 ### Images
 
