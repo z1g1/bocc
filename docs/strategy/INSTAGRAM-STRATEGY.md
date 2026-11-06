@@ -1,6 +1,6 @@
 # Buffalo Open Coffee Club -- Instagram Strategy
 
-**Prepared for:** @buffaloopencoffeeclub
+**Prepared for:** @716coffeeclub
 **Date:** March 2026
 **Website:** 716coffee.club
 **Event:** Every Tuesday, 7:30-9 AM, Seneca One Tower lobby, Buffalo NY
@@ -275,7 +275,7 @@ The "FIRST TIME?" Highlight is the most important. Every new profile visitor sho
 - Caption: "No membership fee. No dress code. No agenda except showing up for each other. Every Tuesday, 7:30 AM, Seneca One lobby. Coffee is free. Connections are priceless. Link in bio."
 
 **Wednesday**
-- Feed Carousel: "BOCC by the numbers" -- Slide 1: "32 average weekly attendees." Slide 2: "50/50 men and women." Slide 3: "Founded 2010. Rebooted 2022." Slide 4: "100% free. 100% sponsor-funded." Slide 5: "0 sales pitches allowed." Slide 6: "Register free -- link in bio."
+- Feed Carousel: "BOCC by the numbers" -- Slide 1: "32 average weekly attendees." Slide 2: "Founded 2010. Rebooted 2022." Slide 3: "100% free. 100% sponsor-funded." Slide 4: "0 sales pitches allowed." Slide 5: "Register free -- link in bio."
 - Stories: Reshare community UGC
 
 **Thursday**
@@ -320,7 +320,7 @@ The "FIRST TIME?" Highlight is the most important. Every new profile visitor sho
 
 ### User-Generated Content (UGC)
 
-**Make it easy to create:** Place a small sign at the coffee station or check-in area: "Snap a photo. Tag @buffaloopencoffeeclub. We will reshare." Physical prompts drive more UGC than digital requests.
+**Make it easy to create:** Place a small sign at the coffee station or check-in area: "Snap a photo. Tag @716coffeeclub. We will reshare." Physical prompts drive more UGC than digital requests.
 
 **Weekly UGC reshare:** Dedicate at least 2 story frames per week to resharing attendee content. Always add a sticker or comment when resharing ("This is what Tuesday looks like through [Name]'s lens").
 
@@ -429,7 +429,7 @@ Custom thumbnails for Reels should include:
 | Follower Growth Rate | 10-15% month-over-month (for an early-stage local account) | Sustainable growth. Spikes without retention are meaningless. |
 | Profile Visits | 50+ per week | Shows content is driving curiosity. |
 | Link Clicks (Eventbrite) | 20+ per week | The actual conversion goal -- getting people to register. |
-| UGC Posts | 10+ per month tagging @buffaloopencoffeeclub | Community is creating content for you -- the ultimate sign of brand love. |
+| UGC Posts | 10+ per month tagging @716coffeeclub | Community is creating content for you -- the ultimate sign of brand love. |
 | Top-performing Content Type | Track weekly | Identify patterns. If Reels consistently outperform carousels, shift the mix. |
 | Hashtag Reach | Track top 5 performing hashtags monthly | Prune non-performers, double down on what works. |
 

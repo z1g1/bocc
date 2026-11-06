@@ -1,7 +1,7 @@
 # Instagram 3x3 profile grid
 
 Nine 1080x1080 tiles that assemble into one picture on the
-@buffaloopencoffeeclub profile. Content is lifted from the home page
+@716coffeeclub profile. Content is lifted from the home page
 (`website/_data/home.yml`): hero title and lead, the schedule heading,
 the stat strip, the Lena Levine pull quote, and the sign-up close.
 Colors and fonts match `website/_site/assets/css/main.css`.
