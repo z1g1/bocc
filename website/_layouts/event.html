@@ -1,0 +1,40 @@
+---
+# _layouts/event.html — one Tuesday's event page. Pages are generated at build
+# time by scripts/generate_event_pages.rb and aren't linked from site navigation.
+# Shared copy lives in _data/event_page.yml. Structured data is in event-jsonld.html.
+layout: default
+---
+{%- assign e = site.event -%}
+<section class="page-hero sun-rays">
+  <img class="page-hero__watermark" src="{{ '/assets/images/bocc-logo.png' | relative_url }}" alt="" aria-hidden="true">
+  <div class="container page-hero__grid">
+    <div class="page-hero__lead">
+      <span class="page-hero__badge">
+        {% include icon.html name="sunrise" size="16" %}
+        <span class="stamp">{{ page.long_date }}</span>
+      </span>
+      <h1>{{ page.heading }}</h1>
+      <p class="page-hero__summary">{{ site.data.event_page.summary }}</p>
+      <div class="page-hero__cta">
+        <a class="btn btn--primary btn--lg" href="{{ e.registration_url }}">Register free{% include icon.html name="arrow" size="18" %}</a>
+        <a class="btn btn--ghost-gold btn--lg" href="{{ site.data.event_page.directions_url }}">Get directions</a>
+      </div>
+    </div>
+
+    <aside class="glance-card" aria-label="At a glance">
+      <div class="sunrise-rule"></div>
+      <div class="glance-card__body">
+        <span class="stamp">At a glance</span>
+        <dl class="glance-card__list">
+          <div class="glance-card__row"><dt>7:30&ndash;9</dt><dd>AM Eastern</dd></div>
+          <div class="glance-card__row"><dt>Free</dt><dd>always, for everyone</dd></div>
+          <div class="glance-card__row"><dt>Lobby</dt><dd>{{ e.venue }}</dd></div>
+        </dl>
+      </div>
+    </aside>
+  </div>
+</section>
+
+{% include blocks/prose.html block=site.data.event_page.about %}
+{% include home/schedule.html %}
+{% include blocks/cta.html block=site.data.event_page.cta %}

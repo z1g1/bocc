@@ -61,6 +61,8 @@ All Markdown with YAML front matter:
 - `about.md` — `/about/` — Event history, photo gallery
 - `sponsorship.md` — `/sponsorship/` — Sponsor pitch with LinkedIn testimonial gallery
 - `code-of-conduct.md` — `/code-of-conduct/`
+- `privacy.md` — `/privacy/`
+- `/events/YYYY-MM-DD/` — one page per upcoming Tuesday, generated at build by `scripts/generate_event_pages.rb` into gitignored `_events/` (see `docs/website/future-work.md`)
 
 ### Check-in System
 

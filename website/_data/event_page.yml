@@ -1,0 +1,32 @@
+# _data/event_page.yml — copy shared by every generated event page (_layouts/event.html).
+summary: A free, no-frills coffee meetup for the people building businesses in the 716.
+directions_url: https://www.google.com/maps/search/?api=1&query=1+Seneca+St+Buffalo+NY+14203
+
+about:
+  first: true
+  label: Event details
+  title: What to expect.
+  body: >-
+    Open networking over coffee, followed by community Gives and Asks, where attendees
+    share what they need and what they can offer. It's open to entrepreneurs, small business
+    owners, startup founders, freelancers, and students, and first-timers are always welcome.
+
+
+    We meet in the lobby of Seneca One Tower at 1 Seneca St, Buffalo, NY 14203. Some weeks we
+    move to the food hall in the same building, and we announce those weeks on
+    [LinkedIn](https://www.linkedin.com/showcase/buffalo-open-coffee). A free ticket helps us
+    plan, and walk-ins are welcome too. Please review our
+    [Code of Conduct](/code-of-conduct/) before you come.
+
+cta:
+  label: See you Tuesday
+  title: Grab a free ticket.
+  lead: Grab a free ticket so we know to expect you. Walk-ins are always welcome, too.
+  actions:
+    - label: Register free
+      href: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+      variant: primary
+      icon: arrow
+    - label: About BOCC
+      href: /about/
+      variant: secondary

@@ -1,11 +1,13 @@
 # Future Work & Open Questions
 
-## Event Dates in Structured Data
+## Event Pages
 
-`_includes/event-jsonld.html` emits an Event for each of the next 13 Tuesdays on the home page, computed at build time and skipping Dec 20 through Jan 2. The site needs a deploy at least once a quarter or the dates run out.
+`website/scripts/generate_event_pages.rb` runs before each Netlify build and creates a page for each of the next 13 Tuesdays at `/events/YYYY-MM-DD/`, skipping Dec 20 through Jan 2. Each page carries one Event in its structured data, because Google wants one event per URL. They are in the sitemap but not in site navigation. Expired URLs redirect to the home page.
+
+The site needs a deploy at least once a quarter or the dates run out. Run the script locally to preview the pages.
 
 ### Open question
-Google's Event docs favor one event per page, with a unique URL for each event. This clears the missing `startDate` error, but a home page with 13 dates may not earn event rich results. If it doesn't, the options are one generated page per Tuesday, or a single next date with a scheduled weekly build (about 60 of the 300 monthly Netlify credits). Check the Events report in Search Console a few weeks after deploying.
+The pages are nearly identical and nothing links to them. Check the Events and Pages reports in Search Console a few weeks after deploying. If Google doesn't index them, link to the next event from the home page.
 
 ---
 

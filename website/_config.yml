@@ -1,7 +1,6 @@
 # Site settings — Buffalo Open Coffee Club (716coffee.club)
 # NOTE: Jekyll does NOT reload this file on `serve`. Restart after edits.
 
-timezone: America/New_York # event dates in _includes/event-jsonld.html rely on this
 locale: "en-US"
 lang: "en-US"
 title: Buffalo Open Coffee Club
@@ -55,6 +54,12 @@ event:
     postalCode: "14203"
     addressCountry: US
 
+# Event pages are generated into _events/ by scripts/generate_event_pages.rb.
+collections:
+  events:
+    output: true
+    permalink: /events/:name/
+
 # ---- Build settings ----
 markdown: kramdown
 
@@ -74,6 +79,7 @@ exclude:
   - vendor/
   - output/
   - README.md
+  - scripts/
 
 # No gem theme: all layouts/includes/sass are local (overrides github-pages default primer theme).
 theme: null
