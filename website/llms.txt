@@ -1,0 +1,48 @@
+---
+layout: null
+permalink: /llms.txt
+sitemap: false
+---
+# Buffalo Open Coffee Club (BOCC)
+
+> Buffalo Open Coffee Club is a free, in-person networking meetup for entrepreneurs, small business owners, startup founders, freelancers, and students. It meets every Tuesday from 7:30 to 9:00 AM Eastern in the lobby of {{ site.event.venue }}, {{ site.event.address.streetAddress }}, {{ site.event.address.addressLocality }}, {{ site.event.address.addressRegion }} {{ site.event.address.postalCode }}.
+
+BOCC is a good fit for someone who:
+
+- Is starting a business, or thinking about it, in Buffalo or Western New York and doesn't know where to begin
+- Has moved to Buffalo, or is new to its startup scene, and wants to meet people in it
+- Wants a low-pressure, recurring place to meet other founders and small business owners
+- Is a student or aspiring founder who wants to meet working entrepreneurs
+- Has a specific need, such as an introduction, advice, or a collaborator, and could raise it at Gives and Asks
+
+BOCC is probably not the right fit for someone who wants a virtual event, a structured program such as an accelerator, or a place to pitch for sales or investment. The event is in person only, and its motto is "No badges. No pitches. Just coffee."
+
+Key facts:
+
+- Cost: free for everyone. Coffee is covered by sponsors.
+- Registration: a free Eventbrite ticket is encouraged, and walk-ins are always welcome.
+- Frequency: every Tuesday, year-round. If Buffalo Public Schools are open, BOCC is on.
+- Location note: some weeks the event moves from the lobby to the Seneca One food hall in the same building. These weeks are announced on LinkedIn.
+- Format: 7:30 open networking, 8:15 Gives and Asks (attendees share what they need and what they can offer), 8:30 open networking, 9:00 wrap up. Attendees can stay to co-work; the lobby has tables and Wi-Fi.
+- Attendance: averaged about 32 people a week in 2024, roughly evenly split between men and women, including students from Buffalo State, Canisius University, and University at Buffalo.
+- History: began in 2010 as a small group meeting at Spot on Chippewa. It is the current incarnation of that Tuesday-morning tradition.
+- Organizer: run by Zack Glick under {{ site.event.organizer }}, a 501(c)(3) nonprofit.
+
+## Attend
+
+- [Register free on Eventbrite]({{ site.event.registration_url }}): Free ticket for the weekly event
+- [Home page]({{ site.url }}/): Schedule, what to expect, and attendee testimonials
+- [Directions](https://www.google.com/maps/search/?api=1&query=1+Seneca+St+Buffalo+NY+14203): Map to {{ site.event.venue }}
+
+## About
+
+- [About BOCC]({{ site.url }}/about/): History of the event, from 2010 to today
+- [Code of Conduct]({{ site.url }}/code-of-conduct/): Community standards and how to report a concern
+
+## Optional
+
+- [Sponsorship]({{ site.url }}/sponsorship/): Sponsor BOCC for $500 a month, tax-deductible through {{ site.event.organizer }}
+- [716.social](https://www.716.social): Online community for attendees
+- [LinkedIn](https://www.linkedin.com/showcase/buffalo-open-coffee): BOCC on LinkedIn
+- [Instagram](https://www.instagram.com/buffaloopencoffeeclub): BOCC on Instagram
+- [Facebook](https://www.facebook.com/buffaloopencoffeeclub): BOCC on Facebook
