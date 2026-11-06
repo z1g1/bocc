@@ -1,13 +1,29 @@
 {%- comment -%}
   _includes/event-jsonld.html — structured data for the recurring meetup.
-  Emits schema.org/Event (with a weekly Schedule) + Organization so Google can
-  show event rich results. All values pull from _config.yml (site.event, site.url,
-  site.social) — no hardcoded copy. jekyll-seo-tag handles the page/website JSON-LD;
-  this adds the domain-specific Event + Organization graph.
+  The home page emits one schema.org/Event per upcoming Tuesday; every page emits
+  Organization. Values pull from _config.yml (site.event, site.url, site.social).
+  jekyll-seo-tag handles the page/website JSON-LD.
+
+  Dates are computed at build time, so they only move when the site deploys. 13
+  weeks are emitted so a quarter can pass between deploys. Tuesdays from Dec 20
+  through Jan 2 are skipped: those are the Christmas and New Year's weeks. UTC
+  offsets follow daylight saving because _config.yml sets timezone.
 {%- endcomment -%}
 {%- assign e = site.event -%}
 {%- assign logo = site.url | append: '/assets/images/bocc-logo-square.png' -%}
+{%- if page.layout == 'home' -%}
+{%- assign today_noon = site.time | date: '%Y-%m-%d 12:00:00' | date: '%s' | plus: 0 -%}
+{%- assign weekday = site.time | date: '%u' | plus: 0 -%}
+{%- assign days_to_tuesday = 9 | minus: weekday | modulo: 7 -%}
+{%- assign first_tuesday = days_to_tuesday | times: 86400 | plus: today_noon -%}
+{%- assign emitted = 0 %}
 <script type="application/ld+json">
+[
+{%- for week in (0..15) -%}
+  {%- assign tuesday = week | times: 604800 | plus: first_tuesday -%}
+  {%- assign month_day = tuesday | date: '%m%d' | plus: 0 -%}
+  {%- if month_day >= 1220 or month_day <= 102 or emitted >= 13 -%}{%- continue -%}{%- endif -%}
+  {%- if emitted > 0 %},{% endif %}
 {
   "@context": "https://schema.org",
   "@type": "Event",
@@ -15,8 +31,11 @@
   "description": {{ e.description | default: site.description | jsonify }},
   "image": [{{ site.url | append: site.og_image | jsonify }}],
   "url": {{ site.url | append: site.baseurl | jsonify }},
+  "startDate": "{{ tuesday | date: '%Y-%m-%dT07:30:00%:z' }}",
+  "endDate": "{{ tuesday | date: '%Y-%m-%dT09:00:00%:z' }}",
   "eventStatus": "https://schema.org/EventScheduled",
   "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+  {%- if emitted == 0 %}
   "eventSchedule": {
     "@type": "Schedule",
     "repeatFrequency": "P1W",
@@ -25,6 +44,7 @@
     "endTime": "09:00:00",
     "scheduleTimezone": "America/New_York"
   },
+  {%- endif %}
   "location": {
     "@type": "Place",
     "name": {{ e.venue | jsonify }},
@@ -55,10 +75,15 @@
     "price": "0",
     "priceCurrency": "USD",
     "availability": "https://schema.org/InStock",
-    "url": {{ e.registration_url | jsonify }}
+    "url": {{ e.registration_url | jsonify }},
+    "validFrom": {{ e.offer_valid_from | jsonify }}
   }
 }
+  {%- assign emitted = emitted | plus: 1 -%}
+{%- endfor %}
+]
 </script>
+{%- endif %}
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",

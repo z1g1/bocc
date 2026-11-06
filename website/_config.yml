@@ -1,6 +1,7 @@
 # Site settings — Buffalo Open Coffee Club (716coffee.club)
 # NOTE: Jekyll does NOT reload this file on `serve`. Restart after edits.
 
+timezone: America/New_York # event dates in _includes/event-jsonld.html rely on this
 locale: "en-US"
 lang: "en-US"
 title: Buffalo Open Coffee Club
@@ -43,6 +44,7 @@ event:
   organizer_url: https://joinbootsector.com/
   registration_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
   eventbrite_id: "1983098086761"
+  offer_valid_from: "2024-01-01T00:00:00-05:00"
   performer:
     name: Zack Glick
     url: https://www.linkedin.com/in/zglick/

@@ -1,21 +1,11 @@
 # Future Work & Open Questions
 
-## Automated Event startDate in Structured Data
+## Event Dates in Structured Data
 
-The JSON-LD in `_includes/head/custom.html` has a hardcoded `startDate` for the next event occurrence. The `eventSchedule` property with `repeatFrequency: P1W` and `byDay: Tuesday` handles the recurring signal for Google, but `startDate` should ideally stay near-future.
+`_includes/event-jsonld.html` emits an Event for each of the next 13 Tuesdays on the home page, computed at build time and skipping Dec 20 through Jan 2. The site needs a deploy at least once a quarter or the dates run out.
 
-### Recommended approach
-GitHub Actions weekly cron + Liquid template to calculate next Tuesday at build time.
-
-### Concerns
-1. **Google doesn't crawl on your schedule.** Even with weekly rebuilds, Google may cache old pages for days/weeks. `eventSchedule` is more important than `startDate` for recurring events.
-2. **Christmas exclusion logic.** Event skips the last 2 weeks of December. Need to define exact dates (Dec 18-31? Dec 22-31?) — varies by year.
-3. **GitHub Actions cron is best-effort.** Not SLA-backed; may be delayed or skipped during high load.
-4. **Silent build failures.** If a cron-triggered build fails, the site stays on the old version. Need failure notifications.
-5. **Effort vs benefit.** Google uses `eventSchedule` as the primary signal for recurring events. Manual updates once or twice a year may be sufficient.
-
-### Decision
-Deferred — `eventSchedule` is doing the heavy lifting. Revisit if Google Search Console shows issues with event rich results.
+### Open question
+Google's Event docs favor one event per page, with a unique URL for each event. This clears the missing `startDate` error, but a home page with 13 dates may not earn event rich results. If it doesn't, the options are one generated page per Tuesday, or a single next date with a scheduled weekly build (about 60 of the 300 monthly Netlify credits). Check the Events report in Search Console a few weeks after deploying.
 
 ---
 
