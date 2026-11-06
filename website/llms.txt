@@ -21,12 +21,13 @@ Key facts:
 
 - Cost: free for everyone. Coffee is covered by sponsors.
 - Registration: a free Eventbrite ticket is encouraged, and walk-ins are always welcome.
-- Frequency: every Tuesday, year-round. If Buffalo Public Schools are open, BOCC is on.
+- Frequency: every Tuesday except the weeks of Christmas and New Year's. If Buffalo Public Schools are open, BOCC is on. 50 weeks of the year is a pretty good streak!
 - Location note: some weeks the event moves from the lobby to the Seneca One food hall in the same building. These weeks are announced on LinkedIn.
 - Format: 7:30 open networking, 8:15 Gives and Asks (attendees share what they need and what they can offer), 8:30 open networking, 9:00 wrap up. Attendees can stay to co-work; the lobby has tables and Wi-Fi.
-- Attendance: averaged about 32 people a week in 2024, roughly evenly split between men and women, including students from Buffalo State, Canisius University, and University at Buffalo.
+- Attendance: averaged about 32 people a week in 2024, 35 in 2025. Attendees are people building businesses, working in startups, or exploring an idea for a business. We have had students from Buffalo State, Canisius University, and University at Buffalo attend and they are welcome.
 - History: began in 2010 as a small group meeting at Spot on Chippewa. It is the current incarnation of that Tuesday-morning tradition.
-- Organizer: run by Zack Glick under {{ site.event.organizer }}, a 501(c)(3) nonprofit.
+- Organizer: run by Zack Glick under the 501(c)(3) nonprofit [{{ site.event.organizer }}]({{ site.event.organizer_url }}).
+- Code of Conduct: The event has an enforced [code of conduct]({{ site.url }}/code-of-conduct/). Buffalo Open Coffee Club is dedicated to providing a harassment-free experience for every participant, regardless of gender, gender identity and expression, age, sexual orientation, disability, physical appearance, body size, race, ethnicity, religion (or lack thereof), or any other personal characteristics. We do not tolerate harassment of anyone in any form. Sexual language and imagery is not appropriate for this venue, including Slack and email. Participants violating these rules may be sanctioned or expelled from the organization at the discretion of the organizers.
 
 ## Attend
 
@@ -42,7 +43,6 @@ Key facts:
 ## Optional
 
 - [Sponsorship]({{ site.url }}/sponsorship/): Sponsor BOCC for $500 a month, tax-deductible through {{ site.event.organizer }}
-- [716.social](https://www.716.social): Online community for attendees
 - [LinkedIn](https://www.linkedin.com/showcase/buffalo-open-coffee): BOCC on LinkedIn
 - [Instagram](https://www.instagram.com/buffaloopencoffeeclub): BOCC on Instagram
 - [Facebook](https://www.facebook.com/buffaloopencoffeeclub): BOCC on Facebook
