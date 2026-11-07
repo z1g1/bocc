@@ -2,16 +2,14 @@
  * Postgres (Neon) check-in store — the storage adapter behind the check-in
  * use-case. See ADR 0003 / ADR 0004 / ADR 0005 and docs/backend/NEON_PERMISSIONS.md.
  *
- * This module is the Postgres counterpart of `utils/airtable.js`. It owns the
- * three operations the use-case needs:
+ * It owns the three operations the use-case needs:
  *   - findOrCreateAttendee  (idempotent, by lowercased email)
  *   - insertCheckin         (DB-enforced same-day dedup via ON CONFLICT)
  *   - getStreak             (reads the recompute-on-read `streaks` view)
  *
  * It connects as the least-privilege `checkin_writer` role (never the owner), via
  * Neon's pooled endpoint. A single small pool is reused for the function-process
- * lifetime (cold-start once), mirroring the Bot-JWT memoization pattern in
- * circle-http.js.
+ * lifetime (cold-start once).
  */
 
 const { Pool } = require('pg');
@@ -20,18 +18,9 @@ const { toPgConfig } = require('./db-ssl');
 
 let pool;
 
-/**
- * Lazily build the connection pool. Config already fails fast when postgres mode
- * has no URL; this guard covers callers in airtable rollback mode.
- */
+/** Lazily build the connection pool. Config fails fast when the URL is missing. */
 const getPool = () => {
   if (!pool) {
-    if (!config.db.connectionString) {
-      throw new Error(
-        '[pg-store] CHECKIN_DB_URL is not set; cannot reach Postgres. ' +
-        'See docs/backend/NEON_PERMISSIONS.md.'
-      );
-    }
     pool = new Pool(toPgConfig(config.db.connectionString, { max: config.db.poolMax }));
   }
   return pool;
@@ -42,7 +31,7 @@ const query = (text, params) => getPool().query(text, params);
 /**
  * Find or create an attendee by email. The email is expected already lowercased
  * by validation (the natural key). On a returning attendee we deliberately do
- * NOT overwrite their stored details — same rule as the Airtable path.
+ * NOT overwrite their stored details.
  *
  * @returns {Promise<{id: string, created: boolean}>}
  */

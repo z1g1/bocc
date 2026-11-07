@@ -1,3 +1,5 @@
+> **Retired (2026-11-07):** Circle and profile photo enforcement were removed. Kept for history only. See [ADR 0006](../adr/0006-retire-circle-postgres-only.md).
+
 # Airtable Schema: No Photo Warnings Table
 
 This document defines the schema for the "No Photo Warnings" table used in Epic 4: Profile Photo Enforcement.

@@ -16,11 +16,10 @@
 const env = process.env;
 
 // --- Required secrets (no default; missing → fail fast) ---------------------
+// CHECKIN_DB_URL is the POOLED connection string for the least-privilege
+// `checkin_writer` role — never the owner. See docs/backend/NEON_PERMISSIONS.md.
 const REQUIRED_SECRETS = {
-  AIRTABLE_API_KEY: env.AIRTABLE_API_KEY,
-  AIRTABLE_BASE_ID: env.AIRTABLE_BASE_ID,
-  CIRCLE_API_TOKEN: env.CIRCLE_API_TOKEN,
-  CIRCLE_HEADLESS_API: env.CIRCLE_HEADLESS_API,
+  CHECKIN_DB_URL: env.CHECKIN_DB_URL,
 };
 
 const missing = Object.entries(REQUIRED_SECRETS)
@@ -38,80 +37,16 @@ if (missing.length > 0) {
 // One concise boot summary replaces the per-module 'Exists / Not set' logs.
 console.log('[config] Required secrets present:', Object.keys(REQUIRED_SECRETS).join(', '));
 
-// --- Check-in store (ADR 0005) ----------------------------------------------
-// 'postgres' : Neon Postgres is authoritative (default).
-// 'airtable' : legacy Airtable-only path, kept for rollback only. The Airtable
-//              free base is full, so this mode cannot record new check-ins.
-const CHECKIN_STORE = (env.CHECKIN_STORE || 'postgres').toLowerCase();
-const VALID_CHECKIN_STORES = ['postgres', 'airtable'];
-if (!VALID_CHECKIN_STORES.includes(CHECKIN_STORE)) {
-  throw new Error(
-    `[config] Invalid CHECKIN_STORE='${CHECKIN_STORE}'. ` +
-    `Use one of: ${VALID_CHECKIN_STORES.join(', ')}.`
-  );
-}
-if (CHECKIN_STORE === 'postgres' && !env.CHECKIN_DB_URL) {
-  throw new Error(
-    `[config] CHECKIN_STORE='postgres' requires CHECKIN_DB_URL (the least-privilege ` +
-    `checkin_writer connection string). See docs/backend/NEON_PERMISSIONS.md.`
-  );
-}
-
 // --- Frozen config object ---------------------------------------------------
 const config = Object.freeze({
-  airtable: Object.freeze({
-    apiKey: REQUIRED_SECRETS.AIRTABLE_API_KEY,
-    baseId: REQUIRED_SECRETS.AIRTABLE_BASE_ID,
-    endpointUrl: 'https://api.airtable.com', // stable vendor endpoint
-  }),
-
-  // Neon Postgres — the transactional check-in store (ADR 0003 model, ADR 0005
-  // host). The connection string is the POOLED endpoint for the least-privilege
-  // `checkin_writer` role — never the owner. See docs/backend/NEON_PERMISSIONS.md.
+  // Neon Postgres — the only check-in store (ADR 0005, ADR 0006).
   db: Object.freeze({
-    connectionString: env.CHECKIN_DB_URL || null,
+    connectionString: REQUIRED_SECRETS.CHECKIN_DB_URL,
     poolMax: Number(env.DB_POOL_MAX || 1), // serverless: one conn per instance
-  }),
-
-  circle: Object.freeze({
-    adminToken: REQUIRED_SECRETS.CIRCLE_API_TOKEN,
-    headlessToken: REQUIRED_SECRETS.CIRCLE_HEADLESS_API,
-    // Stable vendor endpoints (app.circle.so is the LIVE server; api.circle.so
-    // and api-headless.circle.so are docs sites, NOT API endpoints).
-    adminBaseUrl: 'https://app.circle.so/api/admin/v2',
-    headlessBaseUrl: 'https://app.circle.so',
-    authBaseUrl: 'https://app.circle.so/api/v1/headless',
-  }),
-
-  // Env-overridable identities — default to the current production values so no
-  // new required env is introduced. Promote to required env if a distinct
-  // staging community ever needs different identities (see ADR-0001 context).
-  bot: Object.freeze({
-    id: env.BOT_USER_ID || '73e5a590',
-    email: env.BOT_USER_EMAIL || 'bocc-bot@zackglick.com',
-    name: env.BOT_USER_NAME || '716.social Bot',
-  }),
-
-  enforcement: Object.freeze({
-    adminMemberId: env.ADMIN_MEMBER_ID || '2d8e9215', // circle@zackglick.com
-    testUserEmail: env.TEST_USER_EMAIL || 'zglicka@gmail.com',
-    // Shared secret required to trigger the manual enforcement endpoint over
-    // HTTP. Optional at boot; when unset the manual endpoint fails closed
-    // (rejects all calls). Not used by the scheduled cron run.
-    triggerToken: env.ENFORCEMENT_TRIGGER_TOKEN || null,
-    // Safety guards are deliberately NOT env-overridable: raising the cap should
-    // require a reviewed code change. See docs/backend/SAFETY_LIMITS_SPECIFICATION.md.
-    warnThreshold: 500, // log alert but continue
-    hardLimit: 1000,    // throw and stop
   }),
 
   http: Object.freeze({
     allowedOrigin: env.ALLOWED_ORIGIN || '*',
-  }),
-
-  // Check-in storage mode — see the note above.
-  checkin: Object.freeze({
-    store: CHECKIN_STORE,
   }),
 
   isDev: env.NODE_ENV === 'development',

@@ -1,6 +1,6 @@
 // Unit tests for the Postgres check-in store (utils/pg-store.js).
 // `pg` is mocked; we assert the SQL the store issues and how it maps results —
-// same spirit as the airtable/circle mocks.
+// so no database is needed.
 
 // The store needs a connection string at first connect; set a dummy one (config
 // reads env at import; the mocked Pool never really connects).

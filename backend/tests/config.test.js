@@ -8,22 +8,8 @@
 
 const CONFIG_PATH = '../netlify/functions/utils/config';
 
-const REQUIRED = [
-  'AIRTABLE_API_KEY',
-  'AIRTABLE_BASE_ID',
-  'CIRCLE_API_TOKEN',
-  'CIRCLE_HEADLESS_API',
-];
-
-const TOUCHED = [
-  ...REQUIRED,
-  'BOT_USER_EMAIL',
-  'ADMIN_MEMBER_ID',
-  'HARD_LIMIT_MAX_MEMBERS',
-  'ALLOWED_ORIGIN',
-  'CHECKIN_STORE',
-  'CHECKIN_DB_URL',
-];
+const DB_URL = 'postgres://checkin_writer@pooler/test';
+const TOUCHED = ['CHECKIN_DB_URL', 'DB_POOL_MAX', 'ALLOWED_ORIGIN'];
 
 describe('config adapter', () => {
   let saved;
@@ -32,6 +18,8 @@ describe('config adapter', () => {
     jest.resetModules();
     saved = {};
     TOUCHED.forEach((k) => { saved[k] = process.env[k]; });
+    process.env.CHECKIN_DB_URL = DB_URL;
+    delete process.env.DB_POOL_MAX;
   });
 
   afterEach(() => {
@@ -41,103 +29,33 @@ describe('config adapter', () => {
     });
   });
 
-  const setRequired = () => REQUIRED.forEach((k) => { process.env[k] = `test-${k}`; });
-
-  test('loads a deeply frozen config when all required secrets are present', () => {
-    setRequired();
+  test('loads a deeply frozen config when the required secret is present', () => {
     const config = require(CONFIG_PATH);
 
     expect(Object.isFrozen(config)).toBe(true);
-    expect(Object.isFrozen(config.circle)).toBe(true);
-    expect(config.airtable.apiKey).toBe('test-AIRTABLE_API_KEY');
-    expect(config.circle.adminBaseUrl).toBe('https://app.circle.so/api/admin/v2');
+    expect(Object.isFrozen(config.db)).toBe(true);
+    expect(config.db.connectionString).toBe(DB_URL);
+    expect(config.db.poolMax).toBe(1);
   });
 
-  test('throws at import listing every missing required secret', () => {
-    REQUIRED.forEach((k) => delete process.env[k]);
+  test('throws at import when CHECKIN_DB_URL is missing', () => {
+    delete process.env.CHECKIN_DB_URL;
 
-    let error;
-    try {
-      require(CONFIG_PATH);
-    } catch (e) {
-      error = e;
-    }
-
-    expect(error).toBeDefined();
-    REQUIRED.forEach((k) => expect(error.message).toContain(k));
+    expect(() => require(CONFIG_PATH)).toThrow(/CHECKIN_DB_URL/);
   });
 
-  test('throws when even one required secret is missing', () => {
-    setRequired();
-    delete process.env.CIRCLE_HEADLESS_API;
-
-    expect(() => require(CONFIG_PATH)).toThrow(/CIRCLE_HEADLESS_API/);
-  });
-
-  test('identity values fall back to defaults but honor env overrides', () => {
-    setRequired();
-    process.env.BOT_USER_EMAIL = 'override@example.com';
-    delete process.env.ADMIN_MEMBER_ID;
-
+  test('needs no Circle or Airtable secrets', () => {
     const config = require(CONFIG_PATH);
-    expect(config.bot.email).toBe('override@example.com');
-    expect(config.enforcement.adminMemberId).toBe('2d8e9215');
-  });
-
-  test('safety limits are NOT env-overridable', () => {
-    setRequired();
-    process.env.HARD_LIMIT_MAX_MEMBERS = '99999';
-
-    const config = require(CONFIG_PATH);
-    expect(config.enforcement.warnThreshold).toBe(500);
-    expect(config.enforcement.hardLimit).toBe(1000);
+    expect(config.circle).toBeUndefined();
+    expect(config.airtable).toBeUndefined();
   });
 
   test('allowedOrigin defaults to "*" and honors env override', () => {
-    setRequired();
     delete process.env.ALLOWED_ORIGIN;
     expect(require(CONFIG_PATH).http.allowedOrigin).toBe('*');
 
     jest.resetModules();
-    setRequired();
     process.env.ALLOWED_ORIGIN = 'https://716coffee.club';
     expect(require(CONFIG_PATH).http.allowedOrigin).toBe('https://716coffee.club');
-  });
-
-  describe('check-in store', () => {
-    test('defaults to postgres and exposes the DB connection string', () => {
-      setRequired();
-      delete process.env.CHECKIN_STORE;
-      process.env.CHECKIN_DB_URL = 'postgres://checkin_writer@pooler/test';
-
-      const config = require(CONFIG_PATH);
-      expect(config.checkin.store).toBe('postgres');
-      expect(config.db.connectionString).toBe('postgres://checkin_writer@pooler/test');
-      expect(config.db.poolMax).toBe(1);
-    });
-
-    test('postgres mode fails fast without CHECKIN_DB_URL', () => {
-      setRequired();
-      delete process.env.CHECKIN_STORE;
-      delete process.env.CHECKIN_DB_URL;
-
-      expect(() => require(CONFIG_PATH)).toThrow(/CHECKIN_DB_URL/);
-    });
-
-    test('airtable rollback mode does not require CHECKIN_DB_URL', () => {
-      setRequired();
-      process.env.CHECKIN_STORE = 'airtable';
-      delete process.env.CHECKIN_DB_URL;
-
-      expect(require(CONFIG_PATH).checkin.store).toBe('airtable');
-    });
-
-    test('rejects retired or unknown modes', () => {
-      setRequired();
-      process.env.CHECKIN_DB_URL = 'postgres://checkin_writer@pooler/test';
-      process.env.CHECKIN_STORE = 'dual';
-
-      expect(() => require(CONFIG_PATH)).toThrow(/Invalid CHECKIN_STORE='dual'/);
-    });
   });
 });

@@ -1,6 +1,6 @@
 # ADR 0002 — Authorization gate for the enforcement endpoints
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0006](0006-retire-circle-postgres-only.md)
 - **Date:** 2026-06-24
 - **Deciders:** Zack Glick
 

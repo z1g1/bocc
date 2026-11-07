@@ -16,15 +16,10 @@
   NODE_VERSION = "20"
 
 # Serverless functions (formerly the separate bocc-backend site).
-# Node deps (airtable, axios) are installed from the root package.json.
+# Node deps (pg) are installed from the root package.json.
 [functions]
   directory = "backend/netlify/functions"
   node_bundler = "esbuild"
-
-# Scheduled function: profile photo enforcement.
-# Runs weekly on Mondays at 14:00 UTC (9:00 AM EST).
-[functions."profile-photo-enforcement"]
-  schedule = "0 14 * * 1"
 
 # Redirect www to apex.
 [[redirects]]

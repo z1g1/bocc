@@ -1,3 +1,5 @@
+> **Retired (2026-11-07):** Circle and profile photo enforcement were removed. Kept for history only. See [ADR 0006](../adr/0006-retire-circle-postgres-only.md).
+
 # Safety Limits Specification
 ## Profile Photo Enforcement System - Member Processing Caps
 

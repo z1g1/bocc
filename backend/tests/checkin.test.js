@@ -1,24 +1,20 @@
-// Mock the airtable module before requiring checkin
-jest.mock('../netlify/functions/utils/airtable', () => ({
-    fetchAttendeeByEmail: jest.fn(),
-    createAttendee: jest.fn(),
-    createCheckinEntry: jest.fn(),
-    findExistingCheckin: jest.fn()
-}));
-
-// Mock the circle module
-jest.mock('../netlify/functions/utils/circle', () => ({
-    ensureMember: jest.fn().mockResolvedValue({ id: 'circle123' })
+// Mock the Postgres store before requiring checkin
+jest.mock('../netlify/functions/utils/pg-store', () => ({
+    findOrCreateAttendee: jest.fn(),
+    insertCheckin: jest.fn(),
+    getStreak: jest.fn()
 }));
 
 const { handler } = require('../netlify/functions/checkin');
-const { fetchAttendeeByEmail, createAttendee, createCheckinEntry, findExistingCheckin } = require('../netlify/functions/utils/airtable');
+const { findOrCreateAttendee, insertCheckin, getStreak } = require('../netlify/functions/utils/pg-store');
 
 describe('checkin handler', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        // Default: no duplicate check-in
-        findExistingCheckin.mockResolvedValue(null);
+        // Default: a new, non-duplicate check-in with no streak yet
+        findOrCreateAttendee.mockResolvedValue({ id: 'att123' });
+        insertCheckin.mockResolvedValue({ created: true });
+        getStreak.mockResolvedValue(null);
     });
 
     const createEvent = (body, method = 'POST') => ({
@@ -121,8 +117,6 @@ describe('checkin handler', () => {
         });
 
         it('should accept valid phone format', async () => {
-            fetchAttendeeByEmail.mockResolvedValue({ id: 'rec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -135,8 +129,6 @@ describe('checkin handler', () => {
         });
 
         it('should accept empty phone (optional)', async () => {
-            fetchAttendeeByEmail.mockResolvedValue({ id: 'rec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -163,8 +155,6 @@ describe('checkin handler', () => {
         });
 
         it('should accept valid UUID token', async () => {
-            fetchAttendeeByEmail.mockResolvedValue({ id: 'rec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -179,10 +169,6 @@ describe('checkin handler', () => {
 
     describe('existing attendee checkin', () => {
         it('should create checkin for existing attendee', async () => {
-            const existingAttendee = { id: 'rec123' };
-            fetchAttendeeByEmail.mockResolvedValue(existingAttendee);
-            findExistingCheckin.mockResolvedValue(null); // No duplicate
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'existing@example.com',
@@ -195,20 +181,17 @@ describe('checkin handler', () => {
             expect(response.statusCode).toBe(200);
             const body = JSON.parse(response.body);
             expect(body.message).toBe('Check-in successful');
-            // Airtable mode / debug: no streak, so no celebration (keys still present)
+            // Debug: no streak, so no celebration (keys still present)
             expect(body).toHaveProperty('streak', null);
             expect(body).toHaveProperty('celebration', null);
-            expect(createCheckinEntry).toHaveBeenCalledWith('rec123', 'event123', true, 'abc123');
-            expect(createAttendee).not.toHaveBeenCalled();
+            expect(insertCheckin).toHaveBeenCalledWith(expect.objectContaining({
+                attendeeId: 'att123', eventId: 'event123', debug: true, token: 'abc123'
+            }));
         });
     });
 
     describe('new attendee checkin', () => {
         it('should create new attendee and checkin when attendee does not exist', async () => {
-            fetchAttendeeByEmail.mockResolvedValue(null);
-            createAttendee.mockResolvedValue({ id: 'newrec123' });
-            findExistingCheckin.mockResolvedValue(null); // No duplicate
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'NEW@EXAMPLE.COM',
@@ -224,23 +207,38 @@ describe('checkin handler', () => {
 
             expect(response.statusCode).toBe(200);
             // Email should be lowercased, name should be sanitized
-            expect(createAttendee).toHaveBeenCalledWith(
-                'new@example.com',
-                'John Doe',
-                '123-456-7890',
-                'Test Business',
-                true,
-                false
-            );
-            expect(createCheckinEntry).toHaveBeenCalledWith('newrec123', 'event123', false, '');
+            expect(findOrCreateAttendee).toHaveBeenCalledWith({
+                email: 'new@example.com',
+                name: 'John Doe',
+                phone: '123-456-7890',
+                businessName: 'Test Business',
+                okToEmail: true,
+                debug: false
+            });
+            expect(insertCheckin).toHaveBeenCalledWith(expect.objectContaining({
+                attendeeId: 'att123', eventId: 'event123', debug: false, token: ''
+            }));
+        });
+    });
+
+    describe('duplicate checkin', () => {
+        it('should report an already-recorded same-day check-in', async () => {
+            insertCheckin.mockResolvedValue({ created: false });
+
+            const response = await handler(createEvent({
+                email: 'user@example.com',
+                eventId: 'event123'
+            }));
+
+            expect(response.statusCode).toBe(200);
+            const body = JSON.parse(response.body);
+            expect(body.alreadyCheckedIn).toBe(true);
+            expect(body.checkinDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
         });
     });
 
     describe('input sanitization', () => {
         it('should sanitize XSS attempt in name', async () => {
-            fetchAttendeeByEmail.mockResolvedValue(null);
-            createAttendee.mockResolvedValue({ id: 'newrec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -250,20 +248,13 @@ describe('checkin handler', () => {
             const response = await handler(event);
 
             expect(response.statusCode).toBe(200);
-            expect(createAttendee).toHaveBeenCalledWith(
-                'user@example.com',
-                'alert("xss")John',
-                '',
-                '',
-                false,
-                false
-            );
+            expect(findOrCreateAttendee).toHaveBeenCalledWith(expect.objectContaining({
+                email: 'user@example.com',
+                name: 'alert("xss")John'
+            }));
         });
 
         it('should sanitize business name', async () => {
-            fetchAttendeeByEmail.mockResolvedValue(null);
-            createAttendee.mockResolvedValue({ id: 'newrec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -273,20 +264,16 @@ describe('checkin handler', () => {
             const response = await handler(event);
 
             expect(response.statusCode).toBe(200);
-            expect(createAttendee).toHaveBeenCalledWith(
-                'user@example.com',
-                '',
-                '',
-                'Acme Corp',
-                false,
-                false
-            );
+            expect(findOrCreateAttendee).toHaveBeenCalledWith(expect.objectContaining({
+                email: 'user@example.com',
+                businessName: 'Acme Corp'
+            }));
         });
     });
 
     describe('error handling', () => {
         it('should return 500 with generic message on database error', async () => {
-            fetchAttendeeByEmail.mockRejectedValue(new Error('Database connection failed'));
+            findOrCreateAttendee.mockRejectedValue(new Error('Database connection failed'));
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -304,8 +291,6 @@ describe('checkin handler', () => {
 
     describe('debug flag handling', () => {
         it('should set debug flag to true when debug is "1"', async () => {
-            fetchAttendeeByEmail.mockResolvedValue({ id: 'rec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -314,12 +299,10 @@ describe('checkin handler', () => {
             });
             await handler(event);
 
-            expect(createCheckinEntry).toHaveBeenCalledWith('rec123', 'event123', true, '');
+            expect(insertCheckin).toHaveBeenCalledWith(expect.objectContaining({ debug: true }));
         });
 
         it('should set debug flag to false when debug is "0"', async () => {
-            fetchAttendeeByEmail.mockResolvedValue({ id: 'rec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -328,12 +311,10 @@ describe('checkin handler', () => {
             });
             await handler(event);
 
-            expect(createCheckinEntry).toHaveBeenCalledWith('rec123', 'event123', false, '');
+            expect(insertCheckin).toHaveBeenCalledWith(expect.objectContaining({ debug: false }));
         });
 
         it('should set debug flag to false when debug is not provided', async () => {
-            fetchAttendeeByEmail.mockResolvedValue({ id: 'rec123' });
-            createCheckinEntry.mockResolvedValue({ id: 'checkin123' });
 
             const event = createEvent({
                 email: 'user@example.com',
@@ -341,7 +322,7 @@ describe('checkin handler', () => {
             });
             await handler(event);
 
-            expect(createCheckinEntry).toHaveBeenCalledWith('rec123', 'event123', false, '');
+            expect(insertCheckin).toHaveBeenCalledWith(expect.objectContaining({ debug: false }));
         });
     });
 

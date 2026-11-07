@@ -29,42 +29,34 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 │  │  2. Find/create attendee (pg-store.js)            │   │
 │  │  3. Insert check-in, DB-enforced dedup (pg-store) │   │
 │  │  4. Read streak (pg-store.js) [non-fatal]         │   │
-│  │  5. Invite to Circle.so (circle.js) [non-blocking]│   │
 │  └──────────────────────────────────────────────────┘   │
-│                                                         │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │ profile-photo-enforcement.js (weekly cron)        │   │
-│  │  1. Fetch all Circle members (circle.js)          │   │
-│  │  2. Filter for missing photos                     │   │
-│  │  3. Check warning history (airtable-warnings.js)  │   │
-│  │  4. Send progressive DMs (circle-member-api.js)   │   │
-│  │  5. Deactivate after 4 warnings                   │   │
-│  └──────────────────────────────────────────────────┘   │
-└───────┬──────────────────┬───────────────────┬──────────┘
-        │ checkin_writer   │                   │
-        ▼                  ▼                   ▼
-┌────────────────┐ ┌──────────────────┐ ┌──────────────────────┐
-│ Neon Postgres  │ │    Airtable      │ │     Circle.so        │
-│                │ │                  │ │     (716.social)     │
-│ • attendees    │ │ • No Photo       │ │                      │
-│ • checkins     │ │   Warnings       │ │ • Member profiles    │
-│ • held_        │ │ • attendees /    │ │ • checkinCount field │
-│   occurrences  │ │   checkins       │ │ • Bot DMs (716.social│
-│ • streaks      │ │   (historical,   │ │   Bot)               │
-│                │ │   read-only)     │ │                      │
-└────────────────┘ └──────────────────┘ └──────────────────────┘
+└────────────────────────────┬────────────────────────────┘
+                             │ checkin_writer
+                             ▼
+                    ┌────────────────┐
+                    │ Neon Postgres  │
+                    │                │
+                    │ • attendees    │
+                    │ • checkins     │
+                    │ • held_        │
+                    │   occurrences  │
+                    │ • streaks      │
+                    └────────────────┘
 ```
 
 > **Module layer (June 2026 refactor):** the `checkin.js` function is a thin HTTP
 > adapter; the check-in business flow lives in `utils/check-in.js`
-> (`checkInAttendee`). Configuration is centralized in `utils/config.js`, and
-> Circle HTTP transport in `utils/circle-http.js`. See
+> (`checkInAttendee`). Configuration is centralized in `utils/config.js`. See
 > [architecture-review-2026-06.md](architecture-review-2026-06.md) and
 > [`CONTEXT.md`](../CONTEXT.md) for the module seams.
 >
 > **Datastore (September 2026):** check-ins moved from Airtable (free base full) to
 > Neon Postgres. See [ADR-0003](adr/0003-supabase-transactional-store.md) (data model)
 > and [ADR-0005](adr/0005-neon-replaces-supabase.md) (host).
+>
+> **Circle retired (November 2026):** the Circle integration and profile photo enforcement
+> were removed, and Postgres is the only data store. See
+> [ADR-0006](adr/0006-retire-circle-postgres-only.md).
 
 ## Check-in Flow (Detailed)
 
@@ -98,34 +90,9 @@ The QR code URL contains the event token: `https://716coffee.club/checkin/bocc?t
 - Reads current/longest streak for the celebration
 - Failure returns `streak: null` and never fails the check-in; debug check-ins skip it
 
-### 7. Circle.so integration (`utils/circle.js`) — non-blocking
-- Only for production check-ins (debug flag = "0")
-- Calls `ensureMember(email, name)` to find or create Circle member
-- Increments `checkinCount` custom field
-- If Circle API fails, check-in still succeeds (graceful degradation)
-
-### 8. Frontend response
-- On success: shows confirmation + optional sponsor redirect countdown
+### 7. Frontend response
+- On success: shows confirmation, plus a sponsor redirect countdown if one is enabled
 - On API failure: saves data to `localStorage` and shows "saved locally" message
-
-## Profile Photo Enforcement Flow
-
-Runs weekly on Mondays at 9:00 AM EST via Netlify scheduled function.
-
-### Warning Progression
-| Warning # | Action | DM Sent? |
-|-----------|--------|----------|
-| 1 | Create warning record, send friendly DM | Yes |
-| 2 | Increment count, send reminder DM | Yes |
-| 3 | Increment count, send serious DM | Yes |
-| 4 | Increment count, deactivate account | No |
-| Photo added | Delete warning, send thank-you DM | Yes |
-
-### Safety Limits
-- 500 members: warning logged (community approaching limit)
-- 1000 members: error thrown, processing stops (prevents mass-processing bugs)
-
-See `docs/backend/SAFETY_LIMITS_SPECIFICATION.md` for rationale.
 
 ## Data Model
 
@@ -163,20 +130,9 @@ Unique index `checkins_dedup_key` on `(attendee_id, event_id, coalesce(token,'')
 - `held_occurrences`: the weeks each event actually met (≥1 non-debug check-in)
 - `streaks`: `current_streak`, `longest_streak`, `is_personal_best` per (attendee, event), via gaps-and-islands ([ADR-0004](adr/0004-streak-computation-model.md))
 
-### Airtable: `No Photo Warnings`
-| Field | Type | Notes |
-|-------|------|-------|
-| Email | Email | Circle member email |
-| Name | Text | Circle member name |
-| WarningCount | Number | 1-4 |
-| Status | Select | Active, Deactivated, PhotoAdded |
-| LastWarningDate | Date | |
-| CreatedDate | Date | |
-| MemberID | Text | Circle.so member ID |
-| Notes | Text | Action log |
-
-Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`. The Airtable `attendees` and
-`checkins` tables remain as a read-only historical copy; all rows were backfilled to Postgres.
+### Airtable archive
+The Airtable `attendees` and `checkins` tables remain as a read-only historical copy; all rows
+were backfilled to Postgres. The app no longer connects to Airtable.
 
 ## External Service Integration
 
@@ -192,20 +148,6 @@ Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`. The Airtable `att
 - Free plan: compute scales to zero when idle and wakes on connect (no inactivity pause)
 - Permissions documented in `docs/backend/NEON_PERMISSIONS.md`
 
-### Airtable
-- REST API via `airtable` npm package (enforcement warnings only)
-- Auth: API key in `AIRTABLE_API_KEY` env var
-- Formula injection protection in all queries
-
-### Circle.so (716.social)
-- Three APIs (all under `app.circle.so`):
-  - Admin API v2 — member CRUD, custom fields
-  - Headless Auth API — JWT generation for bot user
-  - Headless Member API — send DMs as bot
-- Auth: two separate tokens (`CIRCLE_API_TOKEN`, `CIRCLE_HEADLESS_API`)
-- Limitation: no segment API access; all members fetched and filtered client-side
-- Permissions documented in `docs/backend/CIRCLE_PERMISSIONS.md`
-
 ### Google Forms
 - Used for sponsor contact and code of conduct reporting
 - Links embedded in website pages, no API integration
@@ -216,28 +158,19 @@ Full schema: `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`. The Airtable `att
 - Client-side: `js/checkin.js` validates before sending
 - Server-side: `utils/validation.js` validates all inputs again
 - Database: parameterized SQL, a DB-enforced dedup index, and a role that can't UPDATE,
-  DELETE, or run DDL. Airtable queries keep `escapeAirtableFormula()`.
+  DELETE, or run DDL.
 
 ### CORS
 - Backend `ALLOWED_ORIGIN` env var controls allowed origins
 - Defaults to `*` in development, should be `https://716coffee.club` in production
 
-### Enforcement endpoint authorization
-- Both enforcement functions share an authorization gate (`makeEnforcementHandler`):
-  a run is allowed only for a genuine Netlify scheduled invocation
-  (unspoofable `X-NF-Event: schedule`) **or** a valid `x-enforcement-token`.
-  Anonymous requests get `401` (fail-closed). See
-  [ADR-0002](adr/0002-enforcement-endpoint-authorization.md).
-- The manual endpoint additionally restricts processing to the test user.
-
 ### Secrets Management
-- All API keys in Netlify environment variables (never in code), read and
+- All secrets in Netlify environment variables (never in code), read and
   validated once in `utils/config.js` (fails fast at import; see
   [ADR-0001](adr/0001-config-fail-fast-at-import.md))
 - Website has zero secrets (static site)
-- Backend env vars: 4 required secrets + `CHECKIN_DB_URL` (required in the default
-  `postgres` mode) + optional `ALLOWED_ORIGIN`, `ENFORCEMENT_TRIGGER_TOKEN`, and
-  identity overrides (see `.env.example`)
+- Backend env vars: required `CHECKIN_DB_URL`, plus optional `ALLOWED_ORIGIN` (see
+  `.env.example`)
 - The Neon owner URL and Neon API key are operator-only and never deployed
 - Principle of least privilege for all API tokens and database roles
 

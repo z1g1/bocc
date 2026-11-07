@@ -3,7 +3,6 @@
 Monorepo for the Buffalo Open Coffee Club — a weekly Tuesday morning networking event for Buffalo's small business and entrepreneurial community.
 
 **Website:** [716coffee.club](https://716coffee.club)
-**Community:** [716.social](https://www.716.social)
 **Events:** [Eventbrite](https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761)
 
 ## Repository Structure
@@ -49,7 +48,7 @@ openssl req -x509 -out website/ssl/localhost.crt -keyout website/ssl/localhost.k
 cd backend
 npm install
 
-# Run tests (~355 tests)
+# Run tests (~150 tests)
 npm test
 
 # Local dev (requires Netlify CLI and environment variables)
@@ -61,10 +60,8 @@ npm run migrate
 
 Required environment variables (set in Netlify dashboard, never committed):
 - `CHECKIN_DB_URL`: Neon Postgres URL for the least-privilege `checkin_writer` role (see `docs/backend/NEON_PERMISSIONS.md`)
-- `AIRTABLE_API_KEY`: Airtable API authentication (enforcement warnings)
-- `AIRTABLE_BASE_ID`: BOCC Airtable base ID
-- `CIRCLE_API_TOKEN` — Circle.so Admin API v2 token
-- `CIRCLE_HEADLESS_API` — Circle.so Headless Auth API token (for bot DMs)
+
+Optional:
 - `ALLOWED_ORIGIN` — CORS origin (set to `https://716coffee.club` in production)
 
 See `backend/.env.example` for the template.

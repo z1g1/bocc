@@ -42,7 +42,6 @@ is an optional override; a malformed value fails closed.
 | Var | Where | Purpose |
 |---|---|---|
 | `CHECKIN_DB_URL` | Netlify (required) | pooled `checkin_writer` URL |
-| `CHECKIN_STORE` | Netlify (optional) | `postgres` (default) or `airtable` (rollback only) |
 | `DB_POOL_MAX` | Netlify (optional) | pool size per function instance, default `1` |
 | `DB_CA_CERT` | optional | PEM CA override |
 | `DATABASE_URL`, `DATABASE_URL_UNPOOLED` | local `.env.local` only | owner, for migrations |

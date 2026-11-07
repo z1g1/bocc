@@ -9,7 +9,6 @@ Monorepo for Buffalo Open Coffee Club (BOCC) — a weekly Tuesday morning networ
 **Production URLs:**
 - Website: https://716coffee.club
 - Backend API: https://716coffee.club/.netlify/functions/ (same-origin with the website)
-- Community: https://www.716.social
 
 ## Repository Structure
 
@@ -89,14 +88,8 @@ All stored in `assets/images/`. Header overlay image reused across multiple page
 cd backend
 npm install
 
-# Run all tests (~299 tests across 10 suites)
+# Run all tests (~150 tests across 8 suites)
 npm test
-
-# Unit tests only (exclude integration)
-npm run test:unit
-
-# Integration tests (requires real API tokens)
-npm run test:integration
 
 # Automated local smoke test
 npm run test:smoke-local
@@ -112,10 +105,8 @@ netlify dev
 
 **Deployment:** Netlify Functions (serverless), auto-deploys from `main` (base directory: `backend/`)
 
-**Three functions:**
+**One function:**
 - `checkin.js` — Main check-in POST endpoint
-- `profile-photo-enforcement.js` — Scheduled weekly (Mondays 9:00 AM EST, cron in `netlify.toml`)
-- `profile-photo-enforcement-manual.js` — HTTP manual trigger (supports `?dryRun=true`)
 
 **Module System:** CommonJS (`require`/`module.exports`)
 
@@ -126,56 +117,31 @@ netlify dev
 3. Finds or creates the attendee in Postgres `attendees` (by lowercased email)
 4. Inserts the check-in into Postgres `checkins`. Same-day duplicates are rejected by a unique index and return "already checked in"
 5. Reads the attendee's streak from the `streaks` view (non-fatal)
-6. For non-debug check-ins: invites to Circle.so + increments `checkinCount` (non-blocking)
 
-### Data Storage (Neon Postgres + legacy Airtable)
+### Data Storage (Neon Postgres)
 
-**Check-ins live in Neon Postgres** (project `young-queen-80162551`, branch `production`). See ADR 0005.
+**All data is written to Neon Postgres only** (project `young-queen-80162551`, branch `production`). See ADR 0005 and ADR 0006.
 - `attendees`: id (uuid), email (unique), name, phone, business_name, ok_to_email, debug, legacy_airtable_id
 - `checkins`: id, attendee_id → attendees, event_id, token, checkin_at, checkin_date (Eastern), debug, legacy_airtable_id
 - Views: `held_occurrences`, `streaks` (recompute-on-read, ADR 0004)
 - Schema lives in `backend/db/migrations/`. Apply with `npm run migrate` (owner URL from gitignored `.env.local`)
 - The app connects as least-privilege `checkin_writer` (SELECT/INSERT only). The owner credential is never in Netlify. See `docs/backend/NEON_PERMISSIONS.md`
 
-**Airtable** now holds only `No Photo Warnings` (enforcement) plus the read-only historical `attendees`/`checkins` (the free base is full). See `docs/backend/AIRTABLE_SCHEMA_PHOTO_WARNINGS.md`.
+**Airtable** is a read-only archive of older records. The app no longer connects to it. `scripts/backfill-from-airtable.js` is the only code that reads it.
 
-### Community Platform (Circle.so)
-
-- Attendees auto-invited after check-in; check-in counter tracked via custom field
-- Admin API v2 at `https://app.circle.so/api/admin/v2` (auth: `CIRCLE_API_TOKEN`)
-- Headless Auth API at `https://app.circle.so/api/v1/headless` (auth: `CIRCLE_HEADLESS_API`)
-- Headless Member API at `https://app.circle.so/api/headless/v1` (auth: member JWT)
-- Bot user "716.social Bot" (`bocc-bot@zackglick.com`) sends enforcement DMs
-
-**Important:** `app.circle.so` is the live API server. `api.circle.so` and `api-headless.circle.so` are documentation sites, NOT API endpoints.
-
-**Limitation:** Circle.so Admin API v2 does NOT expose audience segments. The codebase fetches all members and filters client-side (see `docs/backend/CIRCLE_SEGMENTS_RESEARCH.md`).
-
-### Profile Photo Enforcement
-
-Progressive warning system (4 warnings → deactivation):
-- `utils/enforcement-logic.js` — Warning decision engine
-- `utils/message-templates.js` — Bot story arc DMs in TipTap JSON format
-- `utils/airtable-warnings.js` — Warning tracking in Airtable
-- Safety limits: 500-member warning, 1000-member hard cap
-- See `docs/backend/716-bot-final-messaging.md` for message spec
+**Circle.so is retired** (subscription ended). The Circle integration and profile photo enforcement were removed. See ADR 0006. Do not add new Circle calls.
 
 ### Environment Variables
 
 Required (set in Netlify dashboard, never committed):
 - `CHECKIN_DB_URL`: pooled Neon URL for the `checkin_writer` role (never the owner URL)
-- `AIRTABLE_API_KEY`: Airtable API key (enforcement warnings)
-- `AIRTABLE_BASE_ID`: BOCC Airtable base ID
-- `CIRCLE_API_TOKEN`: Circle.so Admin API v2 token
-- `CIRCLE_HEADLESS_API`: Circle.so Headless Auth API token
 
 Optional:
-- `CHECKIN_STORE`: `postgres` (default) or `airtable` (legacy rollback only)
 - `ALLOWED_ORIGIN`: CORS origin (defaults to `*`, set to `https://716coffee.club` in production)
 
 Local operator-only files (gitignored, never deployed): `.env.local` (Neon owner URL from `neon link`), `.env.backfill` (checkin_writer URL + Airtable creds). The Neon CLI authenticates with a project-scoped API key in `~/.config/neon/api-key` (`NEON_API_KEY="$(cat ~/.config/neon/api-key)" neon …`), because browser login doesn't work on this remote machine.
 
-See `docs/backend/NEON_PERMISSIONS.md` and `docs/backend/CIRCLE_PERMISSIONS.md` for permissions documentation.
+See `docs/backend/NEON_PERMISSIONS.md` for permissions documentation.
 
 ### Code Patterns
 
@@ -185,28 +151,14 @@ See `docs/backend/NEON_PERMISSIONS.md` and `docs/backend/CIRCLE_PERMISSIONS.md` 
 - `getStreak(attendeeId, eventId)` reads the `streaks` view
 - `utils/db-ssl.js` `toPgConfig(url, extra)`: verify-full TLS, strips `sslmode` from URLs
 
-**Airtable operations** (`utils/airtable.js`, legacy rollback path; `utils/airtable-warnings.js` for enforcement):
-- `fetchAttendeeByEmail(email)` — Query with formula injection protection
-- `createAttendee(email, name, phone, businessName, okToEmail, debug)`
-- `createCheckinEntry(attendeeId, eventId, debug, token)`
-- `findExistingCheckin(attendeeId, eventId, token)` — Same-day duplicate check
-
-**Circle.so operations** (`utils/circle.js`):
-- `ensureMember(email, name)` — Find or create (idempotent)
-- `incrementCheckinCount(memberId, currentCount)`
-- `getMembersWithoutPhotos()` — Fetch all + client-side filter
-- `deactivateMember(memberId)`
-
 **Input validation** (`utils/validation.js`):
 - `validateCheckinInput(input)` → `{ isValid, errors, sanitized }`
-- `escapeAirtableFormula(value)` — Formula injection protection
 - Email (RFC 5322), phone, eventId, token validators
 
 ### Testing Strategy
 
-- ~355 Jest tests across 19 suites (checkin, check-in stores, pg-store, db-ssl, config, validation, deduplication, circle, enforcement, messages, warnings, member API)
-- Unit tests mock `pg`, Airtable, and Circle, so no database or API keys are needed
-- Integration tests require `RUN_INTEGRATION_TESTS=true` + real API tokens
+- ~150 Jest tests across 8 suites (checkin, check-in use-case, pg-store, db-ssl, config, validation, eastern-week, streak-celebration)
+- Unit tests mock `pg` and the Postgres store, so no database or API keys are needed
 - Smoke tests: `test:smoke-local` (automated), `test:smoke-prod` (deployed)
 - Use `debug: "1"` for all test submissions
 
@@ -218,12 +170,6 @@ See `docs/backend/NEON_PERMISSIONS.md` and `docs/backend/CIRCLE_PERMISSIONS.md` 
 3. Add validation in `utils/validation.js`
 4. Update `findOrCreateAttendee()` or `insertCheckin()` in `utils/pg-store.js`
 5. Add tests
-
-**Modifying enforcement:**
-1. Message copy: `utils/message-templates.js` (see `docs/backend/716-bot-final-messaging.md`)
-2. Warning logic: `utils/enforcement-logic.js`
-3. Schedule: `netlify.toml` cron expression
-4. Test with manual endpoint + `?dryRun=true`
 
 ---
 

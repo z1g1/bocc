@@ -19,9 +19,7 @@ Check-in form (website/checkin/bocc.html)
     ↓
 js/checkin.js POSTs to backend API
     ↓
-Backend: validates → stores in Neon Postgres → invites to Circle.so
-    ↓
-Weekly: enforcement bot checks profile photos via Circle.so API
+Backend: validates → stores in Neon Postgres → returns streak
 ```
 
 For a detailed technical diagram, see [architecture.md](architecture.md).
@@ -89,15 +87,11 @@ The website check-in form talks to the production backend by default (same-origi
 
 ## Environment Variables (Secrets)
 
-The backend requires these secrets, all set in the Netlify dashboard (never committed to git):
+The backend requires this secret, set in the Netlify dashboard (never committed to git):
 
 | Variable | Service | Purpose |
 |----------|---------|---------|
 | `CHECKIN_DB_URL` | Neon | Least-privilege `checkin_writer` connection (attendees, check-ins) |
-| `AIRTABLE_API_KEY` | Airtable | Enforcement warning records |
-| `AIRTABLE_BASE_ID` | Airtable | Identifies the BOCC base |
-| `CIRCLE_API_TOKEN` | Circle.so | Admin API for member management |
-| `CIRCLE_HEADLESS_API` | Circle.so | Bot user for sending DMs |
 
 Optional: `ALLOWED_ORIGIN` — CORS origin (production: `https://716coffee.club`)
 
@@ -111,8 +105,7 @@ If you need access to these services, ask the project maintainer (Zack Glick).
 |---------|---------|-----------|
 | **Netlify** | Hosting for both website and backend | netlify.com |
 | **Neon** | Postgres database for attendees and check-ins | console.neon.tech |
-| **Airtable** | Enforcement warnings; historical check-in archive | airtable.com |
-| **Circle.so** | Community platform (716.social) | app.circle.so |
+| **Airtable** | Read-only archive of older records | airtable.com |
 | **Eventbrite** | Event registration and ticketing | eventbrite.com |
 | **GitHub** | Source code and version control | github.com/z1g1/bocc |
 
@@ -144,15 +137,12 @@ Database schema changes are **not** applied by deploys. Add a new file to
 - `backend/netlify/functions/utils/check-in.js` — Check-in use-case
 - `backend/netlify/functions/utils/validation.js` — Input validation
 - `backend/netlify/functions/utils/pg-store.js` — Postgres check-in store
-- `backend/netlify/functions/utils/circle.js` — Circle.so API client
 - `backend/db/migrations/` — Database schema, views, and roles
-- `netlify.toml` — Netlify config including scheduled function cron
+- `netlify.toml` — Netlify build, functions, and redirect config
 
 ### Documentation
 - `docs/backend/NEON_PERMISSIONS.md` — Database roles, grants, and key handling
-- `docs/backend/CIRCLE_PERMISSIONS.md` — Circle.so API permissions setup
-- `docs/backend/SAFETY_LIMITS_SPECIFICATION.md` — Why safety limits exist
-- `docs/adr/` — Architecture decisions (datastore: 0003, 0004, 0005)
+- `docs/adr/` — Architecture decisions (datastore: 0003, 0004, 0005, 0006)
 - `docs/strategy/` — Social media strategies and brand guide
 
 ## Common Tasks for Volunteers
@@ -162,7 +152,7 @@ Database schema changes are **not** applied by deploys. Add a new file to
 - **Add a new page**: Create a new `.md` file in `website/` with YAML front matter
 - **Fix a backend bug**: Edit files in `backend/netlify/functions/`, run `npm test`
 - **Update social media strategy**: Edit docs in `docs/strategy/`
-- **Review API permissions**: See `docs/backend/NEON_PERMISSIONS.md` and `docs/backend/CIRCLE_PERMISSIONS.md`
+- **Review API permissions**: See `docs/backend/NEON_PERMISSIONS.md`
 
 ## Questions?
 

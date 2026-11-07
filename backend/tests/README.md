@@ -10,7 +10,7 @@ npm test
 ```
 
 **Location:** `/tests/*.test.js`
-**Coverage:** 124 tests covering validation utilities and checkin handler
+**Coverage:** validation, config, the check-in use-case and handler, and the Postgres store
 
 ### Smoke Tests
 End-to-end tests that verify the API is working by making real HTTP requests.
@@ -20,10 +20,10 @@ End-to-end tests that verify the API is working by making real HTTP requests.
 ### Local Testing
 
 **Prerequisites:**
-1. Copy `.env.example` to `.env` and fill in your Airtable credentials:
+1. Copy `.env.example` to `.env` and fill in your database URL:
    ```bash
    cp .env.example .env
-   # Edit .env with your AIRTABLE_API_KEY and AIRTABLE_BASE_ID
+   # Edit .env with your CHECKIN_DB_URL
    ```
 
 **Run automated local test:**
@@ -49,7 +49,7 @@ API_URL=http://localhost:8888/.netlify/functions/checkin bash tests/smoke-test.s
 
 ### Production Testing
 
-Test the deployed API (creates test record in Airtable with debug flag):
+Test the deployed API (creates a test record in Postgres with the debug flag):
 
 ```bash
 npm run test:smoke-prod
@@ -61,17 +61,16 @@ This sends a test check-in to `https://716coffee.club/.netlify/functions/checkin
 
 All smoke tests use:
 - **Email:** `smoke-test-{timestamp}@test.local` (unique per test)
-- **Debug flag:** `"1"` (marks as test data in Airtable)
+- **Debug flag:** `"1"` (marks as test data in Postgres)
 - **Event ID:** `smoke-test`
 - **Token:** `test-smoke-token` (or from TEST_TOKEN env var)
 
-Filter test data in Airtable using the `debug` field.
+Filter test data in Postgres using the `debug` column.
 
 ## Environment Variables
 
 Required for local testing:
-- `AIRTABLE_API_KEY` - Your Airtable API key
-- `AIRTABLE_BASE_ID` - Your Airtable base ID
+- `CHECKIN_DB_URL` - Neon connection string for the `checkin_writer` role
 
 Optional:
 - `API_URL` - Override API endpoint (default: localhost:8888)

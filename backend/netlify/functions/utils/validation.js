@@ -1,21 +1,4 @@
 /**
- * Escapes a string value for safe use in Airtable formula queries.
- * Prevents formula injection attacks by escaping special characters.
- * @param {string} value - The value to escape
- * @returns {string} - The escaped value safe for use in formulas
- */
-const escapeAirtableFormula = (value) => {
-    if (typeof value !== 'string') {
-        return '';
-    }
-    // Escape backslashes first, then single quotes
-    // Airtable formulas use backslash as escape character
-    return value
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'");
-};
-
-/**
  * Validates that an email address has a proper format.
  * Uses a more comprehensive regex pattern for RFC 5322 compliance.
  * Rejects emails with potentially dangerous characters as a defense-in-depth measure.
@@ -180,7 +163,6 @@ const validateCheckinInput = (input) => {
 };
 
 module.exports = {
-    escapeAirtableFormula,
     isValidEmail,
     isValidPhone,
     sanitizeText,

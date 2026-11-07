@@ -1,3 +1,5 @@
+> **Retired (2026-11-07):** Circle and profile photo enforcement were removed. Kept for history only. See [ADR 0006](../adr/0006-retire-circle-postgres-only.md).
+
 # 716.social Bot — Profile Photo Reminders (Final Copy)
 
 ## The Story Arc

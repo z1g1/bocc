@@ -67,7 +67,7 @@ exports.handler = async (event) => {
                     body: JSON.stringify({
                         message: 'Check-in successful',
                         // Streak + celebration for the frontend toast; null when unavailable
-                        // (Airtable mode, debug check-in, or a non-fatal failure).
+                        // (debug check-in, or a non-fatal failure).
                         streak: result.streak || null,
                         celebration: result.celebration || null
                     }),

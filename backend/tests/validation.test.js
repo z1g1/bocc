@@ -1,5 +1,4 @@
 const {
-    escapeAirtableFormula,
     isValidEmail,
     isValidPhone,
     sanitizeText,
@@ -7,90 +6,6 @@ const {
     isValidToken,
     validateCheckinInput
 } = require('../netlify/functions/utils/validation');
-
-describe('escapeAirtableFormula', () => {
-    describe('handles valid inputs', () => {
-        it('should return unchanged string for normal email', () => {
-            expect(escapeAirtableFormula('user@example.com')).toBe('user@example.com');
-        });
-
-        it('should return unchanged string for alphanumeric input', () => {
-            expect(escapeAirtableFormula('test123')).toBe('test123');
-        });
-
-        it('should handle empty string', () => {
-            expect(escapeAirtableFormula('')).toBe('');
-        });
-    });
-
-    describe('escapes dangerous characters', () => {
-        it('should escape single quotes', () => {
-            expect(escapeAirtableFormula("o'brien@example.com")).toBe("o\\'brien@example.com");
-        });
-
-        it('should escape multiple single quotes', () => {
-            expect(escapeAirtableFormula("it's o'brien's")).toBe("it\\'s o\\'brien\\'s");
-        });
-
-        it('should escape backslashes', () => {
-            expect(escapeAirtableFormula('test\\value')).toBe('test\\\\value');
-        });
-
-        it('should escape backslashes before single quotes', () => {
-            expect(escapeAirtableFormula("test\\'value")).toBe("test\\\\\\'value");
-        });
-    });
-
-    describe('prevents formula injection attacks', () => {
-        it('should escape SQL-style injection attempt', () => {
-            const malicious = "' OR TRUE() OR '1'='1";
-            const escaped = escapeAirtableFormula(malicious);
-            expect(escaped).toBe("\\' OR TRUE() OR \\'1\\'=\\'1");
-            // All single quotes should be escaped with backslash
-            expect(escaped.match(/(?<!\\)'/g)).toBeNull();
-        });
-
-        it('should escape formula breakout attempt', () => {
-            const malicious = "test@example.com' OR 1=1 OR '";
-            const escaped = escapeAirtableFormula(malicious);
-            expect(escaped).toBe("test@example.com\\' OR 1=1 OR \\'");
-        });
-
-        it('should escape nested quote injection', () => {
-            const malicious = "admin'--";
-            const escaped = escapeAirtableFormula(malicious);
-            expect(escaped).toBe("admin\\'--");
-        });
-
-        it('should handle complex injection payload', () => {
-            const malicious = "'), {secret}) OR ({email} = '";
-            const escaped = escapeAirtableFormula(malicious);
-            expect(escaped).toBe("\\'), {secret}) OR ({email} = \\'");
-        });
-    });
-
-    describe('handles edge cases', () => {
-        it('should return empty string for null', () => {
-            expect(escapeAirtableFormula(null)).toBe('');
-        });
-
-        it('should return empty string for undefined', () => {
-            expect(escapeAirtableFormula(undefined)).toBe('');
-        });
-
-        it('should return empty string for number', () => {
-            expect(escapeAirtableFormula(123)).toBe('');
-        });
-
-        it('should return empty string for object', () => {
-            expect(escapeAirtableFormula({})).toBe('');
-        });
-
-        it('should return empty string for array', () => {
-            expect(escapeAirtableFormula([])).toBe('');
-        });
-    });
-});
 
 describe('isValidEmail', () => {
     describe('accepts valid emails', () => {

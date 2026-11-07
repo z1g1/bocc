@@ -11,7 +11,7 @@ summary: >-
   and who we share it with.
 ---
 
-*Last updated 2026-11-06*
+*Last updated 2026-11-07*
 
 Buffalo Open Coffee Club (BOCC) is a program of [BootSector](https://joinbootsector.com/), a 501(c)(3) nonprofit. This policy covers 716coffee.club and our event check-in forms. We do not sell your personal information.
 
@@ -28,13 +28,10 @@ Buffalo Open Coffee Club (BOCC) is a program of [BootSector](https://joinbootsec
 ## How we use it
 
 - To run our events, count attendance, and track check-in streaks
-- To invite you to [716.social](https://www.716.social/), our online community
 - To send you updates about future events, if you asked for them
 - To understand how people find and use our website
 - To respond to your questions and sponsorship inquiries
 - To enforce our [Code of Conduct](/code-of-conduct/)
-
-After you check in, we use your name and email address to invite you to 716.social, and you'll be redirected there from the check-in page. Your use of 716.social is covered by that community's own terms.
 
 ## Who we share it with
 
@@ -43,7 +40,6 @@ We share information only with the service providers that help us run BOCC:
 - **Netlify** hosts our website and processes check-ins
 - **Neon** stores check-in records
 - **Airtable** stores older check-in records and community administration records
-- **Circle** runs 716.social
 - **Eventbrite** handles event registration
 - **Google** provides Analytics and Forms
 

@@ -15,7 +15,7 @@
  *   node --env-file=../.env.backfill scripts/backfill-from-airtable.js            # write
  *   node --env-file=../.env.backfill scripts/backfill-from-airtable.js --verify   # parity report
  *
- * Required env (read directly — this script does not need Circle config):
+ * Required env (read directly, not through utils/config.js):
  *   AIRTABLE_API_KEY, AIRTABLE_BASE_ID, CHECKIN_DB_URL
  */
 
