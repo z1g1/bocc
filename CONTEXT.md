@@ -37,7 +37,7 @@ streaks. All automated tests submit with `debug: "1"`.
 ### Sponsor redirect
 After a successful check-in the web form may count down and redirect the Attendee to a
 sponsor's link (configured in `website/_data/sponsor.yml`). Frontend-only concern. Currently
-disabled.
+points to 716coffee.club.
 
 ### Occurrence
 One weekly instance of an Event series. Identified **today** by `(eventId, ISO week)` where

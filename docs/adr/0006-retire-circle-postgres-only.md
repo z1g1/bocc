@@ -23,9 +23,9 @@ its warning records in Airtable.
 - **Neon Postgres is the only place new data is written.** The `CHECKIN_STORE` flag and the
   Airtable check-in path are removed. The Airtable base was already full, so that rollback
   could not record anything. `CHECKIN_DB_URL` is now the only required secret.
-- **The website stops sending people to 716.social:** the post-check-in redirect is off
-  (`website/_data/sponsor.yml`), the footer link is gone, and the privacy policy no longer
-  describes community invites.
+- **The website stops sending people to 716.social:** the post-check-in redirect points to
+  716coffee.club (`website/_data/sponsor.yml`), the footer link is gone, and the privacy policy
+  no longer describes community invites.
 
 ## Consequences
 
