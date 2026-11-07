@@ -37,8 +37,9 @@
     <link rel="preload" href="{{ '/assets/fonts/hanken-grotesk-var.woff2'      | relative_url }}" as="font" type="font/woff2" crossorigin>
 
     <link rel="stylesheet" href="{{ '/assets/css/main.css' | relative_url }}">
-    <link rel="icon" href="{{ '/favicon.ico' | relative_url }}">
-    <link rel="apple-touch-icon" href="{{ '/assets/images/bocc-logo-square.png' | relative_url }}">
+    <link rel="icon" href="{{ '/favicon.ico' | relative_url }}" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="{{ '/assets/images/brand/web/apple-touch-icon.png' | relative_url }}">
+    <meta name="theme-color" content="#161616">
 
     {%- comment -%} Domain-specific Event + Organization structured data. {%- endcomment -%}
     {% include event-jsonld.html %}

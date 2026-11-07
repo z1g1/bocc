@@ -97,9 +97,10 @@ artwork exactly. Use these for all new graphics, email templates, and site styli
 - **Text on dark**: Off-White (`#F9FCF8`) or Cream. **Text on light**: Charcoal or Ink (`#152026`)
 - **Avoid**: Cool blues, neon greens, purples, or any color that reads "corporate tech." If in doubt, ask: "Does this look like it belongs in a coffee shop?" If not, pull it back.
 
-**Legacy website colors.** The Jekyll site's custom CSS still uses an older brown/gold set
-(`#361b01`, `#5a3010`, `#f2a63a`, `#fdf8f3`, `#e0d5c7`, `#f5f0eb`, `#b22030`). These are
-scheduled to be migrated to the canonical palette above; do not use them for new work.
+**Website colors.** The site uses this palette through the `--bocc-*` tokens in
+`website/_sass/bocc/_tokens.scss`. Amber is too light for text on light backgrounds, so there
+it is a fill or underline and the text is Charcoal. The one exception to the palette is a
+red for form errors.
 
 ### Photography style
 

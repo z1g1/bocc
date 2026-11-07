@@ -13,6 +13,11 @@ rotate, or filter them. See `docs/strategy/brand-consistency-guide.md` for usage
 | `bocc-mug-with-text.png` | 2000x2000 | Mug icon with buffalo-face badge and curved wordmark. Merch, stickers, larger icon uses. |
 | `bocc-mug-badge-only.png` | 2000x2000 | Mug icon with badge, no text. Favicons, avatars, watermarks, small-format uses. |
 
+`web/` holds resized copies for the website (same artwork, no edits): `bocc-mug-96.png`
+(header and footer), `apple-touch-icon.png`, and `bocc-badge-720.png` (home hero, page-hero
+watermark, structured data). `/favicon.ico` is built from `bocc-mug-badge-only.png` at
+16, 32, and 48px. Regenerate these from the originals if the artwork changes.
+
 ## Color palette (sampled from the logo files)
 
 Hex values below were extracted directly from the PNGs (dominant opaque pixels),

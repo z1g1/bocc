@@ -7,6 +7,8 @@
 {%- assign h = site.data.home.hero -%}
 <section class="hero sun-rays">
   <div class="container hero__inner">
+    <img class="hero__logo" src="{{ '/assets/images/brand/web/bocc-badge-720.png' | relative_url }}"
+         alt="Buffalo Open Coffee Club" width="176" height="176" fetchpriority="high">
     <span class="hero__badge">
       {% include icon.html name="sunrise" size="16" %}
       <span class="stamp">{{ h.badge }}</span>

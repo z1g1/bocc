@@ -16,7 +16,7 @@
   label {
     display: block; margin-bottom: 6px;
     font-family: var(--font-mono); font-size: var(--t-sm); font-weight: var(--w-semi);
-    letter-spacing: 0.04em; color: var(--coffee);
+    letter-spacing: 0.04em; color: var(--fg-body);
   }
 
   input[type="text"],
@@ -24,7 +24,7 @@
   input[type="tel"] {
     display: block; width: 100%;
     padding: 12px 14px; font-family: var(--font-body); font-size: var(--t-base);
-    line-height: 1.5; color: var(--ink); background: var(--white);
+    line-height: 1.5; color: var(--bocc-charcoal); background: var(--bocc-white);
     border: 1.5px solid var(--border-strong); border-radius: var(--r-sm);
     transition: border-color 0.15s ease, box-shadow 0.15s ease; box-sizing: border-box;
 
@@ -43,7 +43,7 @@
     label { display: inline; font-family: var(--font-body); font-weight: var(--w-regular); margin-bottom: 0; cursor: pointer; }
   }
 
-  hr { border: none; border-top: 1px solid var(--sand); margin: var(--sp-5) 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: var(--sp-5) 0; }
 
   #checkinButton {
     display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -59,14 +59,14 @@
 }
 
 #validationError {
-  background: #FBECEA; border: 1px solid #E5A89F; color: var(--danger);
+  background: var(--danger-soft); border: 1px solid var(--danger-border); color: var(--danger);
   padding: 12px 14px; border-radius: var(--r-sm); margin-bottom: var(--sp-4); font-size: var(--t-sm);
 }
 
 #greeting {
   max-width: 480px;
 
-  p { font-size: var(--t-lg); margin-bottom: var(--sp-5); color: var(--coffee); }
+  p { font-size: var(--t-lg); margin-bottom: var(--sp-5); color: var(--fg-body); }
 
   button {
     display: inline-flex; align-items: center;
@@ -83,21 +83,21 @@
   }
 
   #notMeBtn {
-    color: var(--ink); background: transparent; border: 2px solid var(--ink); padding: 10px 22px;
+    color: var(--bocc-charcoal); background: transparent; border: 2px solid var(--bocc-charcoal); padding: 10px 22px;
     &:hover { background: var(--accent-soft); border-color: var(--accent-press); }
   }
 }
 
 #sponsorCountdown {
-  background: var(--cream); border: 1px solid var(--sand); border-radius: var(--r-md);
+  background: var(--bocc-cream); border: 1px solid var(--border); border-radius: var(--r-md);
   padding: var(--sp-4) var(--sp-5); margin-top: var(--sp-5); max-width: 480px;
 
   p { font-size: var(--t-base); margin-bottom: var(--sp-2); }
-  #countdownTimer { font-weight: var(--w-bold); color: var(--accent-press); }
+  #countdownTimer { font-weight: var(--w-bold); color: var(--fg-accent); }
   #skipRedirect {
-    background: none; border: 0; color: var(--accent-press); cursor: pointer;
+    background: none; border: 0; color: var(--fg-accent); cursor: pointer;
     font-size: var(--t-sm); padding: 0; text-decoration: underline;
-    &:hover { color: var(--ink); }
+    &:hover { color: var(--bocc-charcoal); }
   }
 }
 
@@ -108,7 +108,7 @@
   display: flex; align-items: center; gap: var(--sp-3);
   width: calc(100% - 2 * var(--sp-4)); max-width: 420px; box-sizing: border-box;
   padding: var(--sp-3) var(--sp-2) var(--sp-3) var(--sp-4);
-  background: var(--surface); border: 1px solid var(--sand);
+  background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--r-md); box-shadow: var(--shadow-md);
   opacity: 0; transform: translate(-50%, 12px);
   transition: opacity 0.25s ease, transform 0.25s ease;
@@ -119,16 +119,16 @@
 
   .celebration-text {
     flex: 1; margin: 0;
-    font-size: var(--t-base); line-height: var(--lh-normal); color: var(--coffee);
+    font-size: var(--t-base); line-height: var(--lh-normal); color: var(--fg-body);
   }
 
   .celebration-close {
     flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; padding: 0;
-    font-size: 1.5rem; line-height: 1; color: var(--mocha);
+    font-size: 1.5rem; line-height: 1; color: var(--fg2);
     background: none; border: 0; border-radius: var(--r-pill); cursor: pointer;
 
-    &:hover { background: var(--accent-soft); color: var(--ink); }
+    &:hover { background: var(--accent-soft); color: var(--bocc-charcoal); }
     &:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
   }
 

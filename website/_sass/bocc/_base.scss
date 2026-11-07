@@ -29,7 +29,7 @@ body {
 }
 
 // ---- Headings ----
-h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; color: var(--ink); }
+h1, h2, h3, h4 { font-family: var(--font-display); margin: 0; color: var(--bocc-charcoal); }
 h1 { font-size: var(--t-h1); font-weight: var(--w-black); line-height: var(--lh-tight); letter-spacing: var(--tr-tight); }
 h2 { font-size: var(--t-h2); font-weight: var(--w-bold);  line-height: var(--lh-snug);  letter-spacing: var(--tr-tight); }
 h3 { font-size: var(--t-h3); font-weight: var(--w-bold);  line-height: var(--lh-snug); }
@@ -40,8 +40,8 @@ p  { margin: 0 0 1em; max-width: 68ch; text-wrap: pretty; }
 small, .small { font-size: var(--t-sm); }
 
 // ---- Links ----
-a { color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 2px; }
-a:hover { color: var(--accent-hover); }
+a { color: var(--fg-accent); text-decoration-color: var(--accent); text-decoration-thickness: 2px; text-underline-offset: 2px; }
+a:hover { color: var(--fg-accent-hover); text-decoration-color: currentColor; }
 
 // ---- Mono eyebrow / stamp (the "716" treatment) ----
 .eyebrow, .stamp {
@@ -50,13 +50,29 @@ a:hover { color: var(--accent-hover); }
   font-weight: var(--w-semi);
   letter-spacing: var(--tr-label);
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--fg-accent);
 }
 .stamp { color: var(--fg2); }
 
 code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 
 img, svg { max-width: 100%; height: auto; display: block; }
+
+// ---- Dark sections ------------------------------------------
+// Accent text, muted text, and focus rings flip for charcoal backgrounds.
+// Light cards nested in a dark section flip back.
+.site-header, .site-footer, .hero, .page-hero, .feature, .signup {
+  --fg-accent: var(--bocc-amber);
+  --fg-accent-hover: var(--bocc-cream);
+  --fg2: var(--fg-on-ink-2);
+  --ring: var(--bocc-amber);
+}
+.glance-card {
+  --fg-accent: var(--bocc-charcoal);
+  --fg-accent-hover: var(--bocc-ink);
+  --fg2: #55544D;
+  --ring: var(--bocc-charcoal);
+}
 
 // ============================================================
 //  ACCESSIBILITY UTILITIES
@@ -83,8 +99,8 @@ img, svg { max-width: 100%; height: auto; display: block; }
   position: absolute;
   left: var(--sp-4); top: -64px;
   z-index: 100;
-  background: var(--ink);
-  color: var(--cream);
+  background: var(--bocc-charcoal);
+  color: var(--bocc-cream);
   font-family: var(--font-mono);
   font-size: var(--t-sm);
   padding: var(--sp-3) var(--sp-5);
