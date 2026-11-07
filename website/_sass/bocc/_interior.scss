@@ -136,10 +136,11 @@
   display: block; width: 100%; border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--bocc-white); margin-top: var(--sp-4);
 }
-// Keep 450px on desktop: Luma's event embed renders blank in a taller frame at
-// desktop widths (tested at 620px and 760px). Taller is fine on phones.
-.luma-embed--event { max-width: 600px; height: 450px; }
-@media (max-width: 620px) { .luma-embed--event { height: 760px; } }
+// Tall enough to show the whole Luma event card, Register button included,
+// without scrolling inside the frame.
+.luma-embed--event { max-width: 600px; height: 760px; }
+// The card's text wraps on phones, which makes it taller.
+@media (max-width: 620px) { .luma-embed--event { height: 840px; } }
 .luma-embed--calendar { height: 460px; }
 .luma-embed__fallback { margin: var(--sp-3) 0 0; font-size: var(--t-sm); color: var(--fg2); }
 
