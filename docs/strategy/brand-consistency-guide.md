@@ -62,7 +62,7 @@ BOCC is the friend who moved back to Buffalo and genuinely wants to introduce yo
 
 ### Logo system
 
-BOCC has two logo assets that serve different purposes:
+BOCC logo assets live in `website/assets/images/brand/` (see its README for file list and palette):
 
 | Logo | File | Use for |
 |------|------|---------|
@@ -77,25 +77,29 @@ BOCC has two logo assets that serve different purposes:
 
 ### Color palette
 
-Derived from the website's sunrise skin and custom CSS:
+**Canonical palette (sampled from the logo files, Nov 2026).** The hex values below were
+extracted directly from the PNGs in `website/assets/images/brand/`, so they match the
+artwork exactly. Use these for all new graphics, email templates, and site styling.
 
-| Role | Color | Hex | Where it shows up |
-|------|-------|-----|-------------------|
-| **Deep brown** (primary dark) | Dark roast coffee brown | `#361b01` | Text, buttons, primary UI elements |
-| **Medium brown** (hover/secondary dark) | Warm espresso | `#5a3010` | Button hover states, secondary text |
-| **Amber/gold** (accent) | Sunrise gold | `#f2a63a` | Focus rings, blockquote borders, highlight accents |
-| **Warm cream** (background) | Latte foam | `#fdf8f3` | Card backgrounds, CTA sections, callout boxes |
-| **Tan border** | Cafe au lait | `#e0d5c7` | Borders, dividers, subtle separators |
-| **Soft tan** (secondary background) | Light parchment | `#f5f0eb` | Secondary button backgrounds |
-| **Warm red** (links/CTA) | Buffalo brick red | `#b22030` | Links, strong CTAs, accent pops |
-| **Black** | True black | `#000000` | Logo mug icon only |
-| **White** | True white | `#ffffff` | Text on dark backgrounds, form inputs |
+| Role | Name | Hex | Where it appears |
+|------|------|-----|-------------------|
+| **Primary dark** | Charcoal | `#161616` | Badge background, buffalo silhouette, text on light |
+| **Primary accent** | Sunrise Amber | `#DB9951` | Sun arch, "716", divider lines, mug badge ring |
+| **Secondary accent** | Burnt Orange | `#DD7F4B` | Outer arch band, outer badge ring -- use sparingly |
+| **Light neutral** | Cream | `#F1EDDA` | Inner sun, trees, badge face, text on dark |
+| **White** | Off-White | `#F9FCF8` | Wordmark text, mug rim |
+| **True black** | Black | `#000000` | Mug body |
+| **Line color** | Ink | `#152026` | Buffalo-face line art on the mug badge |
 
 **For social media graphics**, the working palette should be:
-- **Primary pair**: Deep brown (`#361b01`) + amber gold (`#f2a63a`) -- this is the core BOCC look
-- **Background**: Warm cream (`#fdf8f3`) or white
-- **Accent pop**: Buffalo brick red (`#b22030`) for calls to action
+- **Core trio**: Charcoal (`#161616`) + Sunrise Amber (`#DB9951`) + Cream (`#F1EDDA`) -- this is the BOCC look
+- **Accent**: Burnt Orange (`#DD7F4B`) as a gradient partner or hover state, never the main orange
+- **Text on dark**: Off-White (`#F9FCF8`) or Cream. **Text on light**: Charcoal or Ink (`#152026`)
 - **Avoid**: Cool blues, neon greens, purples, or any color that reads "corporate tech." If in doubt, ask: "Does this look like it belongs in a coffee shop?" If not, pull it back.
+
+**Legacy website colors.** The Jekyll site's custom CSS still uses an older brown/gold set
+(`#361b01`, `#5a3010`, `#f2a63a`, `#fdf8f3`, `#e0d5c7`, `#f5f0eb`, `#b22030`). These are
+scheduled to be migrated to the canonical palette above; do not use them for new work.
 
 ### Photography style
 
