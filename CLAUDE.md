@@ -39,7 +39,7 @@ bundle install
 # Local development
 bundle exec jekyll serve
 
-# With SSL (required for Eventbrite embed checkout)
+# With SSL
 bundle exec jekyll serve --host localhost --ssl-key ssl/localhost.key --ssl-cert ssl/localhost.crt
 ```
 
@@ -56,12 +56,12 @@ SSL certs are generated locally (see README.md). Ruby version managed via `websi
 ### Key Pages
 
 All Markdown with YAML front matter:
-- `index.md` — Landing page with embedded Eventbrite checkout widget (event `1983098086761`)
+- `index.md` — Landing page with the embedded Luma calendar (RSVPs go through Luma; Eventbrite is a discovery listing only)
 - `about.md` — `/about/` — Event history, photo gallery
 - `sponsorship.md` — `/sponsorship/` — Sponsor pitch with LinkedIn testimonial gallery
 - `code-of-conduct.md` — `/code-of-conduct/`
 - `privacy.md` — `/privacy/`
-- `/events/YYYY-MM-DD/` — one page per upcoming Tuesday, generated at build by `scripts/generate_event_pages.rb` into gitignored `_events/` (see `docs/website/future-work.md`)
+- `/events/YYYY-MM-DD/` — one page per upcoming Tuesday, generated at build by `scripts/generate_event_pages.rb` into gitignored `_events/` (see `docs/website/future-work.md`). Each embeds its Luma event from `_data/luma_events.yml`; add new dates there
 
 ### Check-in System
 

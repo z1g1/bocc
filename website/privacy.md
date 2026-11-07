@@ -23,7 +23,7 @@ Buffalo Open Coffee Club (BOCC) is a program of [BootSector](https://joinbootsec
 
 **When you contact us or ask about sponsorship**, you fill out a Google Form, and we receive what you enter.
 
-**When you register for an event**, you do so through Eventbrite, including through the checkout embedded on our home page. Eventbrite handles that information under its own privacy policy, and we receive your registration details.
+**When you register for an event**, you do so through Luma, including through the forms embedded on our home page and event pages. Luma handles that information under its own privacy policy, and we receive your registration details. We also list our events on Eventbrite, and if you register there, Eventbrite handles your information the same way.
 
 ## How we use it
 
@@ -40,14 +40,15 @@ We share information only with the service providers that help us run BOCC:
 - **Netlify** hosts our website and processes check-ins
 - **Neon** stores check-in records
 - **Airtable** stores older check-in records and community administration records
-- **Eventbrite** handles event registration
+- **Luma** handles event registration
+- **Eventbrite** lists our events and handles any registrations made there
 - **Google** provides Analytics and Forms
 
 We may also share information if the law requires it or to protect the safety of our community.
 
 ## Cookies and browser storage
 
-Google Analytics sets cookies on our website. You can learn [how Google uses this information](https://policies.google.com/technologies/partner-sites) or install the [Google Analytics opt-out add-on](https://tools.google.com/dlpage/gaoptout). The Eventbrite checkout on our home page may set its own cookies.
+Google Analytics sets cookies on our website. You can learn [how Google uses this information](https://policies.google.com/technologies/partner-sites) or install the [Google Analytics opt-out add-on](https://tools.google.com/dlpage/gaoptout). The Luma embeds on our home page and event pages may set their own cookies.
 
 So you don't have to retype your details, our check-in form saves them in your own browser for 30 days. That copy stays on your device.
 

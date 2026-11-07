@@ -8,7 +8,7 @@ email: bocc@zackglick.com
 description: >- # ignore newlines until the next key
   Buffalo Open Coffee Club (BOCC) is a free weekly networking event every Tuesday 7:30-9 AM
   at Seneca One Tower in downtown Buffalo, NY. Connect with entrepreneurs, small business
-  owners, and startup founders over coffee. Open to all — register free on Eventbrite.
+  owners, and startup founders over coffee. Open to all — RSVP free on Luma.
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://716coffee.club" # base hostname & protocol, no trailing slash
 domain: "716coffee.club"
@@ -44,8 +44,9 @@ event:
   venue: Seneca One Tower
   organizer: BootSector
   organizer_url: https://joinbootsector.com/
-  registration_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
-  eventbrite_id: "1983098086761"
+  registration_url: https://luma.com/716coffeeclub
+  luma_calendar_id: cal-v2LiFTJpdPAP6rW
+  eventbrite_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761   # discovery listing only; RSVPs go through Luma
   offer_valid_from: "2024-01-01T00:00:00-05:00"
   performer:
     name: Zack Glick

@@ -57,7 +57,7 @@
     "price": "0",
     "priceCurrency": "USD",
     "availability": "https://schema.org/InStock",
-    "url": {{ e.registration_url | jsonify }},
+    "url": {{ page.luma_url | default: e.registration_url | jsonify }},
     "validFrom": {{ e.offer_valid_from | jsonify }}
   }
 }

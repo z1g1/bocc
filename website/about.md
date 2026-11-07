@@ -11,7 +11,7 @@ summary: >-
   Chippewa is now Buffalo's standing Tuesday-morning gathering for the startup community.
 actions:
   - label: Join us Tuesday
-    href: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+    href: https://luma.com/716coffeeclub
     variant: primary
     icon: arrow
 
@@ -43,7 +43,7 @@ blocks:
       - { image: /assets/images/bocc-about-page-04.jpg, alt: "A wide shot of BOCC on a sunny Buffalo morning" }
       - { image: /assets/images/bocc-about-page-05.jpg, alt: "Crowd gathered for BOCC announcements" }
       - { image: /assets/images/bocc-about-page-06.jpg, alt: "A wide shot of Buffalo Open Coffee Club" }
-    caption: "Buffalo Open Coffee Club meets every Tuesday morning. [Join us](https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761)."
+    caption: "Buffalo Open Coffee Club meets every Tuesday morning. [Join us](https://luma.com/716coffeeclub)."
 
   - type: cta
     label: Come say hi
@@ -52,8 +52,8 @@ blocks:
       Invite every entrepreneur you know. We meet every Tuesday 7:30–9 AM in the lobby of
       Seneca One Tower at 1 Seneca St, Buffalo, NY 14203.
     actions:
-      - label: Register free
-        href: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+      - label: RSVP free
+        href: https://luma.com/716coffeeclub
         variant: primary
         icon: arrow
       - label: Get directions

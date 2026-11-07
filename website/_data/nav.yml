@@ -20,8 +20,8 @@ primary:
 
 # Header call-to-action button (the "Join Tuesday" slot → free registration).
 cta:
-  label: Register Free
-  url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+  label: RSVP Free
+  url: https://luma.com/716coffeeclub
 
 # Footer link column.
 footer:

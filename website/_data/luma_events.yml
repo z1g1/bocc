@@ -1,0 +1,17 @@
+# _data/luma_events.yml — Luma event for each generated Tuesday page.
+# scripts/generate_event_pages.rb reads this. Key is the event date. A date with
+# no entry still gets a page, which links to the Luma calendar and has no embed.
+# Add new dates here as they are created on Luma. `id` is the evt-... ID.
+"2026-11-10": { url: "https://luma.com/3yzz6fi4", id: evt-vszu1Of0V65R2CD }
+"2026-11-17": { url: "https://luma.com/7wykqlqr", id: evt-1Q7ESI0zDRoC5xS }
+"2026-11-24": { url: "https://luma.com/g49vio1o", id: evt-gS8snql0XDszR9g }
+"2026-12-01": { url: "https://luma.com/q9bbjbhh", id: evt-fe0jHjn3UyCGuui }
+"2026-12-08": { url: "https://luma.com/0ag33cwm", id: evt-lrJYmkZzq2TrgQs }
+"2026-12-15": { url: "https://luma.com/8depoc0o", id: evt-UDYBbf3Ael8rXFj }
+"2027-01-05": { url: "https://luma.com/647n5s06", id: evt-9p5bMmyjGtjuTZE }
+"2027-01-12": { url: "https://luma.com/af4d2sb8", id: evt-in2GCqvcy9ZgB28 }
+"2027-01-19": { url: "https://luma.com/1znmn46r", id: evt-tPZl7yGK4RZpP7l }
+"2027-01-26": { url: "https://luma.com/dsrwn5a7", id: evt-nDSmfMpumk1KXpG }
+"2027-02-02": { url: "https://luma.com/ungk0aub", id: evt-26ZBrCd8OLyq4bi }
+"2027-02-09": { url: "https://luma.com/68izqn4e", id: evt-lGg7kCDpJFPB4SF }
+"2027-02-16": { url: "https://luma.com/zbsuog4r", id: evt-BuJuf6LatlISgOU }

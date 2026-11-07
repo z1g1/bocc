@@ -3,7 +3,7 @@
 Monorepo for the Buffalo Open Coffee Club — a weekly Tuesday morning networking event for Buffalo's small business and entrepreneurial community.
 
 **Website:** [716coffee.club](https://716coffee.club)
-**Events:** [Eventbrite](https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761)
+**Events:** [Luma](https://luma.com/716coffeeclub)
 
 ## Repository Structure
 
@@ -30,7 +30,7 @@ bundle install
 # Local dev (plain)
 bundle exec jekyll serve
 
-# Local dev with SSL (required for Eventbrite embed checkout)
+# Local dev with SSL
 bundle exec jekyll serve --host localhost --ssl-key ssl/localhost.key --ssl-cert ssl/localhost.crt
 ```
 

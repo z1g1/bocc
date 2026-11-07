@@ -1,0 +1,17 @@
+{%- comment -%}
+  event-rsvp.html — RSVP band on a generated event page. Embeds the Luma event
+  when the date is in _data/luma_events.yml, otherwise points at the calendar.
+{%- endcomment -%}
+<section class="rsvp-band" id="rsvp" aria-labelledby="rsvp-heading">
+  <div class="container rsvp-band__inner">
+    <span class="section-label">RSVP</span>
+    <h2 id="rsvp-heading">Save your spot for {{ page.long_date }}.</h2>
+    {%- if page.luma_event_id %}
+    <iframe class="luma-embed luma-embed--event" src="https://luma.com/embed/event/{{ page.luma_event_id }}/simple"
+            title="RSVP on Luma for {{ page.long_date }}" loading="lazy" allowfullscreen></iframe>
+    <p class="luma-embed__fallback">Trouble with the form? <a href="{{ page.luma_url }}">RSVP on Luma</a>.</p>
+    {%- else %}
+    <p class="luma-embed__fallback"><a href="{{ site.event.registration_url }}">See upcoming dates on Luma</a>.</p>
+    {%- endif %}
+  </div>
+</section>

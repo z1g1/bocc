@@ -11,7 +11,7 @@ A weekly Tuesday morning networking event (7:30-9 AM) for Buffalo's small busine
 ```
 Attendee visits 716coffee.club
     ↓
-Registers via Eventbrite embed on homepage
+RSVPs on Luma (embedded on the homepage and event pages)
     ↓
 Attends event, scans QR code
     ↓
@@ -58,7 +58,7 @@ bundle exec jekyll serve
 # Open http://localhost:4000
 ```
 
-For Eventbrite embed testing, you need local SSL certs — see the main [README.md](../README.md) for the openssl command.
+Local SSL certs are optional — see the main [README.md](../README.md) for the openssl command.
 
 ### Run the Backend Locally
 
@@ -106,7 +106,8 @@ If you need access to these services, ask the project maintainer (Zack Glick).
 | **Netlify** | Hosting for both website and backend | netlify.com |
 | **Neon** | Postgres database for attendees and check-ins | console.neon.tech |
 | **Airtable** | Read-only archive of older records | airtable.com |
-| **Eventbrite** | Event registration and ticketing | eventbrite.com |
+| **Luma** | Event RSVPs and calendar | luma.com/716coffeeclub |
+| **Eventbrite** | Discovery listing only | eventbrite.com |
 | **GitHub** | Source code and version control | github.com/z1g1/bocc |
 
 ## Deployment
@@ -127,7 +128,8 @@ Database schema changes are **not** applied by deploys. Add a new file to
 
 ### Website
 - `website/_config.yml` — Jekyll configuration (restart server after changes)
-- `website/index.md` — Homepage with Eventbrite embed
+- `website/index.md` — Homepage with Luma calendar embed
+- `website/_data/luma_events.yml` — Luma event for each Tuesday page
 - `website/js/checkin.js` — Check-in form logic (the most complex JS file)
 - `website/_data/sponsor.yml` — Post-check-in sponsor redirect config
 - `website/_includes/head/custom.html` — CSP headers, structured data, analytics
@@ -147,7 +149,7 @@ Database schema changes are **not** applied by deploys. Add a new file to
 
 ## Common Tasks for Volunteers
 
-- **Update event info**: Edit `website/index.md` (Eventbrite widget, event details)
+- **Update event info**: Edit `website/index.md` (event details)
 - **Update sponsor redirect**: Edit `website/_data/sponsor.yml`
 - **Add a new page**: Create a new `.md` file in `website/` with YAML front matter
 - **Fix a backend bug**: Edit files in `backend/netlify/functions/`, run `npm test`

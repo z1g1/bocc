@@ -18,6 +18,7 @@ ENV['TZ'] = 'America/New_York'
 
 WEEKS = 13
 OUTPUT_DIR = File.expand_path('../_events', __dir__)
+LUMA_EVENTS = YAML.load_file(File.expand_path('../_data/luma_events.yml', __dir__))
 
 # The Tuesdays in the Christmas and New Year's weeks always fall in this window.
 def holiday_break?(date)
@@ -35,6 +36,7 @@ end
 
 def front_matter(date)
   long_date = date.strftime('%A, %B %-d, %Y')
+  luma = LUMA_EVENTS.fetch(date.iso8601, {})
   {
     'layout' => 'event',
     'title' => long_date,
@@ -44,8 +46,10 @@ def front_matter(date)
                      "and startup founders on #{long_date}, 7:30-9:00 AM at Seneca One Tower.",
     'long_date' => long_date,
     'start_date' => iso8601(date, 7, 30),
-    'end_date' => iso8601(date, 9, 0)
-  }
+    'end_date' => iso8601(date, 9, 0),
+    'luma_url' => luma['url'],
+    'luma_event_id' => luma['id']
+  }.compact
 end
 
 today = ENV['BOCC_TODAY'] ? Date.iso8601(ENV['BOCC_TODAY']) : Date.today

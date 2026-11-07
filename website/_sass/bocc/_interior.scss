@@ -130,3 +130,19 @@
   margin: var(--sp-5) 0; padding: var(--sp-4) var(--sp-5); border-radius: 0 var(--r-sm) var(--r-sm) 0;
 }
 .page-prose blockquote p:last-child { margin-bottom: 0; }
+
+// ---- Luma embeds (home sign-up panel, event-page RSVP band) --
+.luma-embed {
+  display: block; width: 100%; border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bocc-white); margin-top: var(--sp-4);
+}
+// Keep 450px on desktop: Luma's event embed renders blank in a taller frame at
+// desktop widths (tested at 620px and 760px). Taller is fine on phones.
+.luma-embed--event { max-width: 600px; height: 450px; }
+@media (max-width: 620px) { .luma-embed--event { height: 760px; } }
+.luma-embed--calendar { height: 460px; }
+.luma-embed__fallback { margin: var(--sp-3) 0 0; font-size: var(--t-sm); color: var(--fg2); }
+
+.rsvp-band { background: var(--bocc-cream); }
+.rsvp-band__inner { max-width: var(--reading); margin-inline: auto; padding: 56px var(--sp-5); }
+.rsvp-band h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: var(--tr-tight); line-height: 1.08; margin: 0; }

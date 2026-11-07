@@ -93,7 +93,7 @@ blocks:
       help families navigate the digital world.
 
 
-      The event runs lean: no admin overhead, no paid staff. Eventbrite manages check-ins for free,
+      The event runs lean: no admin overhead, no paid staff. Luma handles RSVPs for free,
       and BootSector handles banking and tax filings — so your sponsorship goes straight to coffee
       and community.
 
@@ -106,7 +106,7 @@ blocks:
         href: https://docs.google.com/forms/d/e/1FAIpQLSfDqOoB3eLfUJe2bST_3hzpHFPNxR8zNRARXSpbpLkvJrjmyw/viewform?usp=header
         variant: primary
         icon: arrow
-      - label: Register free
-        href: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+      - label: RSVP free
+        href: https://luma.com/716coffeeclub
         variant: secondary
 ---

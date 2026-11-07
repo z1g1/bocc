@@ -13,7 +13,7 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 │  │ Homepage  │  │  About   │  │  Check-in Forms    │    │
 │  │ index.md  │  │ about.md │  │ checkin/bocc.html  │    │
 │  │           │  │          │  │ js/checkin.js       │    │
-│  │ Eventbrite│  │  Photos  │  │                    │    │
+│  │ Luma      │  │  Photos  │  │                    │    │
 │  │  Embed    │  │          │  │  localStorage      │    │
 │  └──────────┘  └──────────┘  └────────┬───────────┘    │
 └───────────────────────────────────────┼─────────────────┘
@@ -136,11 +136,14 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 
 ## External Service Integration
 
+### Luma
+- Primary RSVP: https://luma.com/716coffeeclub
+- Calendar embed on the homepage; event embed on each `/events/YYYY-MM-DD/` page, from `_data/luma_events.yml`
+- No API integration — purely frontend iframes
+- CSP in `_layouts/default.html` allows `luma.com` as a frame source
+
 ### Eventbrite
-- Embedded checkout widget on homepage (`index.md`)
-- Event ID: `1983098086761`
-- No API integration — purely a frontend embed
-- CSP headers in `_includes/head/custom.html` allow Eventbrite domains
+- Discovery listing only, as a plain link from the homepage and `llms.txt`
 
 ### Neon Postgres
 - `pg` driver over Neon's pooled endpoint, verify-full TLS (`utils/db-ssl.js`)
@@ -175,6 +178,6 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 - Principle of least privilege for all API tokens and database roles
 
 ### Content Security Policy
-- Configured in `website/_includes/head/custom.html`
-- Allows: Eventbrite, Google Fonts, Font Awesome, jsDelivr, Netlify backend
+- Configured in `website/_layouts/default.html`
+- Allows: Luma, Google Fonts, Font Awesome, jsDelivr, Netlify backend
 - Blocks inline scripts except for specific hashes

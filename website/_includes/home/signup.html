@@ -1,10 +1,9 @@
 {%- comment -%}
   home/signup.html — charcoal sign-up close.
-  Left: copy from _data/home.yml (signup). Right panel: the existing Eventbrite
-  checkout widget (preserved behavior). Event id is site.event.eventbrite_id.
+  Left: copy from _data/home.yml (signup). Right panel: the Luma calendar embed
+  (site.event.luma_calendar_id), plus a plain link to the Eventbrite listing.
 {%- endcomment -%}
 {%- assign s = site.data.home.signup -%}
-{%- assign eid = site.event.eventbrite_id -%}
 <section class="signup sun-rays" id="signup" aria-labelledby="signup-heading">
   <span class="signup__glow" aria-hidden="true"></span>
   <div class="container signup__inner">
@@ -22,35 +21,11 @@
     </div>
 
     <div class="signup__panel">
-      <h3>Free tickets on Eventbrite</h3>
-      <p class="stamp">Reserve in 30 seconds</p>
-      <div id="eventbrite-widget-container-{{ eid }}">
-        <p><a class="btn btn--primary btn--lg" href="{{ site.event.registration_url }}">Register free on Eventbrite</a></p>
-      </div>
+      <h3>RSVP free on Luma</h3>
+      <p class="stamp">Pick your Tuesday</p>
+      <iframe class="luma-embed luma-embed--calendar" src="https://luma.com/embed/calendar/{{ site.event.luma_calendar_id }}/events"
+              title="Upcoming Buffalo Open Coffee Club dates on Luma" loading="lazy" allowfullscreen></iframe>
+      <p class="luma-embed__fallback"><a href="{{ site.event.registration_url }}">Open the calendar on Luma</a> · Also listed on <a href="{{ site.event.eventbrite_url }}">Eventbrite</a></p>
     </div>
   </div>
-
-  <script src="https://www.eventbrite.com/static/widgets/eb_widgets.js" async></script>
-  <script>
-    (function () {
-      function initEventbriteWidget() {
-        if (typeof window.EBWidgets === 'undefined') {
-          return setTimeout(initEventbriteWidget, 200);
-        }
-        window.EBWidgets.createWidget({
-          widgetType: 'checkout',
-          eventId: '{{ eid }}',
-          iframeContainerId: 'eventbrite-widget-container-{{ eid }}',
-          iframeContainerHeight: 460,
-          onOrderComplete: function () { /* no-op */ }
-        });
-        // Give the Eventbrite iframe an accessible name.
-        setTimeout(function () {
-          var iframe = document.querySelector('#eventbrite-widget-container-{{ eid }} iframe');
-          if (iframe) iframe.setAttribute('title', 'Eventbrite ticket checkout for Buffalo Open Coffee Club');
-        }, 1000);
-      }
-      initEventbriteWidget();
-    })();
-  </script>
 </section>

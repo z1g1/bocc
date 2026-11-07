@@ -16,7 +16,7 @@ layout: default
       <h1>{{ page.heading }}</h1>
       <p class="page-hero__summary">{{ site.data.event_page.summary }}</p>
       <div class="page-hero__cta">
-        <a class="btn btn--primary btn--lg" href="{{ e.registration_url }}">Register free{% include icon.html name="arrow" size="18" %}</a>
+        <a class="btn btn--primary btn--lg" href="{{ page.luma_url | default: e.registration_url }}">RSVP free{% include icon.html name="arrow" size="18" %}</a>
         <a class="btn btn--ghost-gold btn--lg" href="{{ site.data.event_page.directions_url }}">Get directions</a>
       </div>
     </div>
@@ -36,5 +36,6 @@ layout: default
 </section>
 
 {% include blocks/prose.html block=site.data.event_page.about %}
+{% include event-rsvp.html %}
 {% include home/schedule.html %}
 {% include blocks/cta.html block=site.data.event_page.cta %}

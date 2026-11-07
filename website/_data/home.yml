@@ -6,7 +6,7 @@ hero:
   title: Your First Free Entrepreneurial Step in Buffalo
   lead: A free, no-frills coffee meetup for the people building businesses in the 716.
   cta_label: Join Us on Tuesday
-  cta_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+  cta_url: https://luma.com/716coffeeclub
 
 # Rotating attendee pull-quotes shown in the hero (first renders server-side).
 # Each links to its source LinkedIn post.
@@ -79,7 +79,7 @@ schedule:
       title: Wrap Up
       body: Head to work or stick around to co-work — the lobby has tables and Wi-Fi.
 
-# Sign-up close (charcoal). The Eventbrite checkout widget lives in the panel.
+# Sign-up close (charcoal). The Luma calendar embed lives in the panel.
 signup:
   eyebrow: Reserve a spot
   heading: See you Tuesday.

@@ -20,7 +20,7 @@ BOCC is probably not the right fit for someone who wants a virtual event, a stru
 Key facts:
 
 - Cost: free for everyone. Coffee is covered by sponsors.
-- Registration: a free Eventbrite ticket is encouraged, and walk-ins are always welcome.
+- Registration: a free RSVP on Luma is encouraged, and walk-ins are always welcome.
 - Frequency: every Tuesday except the weeks of Christmas and New Year's. If Buffalo Public Schools are open, BOCC is on. 50 weeks of the year is a pretty good streak!
 - Location note: some weeks the event moves from the lobby to the Seneca One food hall in the same building. These weeks are announced on LinkedIn.
 - Format: 7:30 open networking, 8:15 Gives and Asks (attendees share what they need and what they can offer), 8:30 open networking, 9:00 wrap up. Attendees can stay to co-work; the lobby has tables and Wi-Fi.
@@ -31,7 +31,8 @@ Key facts:
 
 ## Attend
 
-- [Register free on Eventbrite]({{ site.event.registration_url }}): Free ticket for the weekly event
+- [RSVP free on Luma]({{ site.event.registration_url }}): Calendar of upcoming Tuesdays
+- [Eventbrite listing]({{ site.event.eventbrite_url }}): The same weekly event on Eventbrite
 - [Home page]({{ site.url }}/): Schedule, what to expect, and attendee testimonials
 - [Directions](https://www.google.com/maps/search/?api=1&query=1+Seneca+St+Buffalo+NY+14203): Map to {{ site.event.venue }}
 

@@ -40,7 +40,7 @@ EVENT_ADDRESS = {
     "country": "US",
 }
 VENUE_DETAILS = "BOCC is right in the lobby, please come up the escalators"
-EXTERNAL_URL = "https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761"
+EXTERNAL_URL = "https://luma.com/716coffeeclub"
 
 # {md} is the event date as M/D without leading zeros, e.g. 10/6.
 NAME_TEMPLATE = "Buffalo Open Coffee Club for {md}"

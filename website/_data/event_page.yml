@@ -19,12 +19,12 @@ about:
     [Code of Conduct](/code-of-conduct/) before you come.
 
 cta:
-  label: See you Tuesday
-  title: Grab a free ticket.
-  lead: Grab a free ticket so we know to expect you. Walk-ins are always welcome, too.
+  label: Every Tuesday
+  title: Can't make this one?
+  lead: Every upcoming Tuesday is on our Luma calendar. Walk-ins are always welcome, too.
   actions:
-    - label: Register free
-      href: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761
+    - label: See all dates
+      href: https://luma.com/716coffeeclub
       variant: primary
       icon: arrow
     - label: About BOCC

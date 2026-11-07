@@ -13,19 +13,19 @@
     <script>document.documentElement.className = document.documentElement.className.replace('no-js','js');</script>
 
     {%- comment -%} Content Security Policy. Self-hosted fonts (no Google CDN);
-       Eventbrite is allowed for the home-page checkout widget; the contact form
+       Luma is allowed for the RSVP embeds; the contact form
        posts to Google Forms. Keep in sync with new third-party embeds. {%- endcomment -%}
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'self';
-                   script-src 'self' 'unsafe-inline' https://www.eventbrite.com https://www.eventbrite.com/static/{% if site.google_analytics_id and page.layout != 'checkin' %} https://www.googletagmanager.com{% endif %};
+                   script-src 'self' 'unsafe-inline'{% if site.google_analytics_id and page.layout != 'checkin' %} https://www.googletagmanager.com{% endif %};
                    style-src 'self' 'unsafe-inline';
                    font-src 'self';
                    img-src 'self' data: https:;
-                   frame-src https://www.eventbrite.com;
+                   frame-src https://luma.com;
                    connect-src 'self'{% if site.google_analytics_id and page.layout != 'checkin' %} https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com{% endif %};
                    form-action 'self' https://docs.google.com;">
 
-    <link rel="preconnect" href="https://www.eventbrite.com">
+    <link rel="preconnect" href="https://luma.com">
 
     {%- comment -%} SEO: jekyll-seo-tag emits <title>, description, canonical,
        Open Graph, Twitter cards, and WebSite/Organization JSON-LD from
