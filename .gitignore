@@ -36,3 +36,6 @@ Thumbs.db
 .claude
 .neon
 node_modules/
+
+# Social
+docs/strategy/social-uploads/*
