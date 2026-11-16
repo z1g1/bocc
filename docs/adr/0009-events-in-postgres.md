@@ -41,6 +41,13 @@ There is one event per day. The `bocc-afternoon` series has ended.
    page shows a readiness checklist calculated from the data.
 4. **`/events/YYYY-MM-DD/` is rendered from Neon on request** and cached at Netlify's CDN. A save
    in the admin clears that page from the cache.
+   - The page sets `Netlify-CDN-Cache-Control` (`durable`) and `Netlify-Cache-Tag:
+     event-YYYY-MM-DD` itself. Astro's experimental route cache is not used.
+   - **Every purge passes `deployAlias`** (the branch, read from
+     `Astro.locals.netlify.context.deploy`, since Netlify's `CONTEXT`/`BRANCH` env vars are null
+     at runtime) **or `domain`**, and refuses to run without one outside production, because a
+     purge otherwise covers every deploy. The purging function uses the modern default-export
+     style, so Netlify supplies the purge token (amended 2026-11-16).
    - **Luma is the only call to action.** The other listings are used for discovery off the
      site and appear only as hidden JSON-LD `sameAs` links.
    - Unknown dates return a real 404 or redirect to the calendar, which replaces the 302
@@ -59,5 +66,6 @@ There is one event per day. The `bocc-afternoon` series has ended.
 - *Phase 0 (2026-11-16):* pages set `Netlify-CDN-Cache-Control` and `Netlify-Cache-Tag`
   themselves, and saves call `purgeCache` from `@netlify/cache`. Astro's own route cache is
   experimental and not used. Purges cover every deploy unless they pass `deployAlias`.
-  *Still unverified:* a scoped purge from the branch deploy leaving production alone.
-- *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 4 in the plan.
+- *Phase 0 hands-on (2026-11-16):* a tagged page was served from the durable cache and a scoped
+  purge re-rendered it within 5 s. That the scoped purge leaves production alone is re-checked
+  in Phase 4, once production serves tagged pages.

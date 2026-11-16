@@ -29,6 +29,14 @@ community features may also sit behind a login.
    series has ended.
 4. **The build becomes Node-only.** Ruby, Bundler and `scripts/generate_event_pages.rb` are
    removed once ADR 0009 lands.
+5. **The Astro project lives at the repo root**, which is the Netlify build base (amended
+   2026-11-16 after the Phase 0 spike). The adapter writes `.netlify/v1` under the Astro root,
+   and Netlify only reads it from the base; with Astro in a subfolder every on-demand route
+   returned 404. The root `package.json` holds the Astro app plus the functions' runtime
+   dependencies and may be `"type": "module"`. `backend/` keeps its own CommonJS `package.json`.
+   `website/` is removed once its pages are ported.
+6. **Node 24** (current LTS) replaces `NODE_VERSION = "20"`, which went end-of-life in April
+   2026. Astro 7 needs Node ≥ 22.23.4. Build with `ASTRO_TELEMETRY_DISABLED=1`.
 
 ## Alternatives considered
 
@@ -46,9 +54,8 @@ community features may also sit behind a login.
 - Release check for the port: the list of output files matches the old `_site` (including
   `llms.txt` and `404.html`), the JSON-LD and the CSP are unchanged, and a debug check-in passes
   on the branch deploy.
-- *Phase 0 (2026-11-16):* per-route prerendering is confirmed in Astro's docs (`astro` 7.4.12,
-  `@astrojs/netlify` 8.2.14). Netlify says framework functions are appended to the user's.
-  *Still unverified:* that the existing `[functions]` config still works next to the adapter, in
-  a branch-deploy build. See the plan's Phase 0 section.
+- *Phase 0 (2026-11-16), all settled:* per-route prerendering works (`astro` 7.4.12,
+  `@astrojs/netlify` 8.2.14), and the existing `[functions]` config works next to the adapter
+  on a branch deploy. Details in the plan's Phase 0 section.
 - `CLAUDE.md`, `docs/architecture.md` and `docs/onboarding.md` are rewritten for Astro as part of
   the port.

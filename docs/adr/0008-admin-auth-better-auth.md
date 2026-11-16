@@ -25,13 +25,22 @@ Options checked against current docs on 2026-11-16:
 ## Decision
 
 1. **Run Better Auth in our own Netlify Functions** (through Astro), with its tables in an
-   **`auth` schema in the existing Neon database**. Its SQL is generated and applied with
-   `npm run migrate`, like every other migration.
+   **`auth` schema in the existing Neon database** (set with `database.schemaName`). Its SQL,
+   including the `rateLimit` table, is generated with `npx auth generate` and applied with
+   `npm run migrate`, like every other migration. Rate-limit counters use
+   `rateLimit.storage: "database"`, keyed on Netlify's `x-nf-client-connection-ip`.
+   - **One shared config module builds the Better Auth instance for every caller**: Astro
+     routes, CommonJS functions (through `await import()`, since it is ESM-only) and the
+     `create-admin` CLI. In the Phase 0 spike a caller with different session settings rewrote
+     a session's expiry when it checked it, so the settings must not drift (amended
+     2026-11-16).
 2. **Login methods:** password plus passkey for admins, and a password for the `social`
    account. No magic links, email codes or email resets in the MVP.
 3. **No public sign-up.** Accounts are created by an admin (`create-admin` CLI or the admin UI).
    Password resets are done by an admin.
-4. **Roles live in our own table and are checked in the app.**
+4. **Roles live in our own table and are checked in the app.** `user_roles` is the only place
+   roles are stored. The admin plugin is used only for `createUser` and password resets, and
+   its `role` column is never read (amended 2026-11-16).
    - `admin`: everything.
    - `social`: reads the social work order and its media, and updates channel status and post
      URLs. **It has no access to attendees, check-ins, streaks, the email list or the audit
@@ -73,8 +82,8 @@ should not require changing how the app calls login.
   - Version 1.7.25, MIT. Vercel acquired the project on 2026-07-07
   - Tables go in `auth` through `database.schemaName`, since `search_path` doesn't survive
     Neon's pooler
-- *Still unverified (hands-on tests):* login on a Netlify branch deploy, `getSession` from a
-  CommonJS function (the package is ESM-only), passkeys on our domains, the sliding session.
-- *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 3 in the plan.
+- *Phase 0 hands-on (2026-11-16):* login, passkeys, sliding sessions, database rate limits and
+  `getSession` from a CommonJS function all passed on a branch deploy. Amendments 1 and 4 above
+  were accepted the same day.
 - `docs/backend/NEON_PERMISSIONS.md` gains the `admin_app` identity and its verification
   checklist.

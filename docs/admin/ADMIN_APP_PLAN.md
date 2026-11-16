@@ -39,8 +39,8 @@ from before anything else proceeds.
 
 Doc checks were done on 2026-11-16 against live vendor pages. A ticked box means the docs (or our
 own code) settle it. An unticked box with "**test**" still needs a hands-on spike.
-**Proposed ADR changes** from these findings are listed at the end of this phase and wait for
-Zack's decision.
+The **ADR changes** these findings led to are listed at the end of this phase. Zack accepted
+all seven on 2026-11-16, and they are written into the ADRs.
 
 - **Astro + Netlify** (ADR 0007, 0009)
   - [x] Versions: `astro` 7.4.12 and `@astrojs/netlify` 8.2.14 are the stable releases (both
@@ -183,9 +183,9 @@ Zack's decision.
         [Sked Social](https://skedsocial.com/blog/first-comment-scheduling)
   - [x] Threads links: probably clickable ("threads can include … links"), so Threads follows the
         FB caption rules. [Instagram Help](https://help.instagram.com/788669719351544/)
-  - [ ] **Contradicts ADR 0011:** Business Suite does not post to Threads, and Instagram's "Share
-        to Threads" only works for posts published immediately. Threads needs its own scheduling
-        step. Third-party source, so confirm by hand.
+  - [x] **Changed ADR 0011:** Business Suite does not post to Threads, and Instagram's "Share
+        to Threads" only works for posts published immediately, so Threads is now its own
+        Wednesday step. Third-party source; the first rehearsal confirms it.
         [Sprout](https://sproutsocial.com/insights/schedule-threads-posts/)
   - Notes: TikTok Studio schedules 15 min to 10 days ahead and needs a Business Account. LinkedIn
     Pages schedule 1 hour to 3 months ahead. Neither allows editing a scheduled post's content.
@@ -193,7 +193,7 @@ Zack's decision.
       active until 2027-09-15. 202511 sunset on 2026-11-16, as expected.
       [LinkedIn versioning](https://learn.microsoft.com/en-us/linkedin/marketing/integrations/migrations)
 
-### Proposed ADR changes (waiting for Zack)
+### ADR changes (accepted 2026-11-16, written into the ADRs)
 
 1. **ADR 0011, Threads:** add Threads as its own step in the Wednesday task, in the Threads web
    app, instead of relying on the share from Business Suite.
@@ -218,7 +218,8 @@ Zack's decision.
 
 ## Phase 1: Astro port (released on its own, ADR 0007)
 
-- [ ] Astro project replaces `website/`, with every page ported and no visual changes
+- [ ] Astro project at the repo root replaces `website/` (ADR 0007), with every page ported and
+      no visual changes. Node 24, telemetry off
 - [ ] `checkin/bocc.html` and `js/checkin.js` copied byte for byte
 - [ ] `bocc-afternoon` retired
 - [ ] Event pages still built at build time from `luma_events.yml` (they move to the database in

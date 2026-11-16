@@ -48,12 +48,16 @@ accounts at risk under the platforms' terms.
    - FB and LinkedIn: the caption plus the Luma link.
    - IG and TikTok: the caption plus "Link in bio", with the Luma link as the first comment.
    - TikTok gets a default hashtag list plus an optional per-post `extra_hashtags` field.
-   - Threads follows FB if its links turn out to be clickable, otherwise IG.
+   - Threads follows FB, since its links appear clickable (Phase 0). Confirm in the first
+     rehearsal.
    - **Luma is the only link used.**
 3. **Two Claude in Chrome scheduled tasks on Modron's machine pull the work order.** The app
    never calls them.
-   - **Wednesday:** open `/admin/social/next`, schedule each `pending` channel in Business Suite,
-     TikTok Studio and LinkedIn, and save each post URL and status back to the page.
+   - **Wednesday:** open `/admin/social/next`, schedule each `pending` channel in Business Suite
+     (Facebook and Instagram), the **Threads web app**, TikTok Studio and LinkedIn, and save
+     each post URL and status back to the page. Threads is its own step because Business Suite
+     doesn't post to it and Instagram's "Share to Threads" only works for posts published
+     immediately (amended 2026-11-16). The first rehearsal confirms Threads web can schedule.
    - **Monday at about 7:20 AM ET:** open `/admin/social/verify`, confirm each post is live by
      opening its URL, add the first comments, and write back `live` / `failed`.
 4. **The pages are built for an agent to read:** plain server-rendered HTML, stable labels, one
@@ -75,7 +79,7 @@ accounts at risk under the platforms' terms.
   machine is still pending (Phase 0).
 - *Phase 0 (2026-11-16):* Meta Business Suite reportedly doesn't post to Threads, and Instagram's
   "Share to Threads" only works for posts published immediately. Threads links appear clickable.
-  *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 1 in the plan.
+  Threads became its own Wednesday step (accepted the same day).
 - Browser automation still carries some terms-of-service risk on these platforms. Official APIs
   remain the long-term option, one channel at a time (Facebook scheduling, TikTok after audit).
 - Everything the agent can read is exposed to instructions planted in the web pages it visits.

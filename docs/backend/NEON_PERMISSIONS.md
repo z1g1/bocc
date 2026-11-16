@@ -52,6 +52,43 @@ is an optional override; a malformed value fails closed.
 2. Update `CHECKIN_DB_URL` in Netlify, then trigger a redeploy (env changes need one).
 3. Update or delete the local `.env.backfill`.
 
+## Staging: the `dev` branch
+
+Staging is a Neon `dev` branch copied from `production`, served to the `dev` Netlify branch
+deploy (see `docs/admin/ADMIN_APP_PLAN.md`). It holds real attendee data, so it gets the same
+care as production.
+
+**Passwords.** On the free plan a new branch starts with its parent's role passwords
+("the branch will have the same Postgres roles and passwords as the parent branch",
+https://neon.com/docs/manage/branches). Leaving them would put production credentials in
+staging. Tested 2026-11-16 on throwaway branches:
+- `ALTER ROLE … PASSWORD` on a child branch leaves the parent's password unchanged.
+- A "reset from parent" **keeps** the child's own password. The reset docs don't promise this,
+  so the check below runs after every reset anyway.
+
+When `dev` is created, run once as `neondb_owner` **on `dev`**, with a fresh
+`openssl rand -hex 32` for each role:
+
+```sql
+alter role checkin_writer password '<new hex>';
+alter role admin_app      password '<new hex>';  -- once the role exists (Phase 2)
+```
+
+Put the pooled `dev` URLs in Netlify's environment variables scoped to the `dev` branch deploy
+only. Never print them.
+
+After any reset of `dev`, check that production's `checkin_writer` password is refused on `dev`
+(expect `28P01 password authentication failed`). If it's accepted, run the `alter role`
+statements again.
+
+**Object Storage.** A storage credential "is scoped to a branch and valid for that branch and
+all its descendants" (https://neon.com/docs/storage/authentication). A production credential
+therefore also works on `dev`, so staging gets **its own credential, created on `dev`**, and
+production's is never given to the `dev` deploy.
+
+**Shared limits.** `dev` uses the same 100 CU-hours and 5 GB of transfer a month as production.
+If staging uses them up, production's compute is suspended too (SQLSTATE `53000`).
+
 ## Verification checklist
 
 Run as `checkin_writer`. All verified 2026-09-12:

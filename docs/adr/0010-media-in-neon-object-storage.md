@@ -37,6 +37,12 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
    - a **400px thumbnail**
 
    No images are processed on the server.
+
+   The file picker uses `accept="image/jpeg,image/png"`, so iOS Safari converts HEIC to JPEG,
+   and checks the MIME type, not the extension. **If the browser can't decode a photo** (an
+   iPhone HEIC picked in Chrome on a desktop or Android), the upload is refused with a clear
+   message: "upload from your iPhone, or export the photo as JPEG". No WASM HEIC decoder in the
+   MVP (amended 2026-11-16).
 4. **Google Drive is not used.** Importing the old Drive photos (matched to events by capture
    date) is deferred and not part of the MVP, since the counts that matter come from the Google
    Form import.
@@ -53,4 +59,4 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
     needs its own
 - *Still unverified:* whether inherited objects count toward 5 GB, and presigned PUT from mobile
   browsers.
-- *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 2 in the plan.
+- *Amended 2026-11-16:* the HEIC refusal above.
