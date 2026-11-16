@@ -127,9 +127,11 @@ Zack's decision.
         Astro side had set. Every instance must build Better Auth from one shared config module.
   - [x] **Tested 2026-11-16 (locally):** the sliding session. With `expiresIn` 5 min and
         `updateAge` 60 s, the expiry was unchanged at 30 s and moved to now + 5 min at 70 s.
-  - [ ] **test, needs Zack:** a passkey on the branch-deploy domain, from your phone or laptop
-        browser. The spike has an "Add a passkey" button on `/admin/`. The 716coffee.club `rpID`
-        can only be tested once the admin is on production.
+  - [x] **Tested 2026-11-16 by Zack:** a passkey added after a password login on the branch
+        deploy, then used to sign in on its own. The 716coffee.club `rpID` gets its own check
+        when the admin first reaches production (Phase 2), since passkeys are bound to the domain.
+  - Spike cleaned up on 2026-11-16: the `spike` git branch, the `spike-auth` Neon branch and its
+    role are deleted. What it proved is recorded above; the code itself was not kept.
 - **Neon** (ADR 0008, 0010)
   - [x] Passwords: a child branch gets "the same Postgres roles and passwords as the parent".
         "Resets are branch-scoped", so `ALTER ROLE … PASSWORD` on `dev` should leave
