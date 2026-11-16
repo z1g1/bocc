@@ -58,6 +58,18 @@ npm run dev
 
 Local SSL certs are optional — see the main [README.md](../README.md) for the openssl command.
 
+### Run the Admin App Locally
+
+The admin app (`/admin/`, ADR 0008) needs a database. Put `ADMIN_DB_URL` (an `admin_app` URL on
+a Neon **dev** branch, never `production`), `BETTER_AUTH_SECRET` and
+`BETTER_AUTH_URL=http://localhost:4321` in a gitignored `.env.admin` at the repo root, then:
+
+```bash
+npm run create-admin   # make yourself a login
+npm run dev:admin      # sign in at http://localhost:4321/login/
+npm run test:db        # admin tests on a throwaway Postgres (needs Docker; never touches Neon)
+```
+
 ### Run the Backend Locally
 
 ```bash
@@ -93,7 +105,9 @@ The backend requires this secret, set in the Netlify dashboard (never committed 
 
 Optional: `ALLOWED_ORIGIN` — CORS origin (production: `https://716coffee.club`)
 
-The website has **no secrets** — it's a static Astro site.
+The static website has **no secrets**. The admin app needs `ADMIN_DB_URL`,
+`BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` (optional `ADMIN_DB_POOL_MAX`), set per Netlify deploy
+context; see `docs/backend/NEON_PERMISSIONS.md`.
 
 If you need access to these services, ask the project maintainer (Zack Glick).
 
@@ -147,6 +161,7 @@ Database schema changes are **not** applied by deploys. Add a new file to
 - `docs/backend/NEON_PERMISSIONS.md` — Database roles, grants, and key handling
 - `docs/adr/` — Architecture decisions (datastore: 0003, 0004, 0005, 0006; admin app: 0007–0011)
 - `docs/admin/ADMIN_APP_PLAN.md` — Phased plan for the Astro port and admin app
+- `docs/admin/PHASE2_RELEASE.md` — Operator steps to release login, roles and the data views
 - `docs/strategy/` — Social media strategies and brand guide
 
 ## Common Tasks for Volunteers

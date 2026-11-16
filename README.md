@@ -9,7 +9,8 @@ Monorepo for the Buffalo Open Coffee Club — a weekly Tuesday morning networkin
 
 ```
 bocc/
-├── src/, public/   Astro website (repo root) → served at 716coffee.club via Netlify
+├── src/, public/   Astro website (repo root) → served at 716coffee.club via Netlify,
+│                   plus the admin app (/admin/, /login/) rendered on demand
 ├── backend/        Netlify Functions API → served at 716coffee.club/.netlify/functions/
 └── docs/           All project documentation
     ├── onboarding.md       Start here if you're new
@@ -33,6 +34,22 @@ npm run build    # static site in dist/
 
 See `CLAUDE.md` (Website section) for where pages, data and styles live.
 
+### Admin app (`/admin/`)
+
+A login-only area for organizers (ADR 0008): Better Auth (password + passkey, no public
+sign-up), roles `admin` / `social`, every change audited. It runs as the `admin_app` database
+role from the Astro SSR function. Its settings go in a gitignored `.env.admin` at the repo root
+(`ADMIN_DB_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL=http://localhost:4321`; see
+`docs/backend/NEON_PERMISSIONS.md`).
+
+```bash
+npm run dev:admin      # astro dev with .env.admin loaded; sign in at /login/
+npm run create-admin   # make a login (prompts; --role admin|social, default admin)
+npm run test:db        # admin tests against a throwaway Postgres in Docker (never Neon)
+```
+
+Admins manage other users at `/admin/users/`.
+
 ### Backend (Netlify Functions)
 
 ```bash
@@ -51,6 +68,7 @@ npm run migrate
 
 Required environment variables (set in Netlify dashboard, never committed):
 - `CHECKIN_DB_URL`: Neon Postgres URL for the least-privilege `checkin_writer` role (see `docs/backend/NEON_PERMISSIONS.md`)
+- Admin app: `ADMIN_DB_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (optional `ADMIN_DB_POOL_MAX`), per deploy context
 
 Optional:
 - `ALLOWED_ORIGIN` — CORS origin (set to `https://716coffee.club` in production)

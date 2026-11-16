@@ -57,6 +57,10 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 > **Circle retired (November 2026):** the Circle integration and profile photo enforcement
 > were removed, and Postgres is the only data store. See
 > [ADR-0006](adr/0006-retire-circle-postgres-only.md).
+>
+> **Admin app (November 2026):** `/admin/*`, `/api/admin/*`, `/api/auth/*`, `/login/` and
+> `/logout` are rendered on demand by the Astro SSR function (`@astrojs/netlify`); everything
+> else stays prerendered. See [Admin App](#admin-app) below.
 
 ## Check-in Flow (Detailed)
 
@@ -171,11 +175,26 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 - All secrets in Netlify environment variables (never in code), read and
   validated once in `utils/config.js` (fails fast at import; see
   [ADR-0001](adr/0001-config-fail-fast-at-import.md))
-- Website has zero secrets (static site)
+- The static website has zero secrets; the admin app's (`ADMIN_DB_URL`, `BETTER_AUTH_SECRET`)
+  are read only by on-demand routes
 - Backend env vars: required `CHECKIN_DB_URL`, plus optional `ALLOWED_ORIGIN` (see
   `.env.example`)
 - The Neon owner URL and Neon API key are operator-only and never deployed
 - Principle of least privilege for all API tokens and database roles
+
+### Admin App
+- Login: Better Auth ([ADR-0008](adr/0008-admin-auth-better-auth.md)), one shared instance in
+  `src/lib/auth/auth.mjs`. Password + passkey, 30-day sliding sessions, no public sign-up;
+  accounts come from `npm run create-admin` or `/admin/users/`
+- `src/middleware.ts` checks the session and roles (`public.user_roles`: `admin`, `social`) for
+  `/admin/*` and `/api/admin/*`; each route also calls `requireRole()`. No role, no access
+- Database: the `admin_app` role (`ADMIN_DB_URL`), which can read attendee data, correct four
+  attendee columns and append to `audit_log`, but never insert or delete attendee data. Every
+  change is written with its `audit_log` row in one transaction (`src/lib/admin/db.mjs`)
+- Mutations are form POSTs whose `Origin` must match `BETTER_AUTH_URL`; admin pages send a strict
+  first-party CSP with no analytics (`src/lib/admin/headers.mjs`)
+- Env: `ADMIN_DB_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, optional `ADMIN_DB_POOL_MAX`
+  (locally in `.env.admin`). Tests: `npm run test:db` (throwaway Postgres in Docker)
 
 ### Content Security Policy
 - Configured in `src/layouts/Default.astro` (a `<meta http-equiv>` tag). The check-in page
