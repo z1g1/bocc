@@ -218,19 +218,38 @@ all seven on 2026-11-16, and they are written into the ADRs.
 
 ## Phase 1: Astro port (released on its own, ADR 0007)
 
-- [ ] Astro project at the repo root replaces `website/` (ADR 0007), with every page ported and
-      no visual changes. Node 24, telemetry off
-- [ ] `checkin/bocc.html` and `js/checkin.js` copied byte for byte
-- [ ] `bocc-afternoon` retired
-- [ ] Event pages still built at build time from `luma_events.yml` (they move to the database in
-      Phase 4)
-- [ ] Release checks:
-  - output file list matches the old `_site`
-  - JSON-LD and CSP unchanged
-  - `llms.txt` unchanged
-  - a debug check-in passes on the branch deploy
-- [ ] Update `CLAUDE.md`, `architecture.md` and `onboarding.md`
-- [ ] Merge to `main` (one production deploy)
+Built on `dev` on 2026-11-16. Baseline: the live site, mirrored the same day (production's
+`website/` matched `dev`; its last build was 2026-11-08T18:37:43Z). The port was built "as of"
+that moment (`BOCC_TODAY=2026-11-08 BOCC_BUILD_TIME=2026-11-08T18:37:43Z`) and every file
+compared.
+
+- [x] Astro 7.4.12 at the repo root replaces `website/`, with every page ported. Node 24,
+      telemetry off. Content stays in YAML (`src/data/`) and Markdown (`src/content/pages/`)
+- [x] `checkin/bocc.html` is production's rendered file, byte for byte (`cmp` identical), and
+      `js/checkin.js` is unchanged. The sponsor redirect now lives in the page's `data-sponsor-*`
+      attributes, since the page is frozen
+- [x] `bocc-afternoon` retired, along with the unpublished demo post and two unused Jekyll
+      leftovers (`head/custom.html`, `navigation.yml`)
+- [x] Event pages are still built at build time from `luma_events.yml` (`src/lib/events.ts`)
+- [x] Release checks, local build against the live baseline:
+  - **File list:** matches, except the retired `checkin/bocc-afternoon.html`
+  - **HTML:** 20 of 21 pages identical after normalizing whitespace and entities. The brand
+    page differs only in kramdown's syntax-highlighting wrappers around one code block (same
+    text, no CSS targets them)
+  - **JSON-LD and CSP:** unchanged on every page (compared as parsed JSON and per directive)
+  - **`llms.txt`, `sitemap.xml`, `robots.txt`:** byte-identical. `feed.xml` drops only its
+    Jekyll `generator` tag, as do the pages' `<meta name="generator">`
+  - **CSS:** the same 336 rules. Three differ only in notation (Dart Sass writes `transparent`
+    as `#0000` and drops spaces in `calc()`)
+  - Two fixes were needed to match: SmartyPants mode 2 (kramdown's en dashes), and `/about/`
+    getting `WebSite` JSON-LD like the home page, which is what `jekyll-seo-tag` did
+- [ ] Release checks on the `dev` branch deploy (https://dev--bocc-backend.netlify.app):
+  - the pages and files serve as built
+  - a debug check-in passes, against the Neon `dev` branch once `CHECKIN_DB_URL` is scoped to
+    the `dev` deploy
+- [x] Update `CLAUDE.md`, `README.md`, `architecture.md`, `onboarding.md` and the docs that
+      pointed into `website/`
+- [ ] Merge to `main` (one production deploy), with Zack's go-ahead
 
 ## Phase 2: login, roles and data views (ADR 0008)
 

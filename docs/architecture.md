@@ -178,6 +178,8 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 - Principle of least privilege for all API tokens and database roles
 
 ### Content Security Policy
-- Configured in `website/_layouts/default.html`
-- Allows: Luma, Google Fonts, Font Awesome, jsDelivr, Netlify backend
-- Blocks inline scripts except for specific hashes
+- Configured in `src/layouts/Default.astro` (a `<meta http-equiv>` tag). The frozen check-in
+  page, `public/checkin/bocc.html`, carries its own copy without the analytics origins
+- Allows: self-hosted fonts and scripts, Luma embeds (`frame-src`), images over https, Google
+  Analytics origins (website only), and form posts to Google Forms
+- Inline scripts are allowed (`'unsafe-inline'`); there is no nonce or hash yet

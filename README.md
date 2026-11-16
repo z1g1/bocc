@@ -9,7 +9,7 @@ Monorepo for the Buffalo Open Coffee Club — a weekly Tuesday morning networkin
 
 ```
 bocc/
-├── website/        Jekyll static site → served at 716coffee.club via Netlify
+├── src/, public/   Astro website (repo root) → served at 716coffee.club via Netlify
 ├── backend/        Netlify Functions API → served at 716coffee.club/.netlify/functions/
 └── docs/           All project documentation
     ├── onboarding.md       Start here if you're new
@@ -21,26 +21,17 @@ bocc/
 
 ## Quick Start
 
-### Website (Jekyll)
+### Website (Astro)
+
+Node 24. From the repo root:
 
 ```bash
-cd website
-bundle install
-
-# Local dev (plain)
-bundle exec jekyll serve
-
-# Local dev with SSL
-bundle exec jekyll serve --host localhost --ssl-key ssl/localhost.key --ssl-cert ssl/localhost.crt
+npm install
+npm run dev      # http://localhost:4321
+npm run build    # static site in dist/
 ```
 
-Generate local SSL certs (one-time):
-```bash
-mkdir -p website/ssl
-openssl req -x509 -out website/ssl/localhost.crt -keyout website/ssl/localhost.key \
-  -newkey rsa:2048 -nodes -sha256 -subj '/CN=localhost' \
-  -extensions EXT -config <(printf "[dn]\nCN=localhost\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:localhost\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth") -days 365
-```
+See `CLAUDE.md` (Website section) for where pages, data and styles live.
 
 ### Backend (Netlify Functions)
 
@@ -74,7 +65,7 @@ with the website, so no CORS is required.
 
 | Part | URL | Source |
 |------|-----|--------|
-| Website | `716coffee.club` | `website/` |
+| Website | `716coffee.club` | repo root (`src/`, `public/`) |
 | Backend API | `716coffee.club/.netlify/functions/` | `backend/netlify/functions/` |
 
 Each push to `main` costs 15 Netlify credits (one build). The free tier provides 300 credits/month. **Batch changes and merge to `main` infrequently** — every push, including docs-only changes, rebuilds the site.

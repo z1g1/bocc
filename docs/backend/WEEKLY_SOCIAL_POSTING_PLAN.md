@@ -73,7 +73,7 @@ LinkedIn goes first because every other step needs the event URL. A failure stop
 1. Upload it to the Page as an **unpublished** photo (`published=false`), read back its CDN URL,
    and pass that as `image_url`. There's nothing to deploy and no new service. This isn't a
    documented pattern, so Phase 0 has to prove it works.
-2. Fallback: commit the JPEG to `website/assets/images/social/` and wait for the deploy. That's
+2. Fallback: commit the JPEG to `public/assets/images/social/` and wait for the deploy. That's
    reliable, but it costs 15 Netlify credits a week and adds a wait. (Not recommended as the
    weekly path.)
 

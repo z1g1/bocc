@@ -62,7 +62,7 @@ BOCC is the friend who moved back to Buffalo and genuinely wants to introduce yo
 
 ### Logo system
 
-BOCC logo assets live in `website/assets/images/brand/` (see its README for file list and palette):
+BOCC logo assets live in `public/assets/images/brand/` (file list and palette: `src/content/pages/brand-assets.md`, published at `/assets/images/brand/`):
 
 | Logo | File | Use for |
 |------|------|---------|
@@ -78,7 +78,7 @@ BOCC logo assets live in `website/assets/images/brand/` (see its README for file
 ### Color palette
 
 **Canonical palette (sampled from the logo files, Nov 2026).** The hex values below were
-extracted directly from the PNGs in `website/assets/images/brand/`, so they match the
+extracted directly from the PNGs in `public/assets/images/brand/`, so they match the
 artwork exactly. Use these for all new graphics, email templates, and site styling.
 
 | Role | Name | Hex | Where it appears |
@@ -98,7 +98,7 @@ artwork exactly. Use these for all new graphics, email templates, and site styli
 - **Avoid**: Cool blues, neon greens, purples, or any color that reads "corporate tech." If in doubt, ask: "Does this look like it belongs in a coffee shop?" If not, pull it back.
 
 **Website colors.** The site uses this palette through the `--bocc-*` tokens in
-`website/_sass/bocc/_tokens.scss`. Amber is too light for text on light backgrounds, so there
+`src/styles/bocc/_tokens.scss`. Amber is too light for text on light backgrounds, so there
 it is a fill or underline and the text is Charcoal. The one exception to the palette is a
 red for form errors.
 

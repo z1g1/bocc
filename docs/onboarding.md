@@ -15,7 +15,7 @@ RSVPs on Luma (embedded on the homepage and event pages)
     ↓
 Attends event, scans QR code
     ↓
-Check-in form (website/checkin/bocc.html)
+Check-in form (public/checkin/bocc.html)
     ↓
 js/checkin.js POSTs to backend API
     ↓
@@ -28,7 +28,7 @@ For a detailed technical diagram, see [architecture.md](architecture.md).
 
 | Directory | What's In It | Deploy Target |
 |-----------|-------------|---------------|
-| `website/` | Jekyll static site (HTML, Markdown, JS, CSS) | Netlify → `716coffee.club` |
+| `src/`, `public/` (repo root) | Astro website: pages, YAML data, Markdown, Sass, static files | Netlify → `716coffee.club` |
 | `backend/` | Netlify Functions (Node.js serverless) + `db/migrations/` | Netlify → `716coffee.club/.netlify/functions/` |
 | `docs/` | All documentation (you're reading it) | Not deployed |
 
@@ -37,8 +37,7 @@ For a detailed technical diagram, see [architecture.md](architecture.md).
 ### Prerequisites
 
 - **Git** for version control
-- **Ruby** (3.3.x) + Bundler for the website (managed via `rbenv`)
-- **Node.js** (20+) + npm for the backend
+- **Node.js** 24 + npm for the website and the backend
 - **Netlify CLI** (`npm install -g netlify-cli`) for local backend development
 - **Neon CLI** (`npm install -g neon`), only if you manage the database
 
@@ -52,10 +51,9 @@ cd bocc
 ### Run the Website Locally
 
 ```bash
-cd website
-bundle install
-bundle exec jekyll serve
-# Open http://localhost:4000
+npm install      # at the repo root
+npm run dev
+# Open http://localhost:4321
 ```
 
 Local SSL certs are optional — see the main [README.md](../README.md) for the openssl command.
@@ -80,7 +78,7 @@ Ask the maintainer for a branch and a `checkin_writer` URL.
 ### Run Both Together
 
 In two terminals:
-1. `cd website && bundle exec jekyll serve`
+1. `npm run dev` (repo root)
 2. `cd backend && netlify dev`
 
 The website check-in form talks to the production backend by default (same-origin: `716coffee.club/.netlify/functions/`). To test against your local backend, add `?local=1` to the check-in URL.
@@ -95,7 +93,7 @@ The backend requires this secret, set in the Netlify dashboard (never committed 
 
 Optional: `ALLOWED_ORIGIN` — CORS origin (production: `https://716coffee.club`)
 
-The website has **no secrets** — it's a static Jekyll site.
+The website has **no secrets** — it's a static Astro site.
 
 If you need access to these services, ask the project maintainer (Zack Glick).
 
@@ -116,7 +114,7 @@ A single Netlify site (serving both the website and the functions) auto-deploys 
 
 **Workflow:**
 1. Work on the `dev` branch
-2. Test locally (website: `bundle exec jekyll serve`, backend: `npm test`)
+2. Test locally (website: `npm run build` and `npm run dev`, backend: `npm test`)
 3. When ready, merge `dev` → `main` and push
 4. The site deploys automatically within 2-3 minutes
 
@@ -127,12 +125,14 @@ Database schema changes are **not** applied by deploys. Add a new file to
 ## Key Files to Know
 
 ### Website
-- `website/_config.yml` — Jekyll configuration (restart server after changes)
-- `website/index.md` — Homepage with Luma calendar embed
-- `website/_data/luma_events.yml` — Luma event for each Tuesday page
-- `website/js/checkin.js` — Check-in form logic (the most complex JS file)
-- `website/_data/sponsor.yml` — Post-check-in sponsor redirect config
-- `website/_includes/head/custom.html` — CSP headers, structured data, analytics
+- `src/data/site.yml` — Site settings: title, description, analytics id, event facts
+- `src/data/home.yml` — Homepage copy (the Luma calendar embed is in `src/components/home/Signup.astro`)
+- `src/data/luma_events.yml` — Luma event for each Tuesday page
+- `public/js/checkin.js` — Check-in form logic (the most complex JS file)
+- `public/checkin/bocc.html` — The check-in page, a frozen static file; the sponsor redirect is
+  the `data-sponsor-*` attributes on `#sponsorRedirect`
+- `src/layouts/Default.astro` — CSP, fonts, scripts; `src/components/Seo.astro` and
+  `EventJsonLd.astro` — metadata and structured data
 
 ### Backend
 - `backend/netlify/functions/checkin.js` — Main API endpoint
@@ -150,9 +150,10 @@ Database schema changes are **not** applied by deploys. Add a new file to
 
 ## Common Tasks for Volunteers
 
-- **Update event info**: Edit `website/index.md` (event details)
-- **Update sponsor redirect**: Edit `website/_data/sponsor.yml`
-- **Add a new page**: Create a new `.md` file in `website/` with YAML front matter
+- **Update event info**: Edit `src/data/site.yml` (event facts) or `src/data/home.yml` (homepage copy)
+- **Update sponsor redirect**: Edit the `data-sponsor-*` attributes in `public/checkin/bocc.html`
+- **Add a new page**: Create a new `.md` file in `src/content/pages/` with YAML front matter,
+  including a `permalink`
 - **Fix a backend bug**: Edit files in `backend/netlify/functions/`, run `npm test`
 - **Update social media strategy**: Edit docs in `docs/strategy/`
 - **Review API permissions**: See `docs/backend/NEON_PERMISSIONS.md`

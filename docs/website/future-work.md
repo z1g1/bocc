@@ -2,9 +2,9 @@
 
 ## Event Pages
 
-`website/scripts/generate_event_pages.rb` runs before each Netlify build and creates a page for each of the next 13 Tuesdays at `/events/YYYY-MM-DD/`, skipping Dec 20 through Jan 2. Each page carries one Event in its structured data, because Google wants one event per URL. They are in the sitemap but not in site navigation. Expired URLs redirect to the home page.
+Each Astro build creates a page for each of the next 13 Tuesdays at `/events/YYYY-MM-DD/` (`src/lib/events.ts` and `src/pages/events/[date].astro`), skipping Dec 20 through Jan 2. Each page carries one Event in its structured data, because Google wants one event per URL. They are in the sitemap but not in site navigation. Expired URLs redirect to the home page.
 
-The site needs a deploy at least once a quarter or the dates run out. Run the script locally to preview the pages.
+The site needs a deploy at least once a quarter or the dates run out. Preview with `npm run dev`, or build for a given day with `BOCC_TODAY=YYYY-MM-DD npm run build`. Phase 4 of `docs/admin/ADMIN_APP_PLAN.md` renders these pages from Neon instead, which removes the deploy requirement.
 
 ### Open question
 The pages are nearly identical and nothing links to them. Check the Events and Pages reports in Search Console a few weeks after deploying. If Google doesn't index them, link to the next event from the home page.

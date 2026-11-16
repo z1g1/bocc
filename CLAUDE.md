@@ -14,8 +14,10 @@ Monorepo for Buffalo Open Coffee Club (BOCC) — a weekly Tuesday morning networ
 
 ```
 bocc/
-├── website/          Jekyll static site (Netlify Site #1)
-├── backend/          Netlify Functions API (Netlify Site #2)
+├── src/              Astro website: pages, components, layouts, data (YAML), content (Markdown)
+├── public/           Static files served as-is: images, fonts, JS, the check-in page
+├── scripts/          Build helpers (scripts/build-css.mjs compiles the Sass)
+├── backend/          Netlify Functions API (same Netlify site)
 ├── tools/
 │   └── linkedin-events/  `bocc-event` Python CLI: creates the weekly LinkedIn event (not deployed; see its README)
 └── docs/             All documentation
@@ -28,55 +30,80 @@ bocc/
 
 ---
 
-## Website (`website/`)
+## Website (Astro, repo root)
+
+The site moved from Jekyll to Astro in November 2026 (ADR 0007). The repo root is
+both the Netlify build base and the Astro project root.
 
 ### Build & Development Commands
 
 ```bash
-cd website
-bundle install
+npm install
 
-# Local development
-bundle exec jekyll serve
-
-# With SSL
-bundle exec jekyll serve --host localhost --ssl-key ssl/localhost.key --ssl-cert ssl/localhost.crt
+npm run dev      # compiles the Sass, then `astro dev` on http://localhost:4321
+npm run build    # compiles the Sass, then `astro build` into dist/
 ```
 
-SSL certs are generated locally (see README.md). Ruby version managed via `website/.ruby-version`.
+Node 24 (Astro 7 needs ≥ 22.23.4). Set `ASTRO_TELEMETRY_DISABLED=1`; Netlify sets it.
 
-**Important:** `_config.yml` changes require a server restart (Jekyll does not auto-reload config).
+Reproducible builds: `BOCC_TODAY=YYYY-MM-DD` fixes which Tuesdays get event pages, and
+`BOCC_BUILD_TIME=<ISO time>` fixes the timestamps in the sitemap, feed and event metadata.
+
+**This dev VM** (QEMU CPU, no AVX2) can't run Astro's native compiler binding, and the build
+dies with `Illegal instruction`. Locally only: `npm install --no-save --force
+@astrojs/compiler-binding-wasm32-wasi@<same version as @astrojs/compiler-binding>` and move
+`node_modules/@astrojs/compiler-binding-linux-x64-gnu` out of the way. Netlify is unaffected.
 
 ### Architecture
 
-- **Static site generator**: Jekyll with `github-pages` gem, using `minimal-mistakes` remote theme (v4.26.2, `sunrise` skin)
-- **Hosting**: Netlify (base directory: `website/`, build command: `bundle exec jekyll build`)
+- **Framework**: Astro 7, `output: "static"`. Every page is prerendered at build time.
+  Phase 2 of `docs/admin/ADMIN_APP_PLAN.md` adds `@astrojs/netlify` for on-demand routes.
+- **Styles**: Sass in `src/styles/` compiled by `scripts/build-css.mjs` to
+  `public/assets/css/main.css` (generated, gitignored). The URL `/assets/css/main.css` is fixed
+  because the frozen check-in page links to it.
+- **Markdown**: one renderer for everything, `src/lib/markdown.ts` (`marked` plus SmartyPants
+  smart quotes, matching what kramdown produced).
+- **Hosting**: Netlify, build command `npm run build`, publish `dist`
 - **Custom domain**: `716coffee.club` (DNS managed at Hover)
 
-### Key Pages
+### Where things live
 
-All Markdown with YAML front matter:
-- `index.md` — Landing page with the embedded Luma calendar (RSVPs go through Luma; Eventbrite is a discovery listing only)
-- `about.md` — `/about/` — Event history, photo gallery
-- `sponsorship.md` — `/sponsorship/` — Sponsor pitch with LinkedIn testimonial gallery
-- `code-of-conduct.md` — `/code-of-conduct/`
-- `privacy.md` — `/privacy/`
-- `/events/YYYY-MM-DD/` — one page per upcoming Tuesday, generated at build by `scripts/generate_event_pages.rb` into gitignored `_events/` (see `docs/website/future-work.md`). Each embeds its Luma event from `_data/luma_events.yml`; add new dates there
+- `src/data/site.yml` — site settings (was Jekyll's `_config.yml`): title, description, GA4 id, event facts
+- `src/data/home.yml`, `nav.yml`, `event_page.yml` — page copy and navigation
+- `src/data/luma_events.yml` — the Luma event for each Tuesday; add new dates here
+- `src/content/pages/*.md` — About, Sponsorship, Code of Conduct, Privacy and the brand page.
+  Front matter sets `permalink`, the page hero and optional `blocks`
+  (prose | stats | quotes | gallery | feature | cta)
+- `src/content/llms.txt` — text of `/llms.txt`; `{{ site.… }}` placeholders come from `site.yml`
+- `src/pages/` — routes: `index.astro` (home), `[...slug].astro` (Markdown pages),
+  `events/[date].astro`, `404.astro`, `sitemap.xml.ts`, `feed.xml.ts`, `llms.txt.ts`
+- `src/components/Seo.astro` — title, description, Open Graph and page JSON-LD (same output
+  `jekyll-seo-tag` produced); `EventJsonLd.astro` — Event and Organization JSON-LD
+- `src/layouts/Default.astro` — the shell: CSP, fonts, scripts, header and footer. GA4 loads
+  when `google_analytics_id` is set in `site.yml`
+- `/events/YYYY-MM-DD/` — one page per upcoming Tuesday (next 13, skipping the Christmas and
+  New Year's weeks), built by `src/lib/events.ts`. Each embeds its Luma event from
+  `luma_events.yml`. Expired dates 302 to `/` (`netlify.toml`). Phase 4 moves these to Neon
 
 ### Check-in System
 
-- `checkin/bocc.html` and `checkin/bocc-afternoon.html` — HTML forms for event check-in
-- `js/checkin.js` — Client-side form handler (12KB)
+- `public/checkin/bocc.html` — the check-in form, served at `/checkin/bocc`. It is a **frozen
+  static file** (production's rendered Jekyll output, copied byte for byte), so it doesn't
+  use the Astro layout, and its footer year and CSP are fixed in the file
+- `public/js/checkin.js` — Client-side form handler (unchanged)
   - Stores return visitor data in `localStorage` (30-day TTL)
   - POSTs to `/.netlify/functions/checkin` (same-origin)
   - URL parameters: `debug`, `token`, `eventId`, `local` (set `local=1` to skip API calls)
   - Input sanitization, honeypot spam detection, sponsor redirect countdown
-- `_data/sponsor.yml` — Sponsor redirect configuration
-- `_layouts/default.html` — CSP; `_includes/event-jsonld.html` — structured data; `_includes/analytics.html` — GA4 (off until `google_analytics_id` is set in `_config.yml`, never on check-in pages)
+- **Sponsor redirect**: the `data-sponsor-name`, `data-sponsor-url` and `data-sponsor-delay`
+  attributes on `#sponsorRedirect` in `public/checkin/bocc.html` (was `_data/sponsor.yml`)
+- No analytics on the check-in page
+- `checkin/bocc-afternoon.html` was retired with the port (the afternoon series ended)
 
 ### Images
 
-All stored in `assets/images/`. Header overlay image reused across multiple pages.
+All stored in `public/assets/images/`. Brand files and palette: `public/assets/images/brand/`,
+documented on the page `/assets/images/brand/` (`src/content/pages/brand-assets.md`).
 
 ---
 
@@ -181,10 +208,10 @@ the website, so no CORS is required.
 
 | Part | Source | Served at |
 |------|--------|-----------|
-| Website (Jekyll) | `website/` → `website/_site` | `https://716coffee.club` |
+| Website (Astro) | repo root (`src/`, `public/`) → `dist/` | `https://716coffee.club` |
 | Functions (API) | `backend/netlify/functions/` | `https://716coffee.club/.netlify/functions/` |
 
-Each push to `main` triggers one build = **15 credits**. Free tier = 300 credits/month. Limit pushes to `main` to batching work on `dev` (docs-only changes still rebuild the single site, so batch them too). Deploy Previews and branch deploys cost **0 credits** per build (functions on them still use a little compute and bandwidth credit). The planned staging setup is a branch deploy of `dev` against a Neon `dev` branch; see `docs/admin/ADMIN_APP_PLAN.md`.
+Each push to `main` triggers one build = **15 credits**. Free tier = 300 credits/month. Limit pushes to `main` to batching work on `dev` (docs-only changes still rebuild the single site, so batch them too). Deploy Previews and branch deploys cost **0 credits** per build (functions on them still use a little compute and bandwidth credit). Staging is the branch deploy of `dev` (https://dev--bocc-backend.netlify.app) against the Neon `dev` branch, with its own `checkin_writer` password (see `docs/backend/NEON_PERMISSIONS.md`, "Staging").
 
 ---
 
@@ -195,7 +222,7 @@ Each push to `main` triggers one build = **15 credits**. Free tier = 300 credits
 
 Commit frequently on `dev`. Merge to `main` only when ready to deploy. Each merge = 15 credits.
 
-Run `npm test` in `backend/` and verify Jekyll builds in `website/` before merging to `main`.
+Run `npm test` in `backend/` and `npm run build` at the repo root before merging to `main`.
 
 ---
 
