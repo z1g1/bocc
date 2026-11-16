@@ -74,7 +74,7 @@ is an optional override; a malformed value fails closed.
 | `ADMIN_DB_URL` | Netlify (required for the admin app) | pooled `admin_app` URL |
 | `BETTER_AUTH_SECRET` | Netlify (required for the admin app) | at least 32 characters (`openssl rand -hex 32`); signs session cookies. Its own value per context |
 | `BETTER_AUTH_URL` | Netlify (required for the admin app) | the site origin, no path. Production `https://716coffee.club`; Branch deploys `https://dev--bocc-backend.netlify.app`; local `http://localhost:4321`. Passkeys (`rpID`) and the admin CSRF check are bound to it |
-| `ADMIN_DB_POOL_MAX` | Netlify (optional) | `admin_app` pool size per function instance, default `3` |
+| `ADMIN_DB_POOL_MAX` | Netlify (optional) | `admin_app` pool size per function instance, default `3`, minimum `2` (a password reset holds one connection while Better Auth uses another) |
 
 The four admin variables are read only by on-demand admin routes and the `create-admin` CLI
 (`src/lib/auth/env.mjs` fails fast listing every missing one). The static build and the

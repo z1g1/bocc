@@ -15,7 +15,7 @@
 //                         production  https://716coffee.club
 //                         staging     https://dev--bocc-backend.netlify.app
 //                         local       http://localhost:4321
-//   ADMIN_DB_POOL_MAX   optional, pool size per function instance (default 3)
+//   ADMIN_DB_POOL_MAX   optional, pool size per function instance (default 3, minimum 2)
 //   DB_CA_CERT          optional PEM CA override (same as the check-in function)
 //
 // Why BETTER_AUTH_URL has no fallback to Netlify's URL / DEPLOY_PRIME_URL: on a
@@ -77,7 +77,9 @@ export function readAdminEnv(env = process.env) {
   let poolMax = 3;
   if (env.ADMIN_DB_POOL_MAX !== undefined && env.ADMIN_DB_POOL_MAX !== "") {
     poolMax = Number(env.ADMIN_DB_POOL_MAX);
-    if (!Number.isInteger(poolMax) || poolMax < 1) problems.push("ADMIN_DB_POOL_MAX must be a positive integer");
+    // At least 2: a password reset holds one connection (its audit transaction) while
+    // Better Auth writes on another.
+    if (!Number.isInteger(poolMax) || poolMax < 2) problems.push("ADMIN_DB_POOL_MAX must be an integer of at least 2");
   }
 
   if (problems.length) {

@@ -11,7 +11,8 @@ const { handleAuthRequest } = await import("../../src/lib/auth/handler.mjs");
 const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole, getUserRoles } = await import("../../src/lib/admin/users.mjs");
 const { guardRequest } = await import("../../src/lib/admin/guard.mjs");
-const { usersPage, checkSameOrigin } = await import("../../src/lib/admin/users-actions.mjs");
+const { usersPage } = await import("../../src/lib/admin/users-actions.mjs");
+const { checkOrigin } = await import("../../src/lib/admin/csrf.mjs");
 
 const PASSWORD = "correct horse battery staple";
 let owner;
@@ -118,12 +119,12 @@ describe("Origin check", () => {
     assert.deepEqual(await auditFor(target.id), []);
   });
 
-  test("checkSameOrigin matches the exact origin", () => {
+  test("checkOrigin matches the exact origin", () => {
     const req = (origin) => new Request(`${BASE_URL}/admin/users/`, { method: "POST", headers: origin ? { origin } : {} });
-    assert.equal(checkSameOrigin(req(BASE_URL), BASE_URL), null);
-    assert.equal(checkSameOrigin(req(`${BASE_URL}.evil.example`), BASE_URL).status, 403);
-    assert.equal(checkSameOrigin(req(), BASE_URL).status, 403);
-    assert.equal(checkSameOrigin(req(BASE_URL), "").status, 403);
+    assert.equal(checkOrigin(req(BASE_URL), { origin: BASE_URL }), null);
+    assert.equal(checkOrigin(req(`${BASE_URL}.evil.example`), { origin: BASE_URL }).status, 403);
+    assert.equal(checkOrigin(req(), { origin: BASE_URL }).status, 403);
+    assert.equal(checkOrigin(req(BASE_URL), { origin: "" }).status, 403);
   });
 });
 

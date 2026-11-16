@@ -4,7 +4,7 @@
 // flow can be tested without Astro (tests/admin/users-admin.test.mjs).
 //
 // Every mutation is a form POST that must carry an Origin equal to BETTER_AUTH_URL
-// (checkSameOrigin below; to be folded into the shared src/lib/admin/csrf.mjs later).
+// (checkOrigin in the shared src/lib/admin/csrf.mjs).
 // Each one writes an audit_log row. Passwords never go into audit details, logs or
 // redirects. After a change the page answers 303 to a GET (post/redirect/get).
 //
@@ -16,10 +16,13 @@
 //     can't join the withAudit() transaction that grants the role and writes the audit
 //     row. If that transaction fails, the new auth user is deleted again, so a user
 //     never exists without the role and audit row the admin asked for.
-//   - reset: setUserPassword (Better Auth's adapter, revokes every session), then the
-//     audit row.
+//   - reset: the audit row is inserted first in an open transaction, then
+//     setUserPassword runs (Better Auth's adapter, its own connection, revokes every
+//     session), then the transaction commits. A failed reset rolls the audit row back;
+//     a reset can't happen without its audit row unless the final COMMIT itself fails.
 
 import { ROLES, requireRole } from "./roles.mjs";
+import { checkOrigin } from "./csrf.mjs";
 
 /** Fixed notices for the redirect after a change (?done=…); nothing user-supplied is echoed. */
 export const NOTICES = Object.freeze({
@@ -47,20 +50,6 @@ const plain = (status, text) =>
     status,
     headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
   });
-
-/**
- * CSRF check for admin mutations: the request's Origin must be exactly the app origin
- * (BETTER_AUTH_URL). A missing or "null" Origin is refused too: every browser that can
- * reach this app sends Origin on a form POST.
- * @param {Request} request
- * @param {string} expectedOrigin  e.g. "https://716coffee.club"
- * @returns {Response|null} a 403 to return as is, or null when the origin matches
- */
-export function checkSameOrigin(request, expectedOrigin) {
-  const origin = request.headers.get("origin");
-  if (!expectedOrigin || !origin || origin !== expectedOrigin) return plain(403, "Forbidden: bad origin");
-  return null;
-}
 
 const field = (form, name) => {
   const v = form.get(name);
@@ -130,20 +119,36 @@ async function resetAction(form, actorId) {
   const userId = userIdField(form);
   const password = field(form, "password");
   if (!(await userExists(pool, userId))) fail(404, "That user no longer exists.");
+  // Audit row first, in a transaction left open across the reset (see "Atomicity").
+  const client = await pool.connect();
+  let broken;
   try {
-    await setUserPassword(userId, password, { revokeSessions: true });
+    await client.query("begin");
+    await writeAudit(client, actorId, {
+      action: "user.password_reset",
+      targetTable: "auth.user",
+      targetId: userId,
+      details: { sessionsRevoked: true },
+    });
+    try {
+      await setUserPassword(userId, password, { revokeSessions: true });
+    } catch (err) {
+      const msg = authMessage(err);
+      if (/password is too (short|long)/i.test(msg)) fail(400, msg.replace(/^password/, "Password"));
+      if (/user not found/i.test(msg)) fail(404, "That user no longer exists.");
+      throw err;
+    }
+    await client.query("commit");
   } catch (err) {
-    const msg = authMessage(err);
-    if (/password is too (short|long)/i.test(msg)) fail(400, msg.replace(/^password/, "Password"));
-    if (/user not found/i.test(msg)) fail(404, "That user no longer exists.");
+    try {
+      await client.query("rollback");
+    } catch (rollbackErr) {
+      broken = rollbackErr;
+    }
     throw err;
+  } finally {
+    client.release(broken);
   }
-  await writeAudit(pool, actorId, {
-    action: "user.password_reset",
-    targetTable: "auth.user",
-    targetId: userId,
-    details: { sessionsRevoked: true },
-  });
   return "reset";
 }
 
@@ -216,7 +221,7 @@ export async function usersPage(request, locals, opts = {}) {
 
   if (request.method === "POST") {
     const expectedOrigin = opts.expectedOrigin ?? (await import("../auth/auth.mjs")).adminEnv.baseURL;
-    const bad = checkSameOrigin(request, expectedOrigin);
+    const bad = checkOrigin(request, { origin: expectedOrigin });
     if (bad) return { response: bad };
 
     let data;

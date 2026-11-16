@@ -28,6 +28,7 @@ describe("readAdminEnv", () => {
     assert.throws(() => readAdminEnv({ ...good, BETTER_AUTH_URL: "https://716coffee.club/admin" }), /no path/);
     assert.throws(() => readAdminEnv({ ...good, BETTER_AUTH_SECRET: "short" }), /32/);
     assert.throws(() => readAdminEnv({ ...good, ADMIN_DB_POOL_MAX: "0" }), /POOL_MAX/);
+    assert.throws(() => readAdminEnv({ ...good, ADMIN_DB_POOL_MAX: "1" }), /POOL_MAX/);
   });
 });
 
