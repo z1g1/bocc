@@ -15,7 +15,7 @@ RSVPs on Luma (embedded on the homepage and event pages)
     ↓
 Attends event, scans QR code
     ↓
-Check-in form (public/checkin/bocc.html)
+Check-in form (src/pages/checkin/bocc.astro, served at /checkin/bocc)
     ↓
 js/checkin.js POSTs to backend API
     ↓
@@ -129,8 +129,9 @@ Database schema changes are **not** applied by deploys. Add a new file to
 - `src/data/home.yml` — Homepage copy (the Luma calendar embed is in `src/components/home/Signup.astro`)
 - `src/data/luma_events.yml` — Luma event for each Tuesday page
 - `public/js/checkin.js` — Check-in form logic (the most complex JS file)
-- `public/checkin/bocc.html` — The check-in page, a frozen static file; the sponsor redirect is
-  the `data-sponsor-*` attributes on `#sponsorRedirect`
+- `src/pages/checkin/bocc.astro` — The check-in page (site layout, no analytics). Keep its
+  element IDs: `public/js/checkin.js` reads them
+- `src/data/sponsor.yml` — The post-check-in sponsor redirect (on/off, name, link, delay)
 - `src/layouts/Default.astro` — CSP, fonts, scripts; `src/components/Seo.astro` and
   `EventJsonLd.astro` — metadata and structured data
 
@@ -151,7 +152,7 @@ Database schema changes are **not** applied by deploys. Add a new file to
 ## Common Tasks for Volunteers
 
 - **Update event info**: Edit `src/data/site.yml` (event facts) or `src/data/home.yml` (homepage copy)
-- **Update sponsor redirect**: Edit the `data-sponsor-*` attributes in `public/checkin/bocc.html`
+- **Update sponsor redirect**: Edit `src/data/sponsor.yml`
 - **Add a new page**: Create a new `.md` file in `src/content/pages/` with YAML front matter,
   including a `permalink`
 - **Fix a backend bug**: Edit files in `backend/netlify/functions/`, run `npm test`

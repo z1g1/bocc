@@ -24,9 +24,14 @@ community features may also sit behind a login.
    `/events/[date]`, `/admin/*` and the auth endpoints.
 2. **Port first, as its own release.** The first port changes no visuals and no URLs, and the
    admin work starts only after it ships.
-3. **The check-in pages are copied, not rewritten.** `checkin/*.html` and `js/checkin.js` move
-   byte for byte as static files. `checkin/bocc-afternoon.html` is retired, since the afternoon
-   series has ended.
+3. **The check-in page is an Astro page; its script is copied.** `js/checkin.js` moves byte for
+   byte to `public/`. `checkin/bocc` is ported like the other pages, to
+   `src/pages/checkin/bocc.astro` on the site layout without analytics, and is built to
+   `checkin/bocc.html` so the QR-code URL `/checkin/bocc` is served without a redirect.
+   `checkin/bocc-afternoon.html` is retired, since the afternoon series has ended. (Amended
+   2026-11-16: the port first kept production's rendered page as a frozen static file, but every
+   site footer change then had to be repeated by hand, so it was brought into Astro before the
+   release.)
 4. **The build becomes Node-only.** Ruby, Bundler and `scripts/generate_event_pages.rb` are
    removed once ADR 0009 lands.
 5. **The Astro project lives at the repo root**, which is the Netlify build base (amended

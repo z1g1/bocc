@@ -1,5 +1,5 @@
 # src/data/site.yml — site-wide settings (moved from Jekyll's _config.yml).
-# Read at build time by src/lib/site.ts. A change needs a rebuild (a deploy).
+# Read at build time by src/lib/data.ts. A change needs a rebuild (a deploy).
 
 lang: "en-US"
 title: Buffalo Open Coffee Club
@@ -23,7 +23,7 @@ social_links:
 
 # ---- Analytics ----
 # GA4 measurement ID (G-XXXXXXXXXX). Public by design. Leave empty to disable.
-# Never loaded on the check-in page (public/checkin/bocc.html is a frozen static file).
+# Never loaded on the check-in page (src/pages/checkin/bocc.astro passes analytics={false}).
 google_analytics_id: G-KJR4VN66ME
 
 # ---- Event data (JSON-LD, home sign-up panel, event pages) ----

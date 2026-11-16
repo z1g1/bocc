@@ -1,0 +1,8 @@
+# Post-check-in redirect on /checkin/bocc (read by src/pages/checkin/bocc.astro).
+# After a successful check-in, js/checkin.js shows a countdown and then sends the
+# attendee to the sponsor's link. Set enabled to false to turn the redirect off.
+# A change needs a rebuild (a deploy).
+enabled: true
+name: "716coffee.club"
+url: "https://716coffee.club/"
+delay: 5  # seconds before redirect

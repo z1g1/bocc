@@ -11,7 +11,7 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 │                                                         │
 │  ┌──────────┐  ┌──────────┐  ┌────────────────────┐    │
 │  │ Homepage  │  │  About   │  │  Check-in Forms    │    │
-│  │ index.md  │  │ about.md │  │ checkin/bocc.html  │    │
+│  │ index.md  │  │ about.md │  │ checkin/bocc.astro │    │
 │  │           │  │          │  │ js/checkin.js       │    │
 │  │ Luma      │  │  Photos  │  │                    │    │
 │  │  Embed    │  │          │  │  localStorage      │    │
@@ -178,8 +178,9 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 - Principle of least privilege for all API tokens and database roles
 
 ### Content Security Policy
-- Configured in `src/layouts/Default.astro` (a `<meta http-equiv>` tag). The frozen check-in
-  page, `public/checkin/bocc.html`, carries its own copy without the analytics origins
+- Configured in `src/layouts/Default.astro` (a `<meta http-equiv>` tag). The check-in page
+  (`src/pages/checkin/bocc.astro`) passes `analytics={false}`, which drops the analytics script
+  and its CSP origins
 - Allows: self-hosted fonts and scripts, Luma embeds (`frame-src`), images over https, Google
   Analytics origins (website only), and form posts to Google Forms
 - Inline scripts are allowed (`'unsafe-inline'`); there is no nonce or hash yet

@@ -36,7 +36,7 @@ streaks. All automated tests submit with `debug: "1"`.
 
 ### Sponsor redirect
 After a successful check-in the web form may count down and redirect the Attendee to a
-sponsor's link (configured by the `data-sponsor-*` attributes in `public/checkin/bocc.html`). Frontend-only concern. Currently
+sponsor's link (configured in `src/data/sponsor.yml`). Frontend-only concern. Currently
 points to 716coffee.club.
 
 ### Occurrence

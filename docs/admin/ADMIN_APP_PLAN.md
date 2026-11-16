@@ -255,6 +255,17 @@ compared.
     read-only lookup on production found nothing
 - [x] Update `CLAUDE.md`, `README.md`, `architecture.md`, `onboarding.md` and the docs that
       pointed into `website/`
+- [x] Check-in page brought into Astro (2026-11-16, Zack's call; amends ADR 0007 decision 3).
+      `src/pages/checkin/bocc.astro` uses the site layout with `analytics={false}`, and the
+      sponsor redirect is back in `src/data/sponsor.yml`. The build moves the output to
+      `checkin/bocc.html` (`astro.config.mjs`), so `/checkin/bocc` is served without a redirect,
+      as before. Against the frozen file: same markup, CSP, metadata and JSON-LD, differing only
+      in whitespace, the dropped Jekyll comment and generator tags, and one `'` written as
+      `&#39;`. `js/checkin.js` is unchanged. A headless-Chromium run with `?local=1` showed the
+      thank-you message and sponsor countdown with no console or CSP errors
+- [ ] Release check on the `dev` branch deploy for the Astro check-in page: `/checkin/bocc`
+      returns 200 (no redirect, query string kept) and a `debug: "1"` check-in lands in the Neon
+      `dev` branch
 - [ ] Merge to `main` (one production deploy), with Zack's go-ahead
 
 ## Phase 2: login, roles and data views (ADR 0008)

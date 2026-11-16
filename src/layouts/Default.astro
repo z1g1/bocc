@@ -7,13 +7,14 @@ import Header from "../components/Header.astro";
 import Footer from "../components/Footer.astro";
 import { site } from "../lib/data";
 import type { EventPage } from "../lib/events";
-interface Props { title: string; description?: string; path: string; kind?: "home" | "page" | "event"; event?: EventPage }
-const { title, description, path, kind = "page", event } = Astro.props;
+// `analytics: false` keeps Google Analytics (script and CSP origins) off a page.
+// The check-in page uses it: no tracking where attendees enter personal details.
+interface Props { title: string; description?: string; path: string; kind?: "home" | "page" | "event"; event?: EventPage; analytics?: boolean }
+const { title, description, path, kind = "page", event, analytics = true } = Astro.props;
 const s = site();
-const ga = s.google_analytics_id;
+const ga = analytics ? s.google_analytics_id : undefined;
 // Content Security Policy. Self-hosted fonts; Luma is allowed for the RSVP embeds;
 // the contact form posts to Google Forms. Keep in sync with new third-party embeds.
-// The check-in page is a frozen static file with its own copy (no analytics origins).
 const csp = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${ga ? " https://www.googletagmanager.com" : ""}`,

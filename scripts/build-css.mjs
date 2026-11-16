@@ -1,6 +1,6 @@
 // Compiles src/styles/main.scss to public/assets/css/main.css (compressed).
-// The URL /assets/css/main.css is fixed: every page and the frozen check-in page
-// link to it. The output is generated, not committed.
+// The URL /assets/css/main.css is fixed: it is linked from every page's <head>
+// (src/layouts/Default.astro). The output is generated, not committed.
 import { compile } from "sass";
 import { mkdirSync, writeFileSync } from "node:fs";
 

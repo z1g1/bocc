@@ -39,8 +39,9 @@ Once approved:
    - `/`, `/about/`, `/sponsorship/`, `/code-of-conduct/`, `/privacy/`, `/assets/images/brand/`,
      an `/events/YYYY-MM-DD/` page, `/sitemap.xml`, `/feed.xml`, `/llms.txt`, `/robots.txt`
      return 200; an expired event date 302s to `/`; an unknown path gets the custom 404.
-   - `/checkin/bocc` matches `public/checkin/bocc.html` byte for byte, and `/js/checkin.js`
-     matches `public/js/checkin.js` (unchanged from the old production file).
+   - `/checkin/bocc` returns 200 with no redirect (and `?token=…` kept), has no Google
+     Analytics, and `/js/checkin.js` matches `public/js/checkin.js` (unchanged from the old
+     production file).
    - No "Wilson" / "Springboard" text on any page.
    - One check-in POST to `/.netlify/functions/checkin` with `debug: "1"` returns 200 and its
      row lands in Neon **production** with `debug = true`.
@@ -56,9 +57,11 @@ Once approved:
   arrives in Phase 2.
 - Node 24, `ASTRO_TELEMETRY_DISABLED=1` (set in `netlify.toml`).
 - Sass is compiled by `scripts/build-css.mjs` to `public/assets/css/main.css` (gitignored). That
-  URL is fixed because the frozen check-in page links to it.
-- `public/checkin/bocc.html` is a **frozen static file** (production's Jekyll output, edited
-  once to drop the funding line). Site footer changes must be repeated there by hand.
+  URL is fixed.
+- The check-in page is `src/pages/checkin/bocc.astro` (site layout, `analytics={false}`), built
+  to `checkin/bocc.html` by a small hook in `astro.config.mjs` so `/checkin/bocc` doesn't
+  redirect. Sponsor redirect: `src/data/sponsor.yml`. (It was a frozen static file until
+  2026-11-16; ADR 0007 decision 3 was amended.)
 - Markdown renderer: `src/lib/markdown.ts` (`marked` + SmartyPants mode `"2"`).
 - Reproducible builds: `BOCC_TODAY=YYYY-MM-DD`, `BOCC_BUILD_TIME=<ISO>`.
 - The release checks (HTML/CSS/JSON-LD diff against a mirror of the live site) are recorded in
@@ -96,7 +99,7 @@ If a check fails, propose an ADR change instead.
 ## Rules that bite
 
 - Never push to `main` without Zack's go-ahead. Run backend tests and the root build first.
-- Check-in is live every Tuesday morning ET: don't break `public/checkin/bocc.html`,
+- Check-in is live every Tuesday morning ET: don't break `src/pages/checkin/bocc.astro`,
   `public/js/checkin.js` or `/.netlify/functions/checkin`. Use `debug: "1"` for every test
   check-in.
 - Neon: project `young-queen-80162551`. The app uses `checkin_writer` only; the owner URL never
