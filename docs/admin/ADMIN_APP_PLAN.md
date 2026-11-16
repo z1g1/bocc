@@ -243,10 +243,14 @@ compared.
     as `#0000` and drops spaces in `calc()`)
   - Two fixes were needed to match: SmartyPants mode 2 (kramdown's en dashes), and `/about/`
     getting `WebSite` JSON-LD like the home page, which is what `jekyll-seo-tag` did
-- [ ] Release checks on the `dev` branch deploy (https://dev--bocc-backend.netlify.app):
-  - the pages and files serve as built
-  - a debug check-in passes, against the Neon `dev` branch once `CHECKIN_DB_URL` is scoped to
-    the `dev` deploy
+- [x] Release checks on the `dev` branch deploy (https://dev--bocc-backend.netlify.app),
+      2026-11-16:
+  - Every route behaves like production (pages, `/checkin/bocc` pretty URL, the 302 for expired
+    event dates, the custom 404). A mirror of the deploy matches the local build except for
+    build timestamps, and the deployed `checkin/bocc.html` and `js/checkin.js` are
+    byte-identical to production's. `/checkin/bocc-afternoon` now returns 404, as intended
+  - A `debug: "1"` check-in returned 200 and its row landed in the **Neon `dev` branch**; a
+    read-only lookup on production found nothing
 - [x] Update `CLAUDE.md`, `README.md`, `architecture.md`, `onboarding.md` and the docs that
       pointed into `website/`
 - [ ] Merge to `main` (one production deploy), with Zack's go-ahead

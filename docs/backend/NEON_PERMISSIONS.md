@@ -74,8 +74,12 @@ alter role checkin_writer password '<new hex>';
 alter role admin_app      password '<new hex>';  -- once the role exists (Phase 2)
 ```
 
-Put the pooled `dev` URLs in Netlify's environment variables scoped to the `dev` branch deploy
-only. Never print them.
+Put the pooled `dev` URL in Netlify as the **Branch deploys** and **Deploy Previews** values of
+`CHECKIN_DB_URL` (Production keeps its own). Netlify reserves `dev` as a keyword, so it can't
+have a branch-specific value, and Free plans can't narrow variable scopes; both are fine, since
+no non-production deploy should hold the production credential. Never print the URL.
+Done 2026-11-16 (Neon `dev` branch created, `checkin_writer` rotated there; a debug check-in
+from the `dev` deploy landed on `dev` and not on production).
 
 After any reset of `dev`, check that production's `checkin_writer` password is refused on `dev`
 (expect `28P01 password authentication failed`). If it's accepted, run the `alter role`
