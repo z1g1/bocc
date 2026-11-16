@@ -1,0 +1,57 @@
+---
+// Base shell for every page (port of _layouts/default.html): <head> (SEO, fonts,
+// CSP), skip link, landmarks, header and footer.
+import Seo from "../components/Seo.astro";
+import EventJsonLd from "../components/EventJsonLd.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import { site } from "../lib/data";
+import type { EventPage } from "../lib/events";
+interface Props { title: string; description?: string; path: string; kind?: "home" | "page" | "event"; event?: EventPage }
+const { title, description, path, kind = "page", event } = Astro.props;
+const s = site();
+const ga = s.google_analytics_id;
+// Content Security Policy. Self-hosted fonts; Luma is allowed for the RSVP embeds;
+// the contact form posts to Google Forms. Keep in sync with new third-party embeds.
+// The check-in page is a frozen static file with its own copy (no analytics origins).
+const csp = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${ga ? " https://www.googletagmanager.com" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data: https:",
+  "frame-src https://luma.com",
+  `connect-src 'self'${ga ? " https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com" : ""}`,
+  "form-action 'self' https://docs.google.com",
+].join("; ") + ";";
+---
+<!DOCTYPE html>
+<html lang={s.lang} class="no-js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script is:inline>document.documentElement.className = document.documentElement.className.replace('no-js','js');</script>
+    <meta http-equiv="Content-Security-Policy" content={csp}>
+    <link rel="preconnect" href="https://luma.com">
+    <Seo title={title} description={description} path={path} kind={kind} />
+    <link rel="preload" href="/assets/fonts/bricolage-grotesque-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="/assets/fonts/hanken-grotesk-var.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/css/main.css">
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+    <link rel="apple-touch-icon" href="/assets/images/brand/web/apple-touch-icon.png">
+    <meta name="theme-color" content="#161616">
+    <EventJsonLd event={event} path={path} />
+    <script is:inline src="/assets/js/nav.js" defer></script>
+    <script is:inline src="/assets/js/hero-quote.js" defer></script>
+    <script is:inline src="/assets/js/gallery.js" defer></script>
+    {ga && <script is:inline src="/assets/js/analytics.js" data-ga-id={ga} defer></script>}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <Header url={path} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

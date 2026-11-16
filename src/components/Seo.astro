@@ -1,0 +1,44 @@
+---
+// <title>, description, canonical, Open Graph, Twitter and page JSON-LD.
+// Reproduces what jekyll-seo-tag emitted, so the port changes no metadata
+// (except the generator tag). `kind`: "home" | "page" | "event".
+import { site } from "../lib/data";
+import { smartify } from "../lib/markdown";
+import { isoUtc } from "../lib/time";
+interface Props { title: string; description?: string; path: string; kind: "home" | "page" | "event" }
+const { title, description, path, kind } = Astro.props;
+const s = site();
+const t = smartify(title);
+const desc = smartify(description || s.description);
+const url = s.url + path;
+const image = s.url + s.og_image;
+const author = { "@type": "Person", name: s.author };
+const published = isoUtc();
+
+// jekyll-seo-tag gives the home page *and* /about/ the WebSite type.
+const ld =
+  kind === "home" || path === "/about/"
+    ? { "@context": "https://schema.org", "@type": "WebSite", author, description: desc, headline: t, image, name: s.title, sameAs: s.social_links, url }
+    : kind === "event"
+      ? { "@context": "https://schema.org", "@type": "BlogPosting", author, dateModified: published, datePublished: published, description: desc, headline: t, image, mainEntityOfPage: { "@type": "WebPage", "@id": url }, url }
+      : { "@context": "https://schema.org", "@type": "WebPage", author, description: desc, headline: t, image, url };
+// Escape "<" so no value can close the <script> element early; JSON parsers read < as "<".
+const json = JSON.stringify(ld).replace(/</g, "\\u003c");
+---
+<title>{t} | {s.title}</title>
+<meta property="og:title" content={t} />
+<meta name="author" content={s.author} />
+<meta property="og:locale" content={s.lang.replace("-", "_")} />
+<meta name="description" content={desc} />
+<meta property="og:description" content={desc} />
+<link rel="canonical" href={url} />
+<meta property="og:url" content={url} />
+<meta property="og:site_name" content={s.title} />
+<meta property="og:image" content={image} />
+<meta property="og:type" content={kind === "event" ? "article" : "website"} />
+{kind === "event" && <meta property="article:published_time" content={published} />}
+<meta name="twitter:card" content="summary_large_image" />
+<meta property="twitter:image" content={image} />
+<meta property="twitter:title" content={t} />
+<meta name="facebook-domain-verification" content={s.facebook_domain_verification} />
+<script type="application/ld+json" set:html={json} />

@@ -1,0 +1,23 @@
+---
+// Responsive photo grid. block: label, title, caption (Markdown), items[] {image, alt}.
+import { markdownify } from "../../lib/markdown";
+const { block: b } = Astro.props;
+---
+<section class="gallery-band" aria-label={b.label || undefined}>
+  <div class="container gallery-band__inner">
+    {(b.label || b.title) && (
+      <div class="gallery-band__head">
+        {b.label && <span class="section-label">{b.label}</span>}
+        {b.title && <h2 class="prose-band__title">{b.title}</h2>}
+      </div>
+    )}
+    <div class="gallery-grid">
+      {b.items.map((item: any) => (
+        <figure class="gallery-grid__item">
+          <img src={item.image} alt={item.alt} width="600" height="400" loading="lazy" decoding="async">
+        </figure>
+      ))}
+    </div>
+    {b.caption && <div class="gallery-band__caption" set:html={markdownify(b.caption)} />}
+  </div>
+</section>

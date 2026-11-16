@@ -1,0 +1,18 @@
+---
+// Pull-quote strip. block: label, items[] {quote, who}.
+const { block: b } = Astro.props;
+---
+<section class="quote-strip">
+  <div class="container quote-strip__inner">
+    {b.label && <div class="quote-strip__label"><span class="section-label">{b.label}</span></div>}
+    <div class="quote-strip__grid">
+      {b.items.map((item: any) => (
+        <figure class="quote-card">
+          <span class="quote-card__mark" aria-hidden="true">&ldquo;</span>
+          <blockquote>{item.quote}</blockquote>
+          <figcaption>&mdash; {item.who}</figcaption>
+        </figure>
+      ))}
+    </div>
+  </div>
+</section>

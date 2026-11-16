@@ -1,0 +1,47 @@
+---
+// Domain structured data (port of _includes/event-jsonld.html). Each event page
+// emits one schema.org/Event, since Google wants one event per URL. Every page
+// emits Organization.
+import { site } from "../lib/data";
+import type { EventPage } from "../lib/events";
+interface Props { event?: EventPage; path: string }
+const { event, path } = Astro.props;
+const s = site();
+const e = s.event;
+const address = { "@type": "PostalAddress", ...e.address };
+const org = { "@type": "Organization", name: e.organizer, url: e.organizer_url };
+const safe = (o: unknown) => JSON.stringify(o, null, 2).replace(/</g, "\\u003c");
+
+const eventLd = event && {
+  "@context": "https://schema.org",
+  "@type": "Event",
+  name: event.event_name,
+  description: e.description || s.description,
+  image: [s.url + s.og_image],
+  url: s.url + path,
+  startDate: event.start_date,
+  endDate: event.end_date,
+  eventStatus: "https://schema.org/EventScheduled",
+  eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
+  eventSchedule: { "@type": "Schedule", repeatFrequency: "P1W", byDay: "https://schema.org/Tuesday", startTime: "07:30:00", endTime: "09:00:00", scheduleTimezone: "America/New_York" },
+  location: { "@type": "Place", name: e.venue, address },
+  organizer: org,
+  ...(e.performer ? { performer: { "@type": "Person", name: e.performer.name, url: e.performer.url } } : {}),
+  isAccessibleForFree: true,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD", availability: "https://schema.org/InStock", url: event.luma_url || e.registration_url, validFrom: e.offer_valid_from },
+};
+const orgLd = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: s.title,
+  alternateName: "BOCC",
+  url: s.url,
+  logo: s.url + "/assets/images/brand/web/bocc-badge-720.png",
+  description: s.description,
+  parentOrganization: org,
+  sameAs: s.social_links,
+  address,
+};
+---
+{eventLd && <script type="application/ld+json" set:html={safe(eventLd)} />}
+<script type="application/ld+json" set:html={safe(orgLd)} />

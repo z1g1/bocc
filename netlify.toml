@@ -1,19 +1,20 @@
 # Unified Netlify configuration for the BOCC monorepo.
-# A single Netlify site serves BOTH the Jekyll website (static) and the
+# A single Netlify site serves BOTH the Astro website (static) and the
 # backend Netlify Functions (API), so the API is same-origin with the site
 # (https://716coffee.club/.netlify/functions/...) and no CORS is required.
 
 [build]
-  # Base stays at the repo root so both website/ and backend/ are in scope.
+  # The repo root is the build base and the Astro project root (ADR 0007): the
+  # Netlify adapter added in Phase 2 writes .netlify/v1 under the Astro root, and
+  # Netlify only reads it from the base.
   base = ""
-  # Build the Jekyll site. Ruby deps (Gemfile) live in website/.
-  command = "cd website && bundle install && ruby scripts/generate_event_pages.rb && bundle exec jekyll build"
-  publish = "website/_site"
+  command = "npm run build"
+  publish = "dist"
 
 [build.environment]
-  # Pin runtimes. Adjust RUBY_VERSION if the Netlify build image lacks it.
-  RUBY_VERSION = "3.3.10"
-  NODE_VERSION = "20"
+  # Astro 7 needs Node >= 22.23.4. 24 is the current LTS (20 went end-of-life in April 2026).
+  NODE_VERSION = "24"
+  ASTRO_TELEMETRY_DISABLED = "1"
 
 # Serverless functions (formerly the separate bocc-backend site).
 # Node deps (pg) are installed from the root package.json.
@@ -28,6 +29,7 @@
   status = 301
 
 # Expired event pages. Current ones exist as files, so this rule skips them.
+# Phase 4 replaces this with event pages rendered from Neon and a real 404 (ADR 0009).
 [[redirects]]
   from = "/events/*"
   to = "/"

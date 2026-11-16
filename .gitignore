@@ -39,3 +39,8 @@ node_modules/
 
 # Social
 docs/strategy/social-uploads/*
+# Astro site (repo root)
+/dist/
+/.astro/
+/.netlify/
+/public/assets/css/main.css

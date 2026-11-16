@@ -1,0 +1,18 @@
+---
+// Closing CTA card. block: label, title, lead, actions[] {label, href, variant, icon}.
+import Actions from "../Actions.astro";
+const { block: b } = Astro.props;
+---
+<section class="cta-band">
+  <div class="container cta-band__inner">
+    <div class="cta-card">
+      <div class="sunrise-rule"></div>
+      <div class="cta-card__body">
+        {b.label && <span class="section-label">{b.label}</span>}
+        {b.title && <h2>{b.title}</h2>}
+        {b.lead && <p class="cta-card__lead">{b.lead}</p>}
+        {b.actions && <div class="cta-card__actions"><Actions actions={b.actions} /></div>}
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,24 @@
+---
+// Charcoal feature block (the sponsor offer). block: id, label, title, lead, items[] {icon, title, body}.
+import Icon from "../Icon.astro";
+const { block: b } = Astro.props;
+---
+<section class="feature sun-rays" id={b.id || undefined}>
+  <div class="sunrise-rule"></div>
+  <div class="container feature__inner">
+    <div class="feature__grid">
+      <div class="feature__head">
+        {b.label && <span class="section-label section-label--gold">{b.label}</span>}
+        {b.title && <h2>{b.title}</h2>}
+        {b.lead && <p class="feature__lead">{b.lead}</p>}
+      </div>
+      {b.items.map((item: any) => (
+        <div class="benefit">
+          <div class="benefit__icon"><Icon name={item.icon} size="22" /></div>
+          <h3>{item.title}</h3>
+          <p>{item.body}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

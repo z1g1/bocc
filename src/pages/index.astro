@@ -1,0 +1,21 @@
+---
+// The landing page. Copy lives in src/data/home.yml.
+import Default from "../layouts/Default.astro";
+import Hero from "../components/home/Hero.astro";
+import Stats from "../components/home/Stats.astro";
+import Wall from "../components/home/Wall.astro";
+import Schedule from "../components/home/Schedule.astro";
+import Signup from "../components/home/Signup.astro";
+---
+<Default
+  kind="home"
+  path="/"
+  title="Buffalo Open Coffee Club — Free Weekly Networking in Buffalo, NY"
+  description="Join Buffalo Open Coffee Club every Tuesday 7:30–9 AM at Seneca One Tower. Free networking for entrepreneurs, small business owners, and startup founders. RSVP free on Luma."
+>
+  <Hero />
+  <Stats />
+  <Wall />
+  <Schedule />
+  <Signup />
+</Default>

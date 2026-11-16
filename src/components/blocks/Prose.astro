@@ -1,0 +1,14 @@
+---
+// Centered reading-column prose band. block: label, title, body (Markdown), first, cream.
+import { markdownify } from "../../lib/markdown";
+const { block: b } = Astro.props;
+const cls = ["prose-band", b.cream && "prose-band--cream", b.first && "prose-band--first"].filter(Boolean).join(" ");
+---
+<section class={cls}>
+  <div class="prose-band__inner">
+    {b.label && <span class="section-label">{b.label}</span>}
+    {b.title && <h2 class="prose-band__title">{b.title}</h2>}
+    <div class="prose-band__rule" aria-hidden="true"></div>
+    <div class="prose-band__body" set:html={markdownify(b.body)} />
+  </div>
+</section>

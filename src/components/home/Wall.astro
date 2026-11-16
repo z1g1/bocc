@@ -1,0 +1,48 @@
+---
+// "Don't take our word for it." LinkedIn-post carousel. Screenshots shown uncropped,
+// one at a time, in a native scroll-snap track (works with JS off).
+// /assets/js/gallery.js adds prev/next buttons and dots.
+import Icon from "../Icon.astro";
+import { data } from "../../lib/data";
+const w = data("home").wall;
+const n = w.posts.length;
+---
+<section class="wall" id="stories" aria-labelledby="wall-heading">
+  <div class="container wall__inner">
+    <div class="section-head">
+      <h2 id="wall-heading">{w.heading}</h2>
+      <p class="section-head__lead">{w.lead}</p>
+    </div>
+
+    <div class="gallery" data-gallery aria-roledescription="carousel" aria-label={w.heading}>
+      <div class="gallery__viewport">
+        <ul class="gallery__track" data-gallery-track>
+          {w.posts.map((post: any, i: number) => (
+            <li class="gallery__slide" data-gallery-slide role="group" aria-roledescription="slide" aria-label={`${i + 1} of ${n}: ${post.who}`}>
+              <a class="gallery__link" href={post.url} target="_blank" rel="noopener" aria-label={`Read ${post.who}'s LinkedIn post about Buffalo Open Coffee Club (opens in a new tab)`}>
+                <img class="gallery__img" src={post.image} alt={post.alt} loading="lazy" decoding="async">
+              </a>
+              <span class="gallery__cap">
+                <span class="gallery__who">{post.who}</span>
+                <span class="gallery__via">via LinkedIn ↗</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <button type="button" class="gallery__nav gallery__nav--prev" data-gallery-prev aria-label="Previous post">
+        <Icon name="arrow-left" size="22" />
+      </button>
+      <button type="button" class="gallery__nav gallery__nav--next" data-gallery-next aria-label="Next post">
+        <Icon name="arrow" size="22" />
+      </button>
+
+      <div class="gallery__dots" data-gallery-dots role="tablist" aria-label="Choose a post">
+        {w.posts.map((post: any, i: number) => (
+          <button type="button" class={`gallery__dot${i === 0 ? " is-active" : ""}`} data-gallery-dot data-index={i} role="tab" aria-label={`Show ${post.who}'s post`} aria-selected={i === 0 ? "true" : "false"}></button>
+        ))}
+      </div>
+    </div>
+  </div>
+</section>

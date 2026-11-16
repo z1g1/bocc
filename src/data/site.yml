@@ -1,0 +1,47 @@
+# src/data/site.yml — site-wide settings (moved from Jekyll's _config.yml).
+# Read at build time by src/lib/site.ts. A change needs a rebuild (a deploy).
+
+lang: "en-US"
+title: Buffalo Open Coffee Club
+email: bocc@zackglick.com
+description: >- # ignore newlines until the next key
+  Buffalo Open Coffee Club (BOCC) is a free weekly networking event every Tuesday 7:30-9 AM
+  at Seneca One Tower in downtown Buffalo, NY. Connect with entrepreneurs, small business
+  owners, and startup founders over coffee. Open to all — RSVP free on Luma.
+url: "https://716coffee.club" # base hostname & protocol, no trailing slash
+
+# ---- SEO ----
+author: Buffalo Open Coffee Club
+og_image: /assets/images/brand/bocc-header-coffee-beans.png
+facebook_domain_verification: t51awk99p8trr238b67f5jx5u7v1cn
+social_links:
+  - https://www.linkedin.com/showcase/buffalo-open-coffee
+  - https://www.instagram.com/716coffeeclub
+  - https://www.facebook.com/716coffeeclub
+  - https://www.threads.com/@716coffeeclub
+  - https://www.tiktok.com/@716coffee.club
+
+# ---- Analytics ----
+# GA4 measurement ID (G-XXXXXXXXXX). Public by design. Leave empty to disable.
+# Never loaded on the check-in page (public/checkin/bocc.html is a frozen static file).
+google_analytics_id: G-KJR4VN66ME
+
+# ---- Event data (JSON-LD, home sign-up panel, event pages) ----
+event:
+  description: Free weekly networking for Buffalo's entrepreneurs, small business owners, and startup founders. Open networking followed by community Gives and Asks.
+  venue: Seneca One Tower
+  organizer: BootSector
+  organizer_url: https://joinbootsector.com/
+  registration_url: https://luma.com/716coffeeclub
+  luma_calendar_id: cal-v2LiFTJpdPAP6rW
+  eventbrite_url: https://www.eventbrite.com/e/buffalo-open-coffee-club-tickets-1983098086761   # discovery listing only; RSVPs go through Luma
+  offer_valid_from: "2024-01-01T00:00:00-05:00"
+  performer:
+    name: Zack Glick
+    url: https://www.linkedin.com/in/zglick/
+  address:
+    streetAddress: 1 Seneca St
+    addressLocality: Buffalo
+    addressRegion: NY
+    postalCode: "14203"
+    addressCountry: US

@@ -1,0 +1,25 @@
+---
+// Interior / topic page (port of _layouts/page.html): compact page hero, then
+// either the front-matter `blocks` in order, or the Markdown body in a reading column.
+import Default from "./Default.astro";
+import PageHero from "../components/PageHero.astro";
+import Prose from "../components/blocks/Prose.astro";
+import Stats from "../components/blocks/Stats.astro";
+import Quotes from "../components/blocks/Quotes.astro";
+import Gallery from "../components/blocks/Gallery.astro";
+import Feature from "../components/blocks/Feature.astro";
+import Cta from "../components/blocks/Cta.astro";
+import { markdownify } from "../lib/markdown";
+interface Props { fm: Record<string, any>; body: string; path: string }
+const { fm, body, path } = Astro.props;
+const BLOCKS: Record<string, any> = { prose: Prose, stats: Stats, quotes: Quotes, gallery: Gallery, feature: Feature, cta: Cta };
+---
+<Default title={fm.title} description={fm.description} path={path}>
+  <PageHero eyebrow={fm.eyebrow} heading={fm.heading || fm.title} summary={fm.summary} actions={fm.actions} glance={fm.glance} />
+  {fm.blocks
+    ? fm.blocks.map((block: any) => {
+        const C = BLOCKS[block.type];
+        return C ? <C block={block} /> : null;
+      })
+    : <div class="page-prose" set:html={markdownify(body)} />}
+</Default>

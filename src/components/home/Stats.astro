@@ -1,0 +1,15 @@
+---
+// Home stat strip (cream band). Data from src/data/home.yml (stats).
+import { data } from "../../lib/data";
+const stats = data("home").stats;
+---
+<section class="stat-strip" aria-label="Buffalo Open Coffee Club at a glance">
+  <div class="container stat-strip__grid">
+    {stats.map((item: any) => (
+      <div class="stat-strip__item">
+        <div class="stat-strip__value">{item.value}</div>
+        <div class="stat-strip__label">{item.label}</div>
+      </div>
+    ))}
+  </div>
+</section>

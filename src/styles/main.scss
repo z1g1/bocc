@@ -1,0 +1,10 @@
+// main.scss — compiled to /assets/css/main.css by scripts/build-css.mjs.
+// Import order: fonts → tokens → base → components → pages.
+
+@import "bocc/fonts";        // self-hosted @font-face (see README §Fonts)
+@import "bocc/tokens";       // design tokens as CSS custom properties
+@import "bocc/base";         // reset, elements, a11y utilities
+@import "bocc/components";   // buttons, header, footer, cards, stat strip
+@import "bocc/home";         // home-page sections
+@import "bocc/interior";     // topic-page bands (sponsorship template)
+@import "bocc/checkin";      // check-in form styles

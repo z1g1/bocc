@@ -1,0 +1,14 @@
+---
+// One route per Markdown file in src/content/pages, at its `permalink`.
+import Page from "../layouts/Page.astro";
+import { contentPages } from "../lib/data";
+
+export function getStaticPaths() {
+  return contentPages().map((p) => ({
+    params: { slug: p.frontmatter.permalink.replace(/^\/|\/$/g, "") },
+    props: { page: p },
+  }));
+}
+const { page } = Astro.props;
+---
+<Page fm={page.frontmatter} body={page.body} path={page.frontmatter.permalink} />

@@ -1,0 +1,54 @@
+---
+// Centered charcoal hero with the rotating attendee pull-quote. The first quote
+// renders server-side (readable with JS off); /assets/js/hero-quote.js cross-fades
+// the rest and pauses under prefers-reduced-motion.
+import Icon from "../Icon.astro";
+import { data } from "../../lib/data";
+const home = data("home");
+const h = home.hero;
+---
+<section class="hero sun-rays">
+  <div class="container hero__inner">
+    <img class="hero__logo" src="/assets/images/brand/web/bocc-badge-720.png" alt="Buffalo Open Coffee Club" width="176" height="176" fetchpriority="high">
+    <span class="hero__badge">
+      <Icon name="sunrise" size="16" />
+      <span class="stamp">{h.badge}</span>
+    </span>
+    <h1>{h.title}</h1>
+    <p class="hero__lead">{h.lead}</p>
+
+    <div class="rquote" data-rquote role="group" aria-roledescription="carousel" aria-label="Attendee quotes">
+      {home.pull_quotes.map((q: any, i: number) => {
+        const inner = (
+          <Fragment>
+            <blockquote class="rquote__line">
+              <span class="rquote__mark" aria-hidden="true">&ldquo;</span>
+              <span class="rquote__text">{q.text}<span class="rquote__close" aria-hidden="true">&rdquo;</span></span>
+            </blockquote>
+            <figcaption class="rquote__who">
+              &mdash; {q.who}{q.url && <Fragment> <span class="rquote__src">via LinkedIn ↗</span></Fragment>}
+            </figcaption>
+          </Fragment>
+        );
+        return (
+          <figure class={`rquote__item${i === 0 ? " is-active" : ""}`} data-rquote-item aria-hidden={i === 0 ? undefined : "true"} inert={i === 0 ? undefined : true}>
+            {q.url ? (
+              <a class="rquote__link" href={q.url} target="_blank" rel="noopener" aria-label={`Read ${q.who}'s post about Buffalo Open Coffee Club on LinkedIn (opens in a new tab)`}>{inner}</a>
+            ) : inner}
+          </figure>
+        );
+      })}
+      <div class="rquote__dots" data-rquote-dots aria-hidden="true">
+        {home.pull_quotes.map((_: any, i: number) => (
+          <button type="button" class={`rquote__dot${i === 0 ? " is-active" : ""}`} data-rquote-dot aria-label={`Show quote ${i + 1}`}></button>
+        ))}
+      </div>
+    </div>
+
+    <div class="hero__cta">
+      <a class="btn btn--primary btn--lg" href={h.cta_url}>
+        {h.cta_label}<Icon name="arrow" size="18" />
+      </a>
+    </div>
+  </div>
+</section>

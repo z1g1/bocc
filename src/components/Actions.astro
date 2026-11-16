@@ -1,0 +1,10 @@
+---
+// A row of large buttons: actions[] {label, href, variant (default primary), icon}.
+import Icon from "./Icon.astro";
+const { actions } = Astro.props;
+---
+{actions.map((a: any) => (
+  <a class={`btn btn--${a.variant || "primary"} btn--lg`} href={a.href}>
+    {a.label}{a.icon && <Icon name={a.icon} size="18" />}
+  </a>
+))}

@@ -1,0 +1,30 @@
+---
+// Charcoal sign-up close: copy from src/data/home.yml (signup) and the Luma
+// calendar embed, plus a plain link to the Eventbrite listing.
+import Icon from "../Icon.astro";
+import { data, site } from "../../lib/data";
+const s = data("home").signup;
+const e = site().event;
+---
+<section class="signup sun-rays" id="signup" aria-labelledby="signup-heading">
+  <span class="signup__glow" aria-hidden="true"></span>
+  <div class="container signup__inner">
+    <div>
+      <span class="section-label section-label--gold">{s.eyebrow}</span>
+      <h2 id="signup-heading">{s.heading}</h2>
+      <p class="signup__lead">{s.lead}</p>
+      <div class="signup__facts">
+        {s.facts.map((f: any) => (
+          <span class="signup__fact"><Icon name={f.icon} size="18" /><span class="stamp">{f.label}</span></span>
+        ))}
+      </div>
+    </div>
+
+    <div class="signup__panel">
+      <h3>RSVP free on Luma</h3>
+      <p class="stamp">Pick your Tuesday</p>
+      <iframe class="luma-embed luma-embed--calendar" src={`https://luma.com/embed/calendar/${e.luma_calendar_id}/events`} title="Upcoming Buffalo Open Coffee Club dates on Luma" loading="lazy" allowfullscreen></iframe>
+      <p class="luma-embed__fallback"><a href={e.registration_url}>Open the calendar on Luma</a> · Also listed on <a href={e.eventbrite_url}>Eventbrite</a></p>
+    </div>
+  </div>
+</section>
