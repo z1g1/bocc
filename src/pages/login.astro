@@ -1,0 +1,61 @@
+---
+// /login/: password sign-in, then passkey sign-in as the alternative (ADR 0008).
+// No sign-up link: accounts are created by an admin. On demand so the middleware's
+// private headers (CSP, noindex, no-store) apply; it does no database work itself.
+import Admin from "../layouts/Admin.astro";
+export const prerender = false;
+---
+<Admin title="Sign in">
+  <h1>Sign in</h1>
+  <form id="password-form" novalidate>
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="username webauthn" required>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+  </form>
+  <p class="muted">Or, if you've added a passkey on this device:</p>
+  <button id="passkey-button" type="button" class="secondary">Sign in with a passkey</button>
+  <p id="error" class="error" role="alert" aria-live="polite"></p>
+</Admin>
+
+<script>
+  import { authClient, errorMessage } from "../lib/auth/client.mjs";
+  import { safeNext } from "../lib/admin/next.mjs";
+
+  const next = safeNext(new URLSearchParams(location.search).get("next") ?? undefined);
+  const form = document.getElementById("password-form") as HTMLFormElement;
+  const passkeyButton = document.getElementById("passkey-button") as HTMLButtonElement;
+  const errorEl = document.getElementById("error") as HTMLElement;
+  const buttons = () => [...document.querySelectorAll("button")] as HTMLButtonElement[];
+  const busy = (on: boolean) => buttons().forEach((b) => (b.disabled = on));
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.textContent = "";
+    const data = new FormData(form);
+    busy(true);
+    const { error } = await authClient.signIn.email({
+      email: String(data.get("email") ?? ""),
+      password: String(data.get("password") ?? ""),
+    });
+    if (error) {
+      busy(false);
+      errorEl.textContent = error.status === 401 ? "Wrong email or password." : errorMessage(error);
+      return;
+    }
+    location.assign(next);
+  });
+
+  passkeyButton.addEventListener("click", async () => {
+    errorEl.textContent = "";
+    busy(true);
+    const result = await authClient.signIn.passkey();
+    if (result?.error) {
+      busy(false);
+      errorEl.textContent = errorMessage(result.error);
+      return;
+    }
+    location.assign(next);
+  });
+</script>

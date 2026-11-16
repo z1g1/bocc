@@ -1,0 +1,71 @@
+---
+// Minimal shell for /login/ and /admin/* (ADR 0008). Deliberately separate from
+// Default.astro: no Google Analytics, no site header/footer, no third-party origins,
+// noindex. The CSP is also sent as a header by src/middleware.ts; frame-ancestors
+// only works as a header, so the meta copy leaves it out.
+import { adminCsp } from "../lib/admin/headers.mjs";
+interface Props {
+  title: string;
+  /** Pass Astro.locals.user on signed-in pages to show the nav and sign-out button. */
+  user?: { email: string; name: string };
+  roles?: string[];
+}
+const { title, user, roles = [] } = Astro.props;
+const csp = adminCsp({ dev: import.meta.env.DEV }).replace("frame-ancestors 'none'; ", "");
+---
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="same-origin">
+    <meta http-equiv="Content-Security-Policy" content={csp}>
+    <title>{title} · BOCC admin</title>
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="/admin/">BOCC admin</a>
+      {user && (
+        <nav>
+          <a href="/admin/">Home</a>
+          <a href="/admin/account/">Account</a>
+          <form method="post" action="/logout">
+            <button type="submit" class="link">Sign out</button>
+          </form>
+        </nav>
+      )}
+    </header>
+    <main>
+      <slot />
+    </main>
+    {user && <footer>Signed in as {user.email}{roles.length > 0 && ` (${roles.join(", ")})`}</footer>}
+  </body>
+</html>
+
+<style is:global>
+  :root { color-scheme: light dark; --fg: #161616; --bg: #fafaf7; --muted: #5c5c5c; --accent: #8a4b14; --line: #d9d6cf; --err: #b00020; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #eeeeea; --bg: #161616; --muted: #a8a8a3; --accent: #f0a35e; --line: #3a3a37; --err: #ff6b81; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+  .bar { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
+  .brand { font-weight: 700; color: var(--fg); text-decoration: none; }
+  nav { display: flex; gap: 1rem; align-items: center; }
+  nav form { margin: 0; }
+  main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  footer { max-width: 40rem; margin: 0 auto; padding: 0 1rem 2rem; color: var(--muted); font-size: 0.875rem; }
+  a { color: var(--accent); }
+  h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+  label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
+  input { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  button { margin-top: 1rem; padding: 0.6rem 1rem; font: inherit; font-weight: 600; border: 0; border-radius: 6px; background: var(--accent); color: var(--bg); cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.link { margin: 0; padding: 0; background: none; color: var(--accent); font-weight: 400; text-decoration: underline; }
+  button:disabled { opacity: 0.6; cursor: wait; }
+  .error { color: var(--err); min-height: 1.5em; }
+  .muted { color: var(--muted); }
+  ul.plain { list-style: none; padding: 0; }
+  ul.plain li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
+  ul.plain li button { margin: 0; }
+</style>

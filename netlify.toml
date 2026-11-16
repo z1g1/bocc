@@ -41,3 +41,15 @@
   [headers.values]
     X-Frame-Options = "SAMEORIGIN"
     X-Content-Type-Options = "nosniff"
+
+# Admin app (ADR 0008): never indexed. The on-demand routes also send these (and a
+# CSP and no-store) from src/middleware.ts; these rules cover anything static.
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/login*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

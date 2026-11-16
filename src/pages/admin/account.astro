@@ -1,0 +1,72 @@
+---
+// /admin/account/: the signed-in user's passkeys. Adding one needs the current
+// session (Better Auth's passkey plugin requires it), so a passkey is always added
+// after a password login, as ADR 0008 intends.
+import Admin from "../../layouts/Admin.astro";
+import { requireRole } from "../../lib/admin/roles.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "social");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const { auth } = await import("../../lib/auth/auth.mjs");
+const passkeys = (await auth.api.listPasskeys({ headers: Astro.request.headers })) ?? [];
+const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "America/New_York" });
+---
+<Admin title="Account" user={user} roles={roles}>
+  <h1>Your account</h1>
+  <p>{user!.name} · {user!.email}</p>
+
+  <h2>Passkeys</h2>
+  {passkeys.length === 0
+    ? <p class="muted">No passkeys yet. Add one to sign in on this device without a password.</p>
+    : (
+      <ul class="plain">
+        {passkeys.map((p: any) => (
+          <li>
+            <span>{p.name || "Passkey"}<span class="muted">{p.createdAt && ` · added ${fmt.format(new Date(p.createdAt))}`}</span></span>
+            <button type="button" class="secondary" data-delete-passkey={p.id}>Remove</button>
+          </li>
+        ))}
+      </ul>
+    )}
+
+  <form id="add-passkey">
+    <label for="passkey-name">Name for this passkey</label>
+    <input id="passkey-name" name="name" maxlength="60" placeholder="e.g. Zack's iPhone">
+    <button type="submit">Add a passkey</button>
+  </form>
+  <p id="error" class="error" role="alert" aria-live="polite"></p>
+</Admin>
+
+<script>
+  import { authClient, errorMessage } from "../../lib/auth/client.mjs";
+
+  const errorEl = document.getElementById("error") as HTMLElement;
+  const form = document.getElementById("add-passkey") as HTMLFormElement;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.textContent = "";
+    const name = String(new FormData(form).get("name") ?? "").trim() || undefined;
+    const result = await authClient.passkey.addPasskey({ name });
+    if (result?.error) {
+      errorEl.textContent = errorMessage(result.error);
+      return;
+    }
+    location.reload();
+  });
+
+  document.querySelectorAll<HTMLButtonElement>("[data-delete-passkey]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!confirm("Remove this passkey? You can still sign in with your password.")) return;
+      const { error } = await authClient.passkey.deletePasskey({ id: button.dataset.deletePasskey! });
+      if (error) {
+        errorEl.textContent = errorMessage(error);
+        return;
+      }
+      location.reload();
+    });
+  });
+</script>

@@ -1,0 +1,44 @@
+---
+// /admin/: landing page for both roles. The middleware has already refused anyone
+// without a session or a role; this page still names the roles it admits.
+//
+// Data views (Phase 2) add their link to ADMIN_LINKS. The social role must never be
+// shown a link to attendee, check-in, streak, email-list or audit data (ADR 0008);
+// its work order pages (Phase 5) go in SOCIAL_LINKS.
+import Admin from "../../layouts/Admin.astro";
+import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "social");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const isAdmin = hasRole(Astro.locals, "admin");
+const isSocial = hasRole(Astro.locals, "social");
+
+const ADMIN_LINKS: Array<{ href: string; label: string; note?: string }> = [];
+const SOCIAL_LINKS: Array<{ href: string; label: string; note?: string }> = [];
+---
+<Admin title="Home" user={user} roles={roles}>
+  <h1>Hello, {user!.name}</h1>
+
+  {isAdmin && (
+    <section>
+      <h2>Admin</h2>
+      {ADMIN_LINKS.length > 0
+        ? <ul>{ADMIN_LINKS.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
+        : <p class="muted">Check-ins, streaks, the email list and user management are on the way.</p>}
+    </section>
+  )}
+
+  {isSocial && (
+    <section>
+      <h2>Social</h2>
+      {SOCIAL_LINKS.length > 0
+        ? <ul>{SOCIAL_LINKS.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
+        : <p class="muted">The weekly social work order will appear here.</p>}
+    </section>
+  )}
+
+  <p><a href="/admin/account/">Your account</a>: add a passkey for this device.</p>
+</Admin>
