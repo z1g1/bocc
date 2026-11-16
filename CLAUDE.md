@@ -88,8 +88,9 @@ dies with `Illegal instruction`. Locally only: `npm install --no-save --force
 ### Check-in System
 
 - `public/checkin/bocc.html` — the check-in form, served at `/checkin/bocc`. It is a **frozen
-  static file** (production's rendered Jekyll output, copied byte for byte), so it doesn't
-  use the Astro layout, and its footer year and CSP are fixed in the file
+  static file** (production's rendered Jekyll output, copied byte for byte, later edited only to
+  drop the ended grant's funding line), so it doesn't use the Astro layout. Footer, CSP and
+  year are fixed in the file: a change to the site footer must be repeated there by hand
 - `public/js/checkin.js` — Client-side form handler (unchanged)
   - Stores return visitor data in `localStorage` (30-day TTL)
   - POSTs to `/.netlify/functions/checkin` (same-origin)

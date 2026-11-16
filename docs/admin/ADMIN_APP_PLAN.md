@@ -227,7 +227,9 @@ compared.
       telemetry off. Content stays in YAML (`src/data/`) and Markdown (`src/content/pages/`)
 - [x] `checkin/bocc.html` is production's rendered file, byte for byte (`cmp` identical), and
       `js/checkin.js` is unchanged. The sponsor redirect now lives in the page's `data-sponsor-*`
-      attributes, since the page is frozen
+      attributes, since the page is frozen. One later edit (2026-11-16, `3f71563`): the Wilson
+      Foundation funding paragraph was removed from its footer, as from the site's, because the
+      grant ended
 - [x] `bocc-afternoon` retired, along with the unpublished demo post and two unused Jekyll
       leftovers (`head/custom.html`, `navigation.yml`)
 - [x] Event pages are still built at build time from `luma_events.yml` (`src/lib/events.ts`)
