@@ -1,0 +1,43 @@
+---
+// /admin/streaks/: everyone whose streak is still active, i.e. who attended the
+// event's most recent held week (the streaks view's current_streak > 0). Test
+// attendees are left out. Admin only.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { easternDateTime } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const { pool } = await import("../../../lib/admin/db.mjs");
+const { listActiveStreaks } = await import("../../../lib/admin/streaks.mjs");
+const streaks = await listActiveStreaks(pool);
+---
+<Admin title="Active streaks" user={user} roles={roles} wide>
+  <h1>Active streaks</h1>
+  <p class="muted">Consecutive held weeks, up to and including the most recent one. A cancelled week (no check-ins) doesn't break a streak.</p>
+
+  {streaks.length === 0
+    ? <p class="muted">No active streaks.</p>
+    : (
+      <div class="scroll">
+        <table class="data">
+          <thead><tr><th>Name</th><th>Business</th><th class="num">Current</th><th class="num">Longest</th><th class="num">Weeks</th><th>Last check-in</th></tr></thead>
+          <tbody>
+            {streaks.map((s: any) => (
+              <tr>
+                <td><a href={`/admin/attendees/${s.attendeeId}/`}>{s.name}</a>{s.isPersonalBest && s.currentStreak > 1 && <span class="tag">best</span>}</td>
+                <td>{s.businessName}</td>
+                <td class="num">{s.currentStreak}</td>
+                <td class="num">{s.longestStreak}</td>
+                <td class="num">{s.weeksAttended}</td>
+                <td>{easternDateTime(s.lastCheckinAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+</Admin>

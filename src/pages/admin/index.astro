@@ -16,7 +16,12 @@ const { user, roles = [] } = Astro.locals;
 const isAdmin = hasRole(Astro.locals, "admin");
 const isSocial = hasRole(Astro.locals, "social");
 
-const ADMIN_LINKS: Array<{ href: string; label: string; note?: string }> = [];
+const ADMIN_LINKS: Array<{ href: string; label: string; note?: string }> = [
+  { href: "/admin/checkins/", label: "Check-ins", note: "the latest event by default" },
+  { href: "/admin/streaks/", label: "Active streaks" },
+  { href: "/admin/email-list/", label: "Email list", note: "CSV export and opt-out" },
+  { href: "/admin/attendees/", label: "Attendees", note: "find and correct name, business, phone" },
+];
 const SOCIAL_LINKS: Array<{ href: string; label: string; note?: string }> = [];
 ---
 <Admin title="Home" user={user} roles={roles}>

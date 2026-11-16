@@ -1,0 +1,102 @@
+---
+// /admin/attendees/<id>/: one attendee, their recent check-ins and streaks, and the
+// correction form (name, business, phone: the only columns admin_app may change besides
+// ok_to_email). The form POSTs to this page; the change and its audit row (before and
+// after values) commit together (src/lib/admin/attendees.mjs correctAttendee).
+// Admin only; POSTs are Origin-checked (src/lib/admin/csrf.mjs).
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { checkOrigin } from "../../../lib/admin/csrf.mjs";
+import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const { pool } = await import("../../../lib/admin/db.mjs");
+const { getAttendee, recentCheckins, attendeeStreaks, correctAttendee, LIMITS, ValidationError } =
+  await import("../../../lib/admin/attendees.mjs");
+
+const id = Astro.params.id ?? "";
+let errors: string[] = [];
+let form: { name: string; businessName: string; phone: string } | null = null;
+
+if (Astro.request.method === "POST") {
+  const refused = checkOrigin(Astro.request);
+  if (refused) return refused;
+  const data = await Astro.request.formData();
+  form = {
+    name: String(data.get("name") ?? ""),
+    businessName: String(data.get("businessName") ?? ""),
+    phone: String(data.get("phone") ?? ""),
+  };
+  try {
+    const { changed } = await correctAttendee(user!.id, id, form);
+    return Astro.redirect(`/admin/attendees/${id}/?notice=${changed.length ? "saved" : "unchanged"}`, 303);
+  } catch (err: any) {
+    if (err instanceof ValidationError) {
+      errors = err.errors;
+      Astro.response.status = 400;
+    } else if (err?.status === 404) {
+      return new Response("Attendee not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+    } else {
+      throw err;
+    }
+  }
+} else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
+}
+
+const attendee = await getAttendee(pool, id);
+if (!attendee) {
+  return new Response("Attendee not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+}
+const [checkins, streaks] = await Promise.all([recentCheckins(pool, id), attendeeStreaks(pool, id)]);
+const values = form ?? { name: attendee.name, businessName: attendee.businessName ?? "", phone: attendee.phone ?? "" };
+const notice = Astro.url.searchParams.get("notice");
+const self = `/admin/attendees/${attendee.id}/`;
+---
+<Admin title={attendee.name} user={user} roles={roles} wide>
+  <p><a href="/admin/attendees/">← Attendees</a></p>
+  <h1>{attendee.name}{attendee.debug && <span class="tag">test</span>}</h1>
+  {notice === "saved" && <p class="notice" role="status">Saved.</p>}
+  {notice === "unchanged" && <p class="notice" role="status">Nothing changed.</p>}
+  {notice === "opted-out" && <p class="notice" role="status">Opted out of email.</p>}
+
+  <dl class="facts">
+    <dt>Email</dt><dd>{attendee.email}</dd>
+    <dt>Email list</dt><dd>{attendee.okToEmail ? "Yes" : "No"}</dd>
+    <dt>First seen</dt><dd>{easternDateTime(attendee.createdAt)}</dd>
+  </dl>
+  {attendee.okToEmail && (
+    <form method="post" action="/api/admin/email-list/opt-out">
+      <input type="hidden" name="attendeeId" value={attendee.id}>
+      <input type="hidden" name="return" value={self}>
+      <button type="submit" class="secondary">Opt out of email</button>
+    </form>
+  )}
+
+  <h2>Correct details</h2>
+  <p class="muted">Email can't be changed here: it is how the check-in form recognises someone.</p>
+  {errors.length > 0 && <ul class="error" role="alert">{errors.map((e) => <li>{e}</li>)}</ul>}
+  <form method="post" action={self} class="narrow">
+    <label for="name">Name</label>
+    <input id="name" name="name" value={values.name} required maxlength={LIMITS.name}>
+    <label for="businessName">Business</label>
+    <input id="businessName" name="businessName" value={values.businessName} maxlength={LIMITS.businessName}>
+    <label for="phone">Phone</label>
+    <input id="phone" name="phone" type="tel" value={values.phone} maxlength={LIMITS.phone}>
+    <button type="submit">Save</button>
+  </form>
+
+  <h2>Streaks</h2>
+  {streaks.length === 0
+    ? <p class="muted">None (test check-ins don't count).</p>
+    : <ul>{streaks.map((s: any) => <li>{s.eventId}: current {s.currentStreak}, longest {s.longestStreak}, {s.weeksAttended} week{s.weeksAttended === 1 ? "" : "s"} attended</li>)}</ul>}
+
+  <h2>Recent check-ins</h2>
+  {checkins.length === 0
+    ? <p class="muted">None.</p>
+    : <ul>{checkins.map((c: any) => <li><a href={`/admin/checkins/?date=${c.checkinDate}${c.debug ? "&debug=1" : ""}`}>{longDay(c.checkinDate)}</a> <span class="muted">{easternDateTime(c.checkinAt)} · {c.eventId}</span>{c.debug && <span class="tag">test</span>}</li>)}</ul>}
+</Admin>

@@ -1,0 +1,51 @@
+---
+// /admin/attendees/: find an attendee to view or correct. ?q= searches name, email
+// and business; ?debug=1 includes test attendees. Admin only.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const { pool } = await import("../../../lib/admin/db.mjs");
+const { searchAttendees } = await import("../../../lib/admin/attendees.mjs");
+const q = (Astro.url.searchParams.get("q") ?? "").slice(0, 100);
+const includeDebug = Astro.url.searchParams.get("debug") === "1";
+const LIMIT = 100;
+const attendees = await searchAttendees(pool, { q, includeDebug, limit: LIMIT });
+---
+<Admin title="Attendees" user={user} roles={roles} wide>
+  <h1>Attendees</h1>
+  <form method="get" class="filters">
+    <label for="q">Search</label>
+    <input id="q" name="q" type="search" value={q} placeholder="Name, email or business" maxlength="100">
+    <label class="check"><input type="checkbox" name="debug" value="1" checked={includeDebug}> Include test attendees</label>
+    <button type="submit">Search</button>
+  </form>
+
+  {attendees.length === 0
+    ? <p class="muted">No attendees found.</p>
+    : (
+      <>
+        <p class="muted">{attendees.length === LIMIT ? `First ${LIMIT}, most recent first` : `${attendees.length} found`}</p>
+        <div class="scroll">
+          <table class="data">
+            <thead><tr><th>Name</th><th>Business</th><th>Email</th><th>Last check-in</th></tr></thead>
+            <tbody>
+              {attendees.map((a: any) => (
+                <tr class={a.debug ? "debug" : undefined}>
+                  <td><a href={`/admin/attendees/${a.id}/`}>{a.name}</a>{a.debug && <span class="tag">test</span>}</td>
+                  <td>{a.businessName}</td>
+                  <td>{a.email}</td>
+                  <td>{longDay(a.lastCheckinDate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    )}
+</Admin>

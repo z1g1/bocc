@@ -1,0 +1,62 @@
+---
+// /admin/checkins/: who checked in on one day. Defaults to the latest day with a real
+// (non-debug) check-in, i.e. the latest held event. ?date=YYYY-MM-DD picks another day,
+// ?debug=1 includes test rows. Admin only: the social role never sees attendee data.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { easternTime, longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const { pool } = await import("../../../lib/admin/db.mjs");
+const { latestCheckinDate, listCheckinDates, listCheckins, parseDate } = await import("../../../lib/admin/checkins.mjs");
+
+const includeDebug = Astro.url.searchParams.get("debug") === "1";
+const requested = Astro.url.searchParams.get("date");
+const date = parseDate(requested) ?? (await latestCheckinDate(pool, { includeDebug }));
+const dates = await listCheckinDates(pool, { includeDebug });
+if (date && !dates.some((d: any) => d.date === date)) dates.unshift({ date, count: 0 });
+const checkins = date ? await listCheckins(pool, { date, includeDebug }) : [];
+---
+<Admin title="Check-ins" user={user} roles={roles} wide>
+  <h1>Check-ins{date && <>: {longDay(date)}</>}</h1>
+
+  <form method="get" class="filters">
+    <label for="date">Day</label>
+    <select id="date" name="date">
+      {dates.map((d: any) => <option value={d.date} selected={d.date === date}>{longDay(d.date)} ({d.count})</option>)}
+    </select>
+    <label class="check"><input type="checkbox" name="debug" value="1" checked={includeDebug}> Include test rows</label>
+    <button type="submit">Show</button>
+  </form>
+
+  {requested && !parseDate(requested) && <p class="error">“{requested}” is not a date; showing the latest day instead.</p>}
+
+  {checkins.length === 0
+    ? <p class="muted">No check-ins{date ? " on this day" : " yet"}.</p>
+    : (
+      <>
+        <p class="muted">{checkins.length} check-in{checkins.length === 1 ? "" : "s"}</p>
+        <div class="scroll">
+          <table class="data">
+            <thead><tr><th>Time</th><th>Name</th><th>Business</th><th>Email</th><th class="num">Streak</th></tr></thead>
+            <tbody>
+              {checkins.map((c: any) => (
+                <tr class={c.debug ? "debug" : undefined}>
+                  <td>{easternTime(c.checkinAt)}</td>
+                  <td><a href={`/admin/attendees/${c.attendeeId}/`}>{c.name}</a>{c.debug && <span class="tag">test</span>}</td>
+                  <td>{c.businessName}</td>
+                  <td>{c.email}</td>
+                  <td class="num">{c.currentStreak ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    )}
+  <p class="muted">Times are Eastern. Streak is the attendee's current weekly streak for that event.</p>
+</Admin>
