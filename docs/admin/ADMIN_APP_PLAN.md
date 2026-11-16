@@ -263,9 +263,16 @@ compared.
       in whitespace, the dropped Jekyll comment and generator tags, and one `'` written as
       `&#39;`. `js/checkin.js` is unchanged. A headless-Chromium run with `?local=1` showed the
       thank-you message and sponsor countdown with no console or CSP errors
-- [ ] Release check on the `dev` branch deploy for the Astro check-in page: `/checkin/bocc`
-      returns 200 (no redirect, query string kept) and a `debug: "1"` check-in lands in the Neon
-      `dev` branch
+- [x] Release check on the `dev` branch deploy for the Astro check-in page (2026-11-16, `7e63e50`):
+  - `/checkin/bocc` and `/checkin/bocc?token=…&debug=1` return 200 with no redirect;
+    `/checkin/bocc/` 301s to `/checkin/bocc`. The deployed page is byte-identical to the local
+    build, has no analytics, and `js/checkin.js` is byte-identical to `public/js/checkin.js`
+  - A form submission in headless Chromium returned 200 and showed the thank-you message and
+    sponsor countdown, with no console errors. Note: `js/checkin.js` never sends `debug` to the
+    API (by design), so a form test always writes a non-debug row. This one is on the Neon `dev`
+    branch (`astro-staging-20261116t211245@example.com`). Use a direct API POST for debug rows
+  - A direct `debug: "1"` POST returned 200 and its row landed in the Neon `dev` branch with
+    `debug = true`. A read-only lookup on `production` found neither test row
 - [ ] Merge to `main` (one production deploy), with Zack's go-ahead
 
 ## Phase 2: login, roles and data views (ADR 0008)
