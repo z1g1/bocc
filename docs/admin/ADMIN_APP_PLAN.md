@@ -48,10 +48,24 @@ Zack's decision.
         [npm](https://registry.npmjs.org/astro), [npm](https://registry.npmjs.org/@astrojs/netlify)
   - [x] Static by default with per-route `export const prerender = false`, keeping
         `output: 'static'`. [Astro docs](https://docs.astro.build/en/guides/on-demand-rendering/)
-  - [ ] **test:** the adapter coexisting with `backend/netlify/functions` in a branch-deploy
-        build. The adapter writes to `.netlify/v1/functions/ssr/` (seen in its shipped code; its
-        doc page still says `functions-internal`). Netlify says framework functions "are appended
-        to the ones defined by the user". Never name one of our functions `ssr`.
+  - [x] **Tested 2026-11-16** (Spike: branch `spike`, https://spike--bocc-backend.netlify.app, Neon branch `spike-auth`). The adapter and
+        `backend/netlify/functions` coexist: the Astro SSR function, our CommonJS
+        `spike-whoami` and the unchanged `checkin` all served from one build. Never name one of
+        our functions `ssr`. Findings:
+        - **The Astro project must sit at the Netlify build base (the repo root).** The adapter
+          writes `.netlify/v1` under the Astro root, and Netlify only reads it from the base.
+          With Astro in a subfolder the build passed but every on-demand route returned 404.
+          See proposed change 6.
+        - Astro 7 needs Node ≥ 22.23.4. Production still pins `NODE_VERSION = "20"`, which went
+          end-of-life in April 2026. The spike used 24 (current LTS).
+        - The root `package.json` can be `"type": "module"`. The functions stay CommonJS
+          because `backend/package.json` has no `"type"`. All 152 backend tests pass.
+        - Set `ASTRO_TELEMETRY_DISABLED=1`; Astro collects usage data by default.
+        - Netlify's `CONTEXT` and `BRANCH` env vars are **null at runtime** in functions. Use
+          `Astro.locals.netlify.context.deploy` (`branch`, `context`).
+        - Netlify posts no GitHub status for branch deploys. Check them by URL or in the UI.
+        - This dev VM's CPU (QEMU, no AVX2) can't run Astro's native compiler. Local builds
+          need the WASI binding; Netlify's builders are unaffected.
         [Frameworks API](https://docs.netlify.com/build/frameworks/frameworks-api/)
   - [x] CDN caching: set `Netlify-CDN-Cache-Control: public, durable, max-age=…,
         stale-while-revalidate=…` and `Netlify-Cache-Tag` through `Astro.response.headers`.
@@ -64,8 +78,12 @@ Zack's decision.
         **Purges cover every deploy by default**, so a purge from staging would clear production;
         always pass `deployAlias` or `domain`. Each deploy also clears its context's cache.
         [Cache API](https://docs.netlify.com/build/caching/cache-api/)
-  - [ ] **test:** a purge with `deployAlias` from the `dev` branch deploy leaves production's cache
-        alone. Whether a purge costs credits is undocumented.
+  - [x] **Tested 2026-11-16:** an on-demand page with `Netlify-CDN-Cache-Control: public,
+        durable, …` and `Netlify-Cache-Tag` is served as a `"Netlify Durable"; hit`. A purge by
+        tag with `deployAlias: "spike"` re-rendered it within 5 s. An unknown date returns 404.
+  - [ ] **Not yet testable:** that the scoped purge leaves *production's* copy alone. Production
+        has no tagged pages until Phase 4. Re-check then. Whether a purge costs credits is
+        undocumented.
 - **Better Auth** (ADR 0008)
   - [x] Version and license: 1.7.25 (2026-11-14), MIT. **Vercel acquired it on 2026-07-07** and
         says it stays MIT. Releases come every 1–3 days and there have been about 45 advisories,
@@ -92,13 +110,26 @@ Zack's decision.
         [CLI](https://better-auth.com/docs/concepts/cli)
   - [x] Passkeys: separate package `@better-auth/passkey`. By default a passkey is added after a
         password login, which fits our flow. [passkey](https://better-auth.com/docs/plugins/passkey)
-  - [ ] **test:** login in Astro on a Netlify branch deploy (handler at
-        `src/pages/api/auth/[...all].ts`, middleware calling `getSession`).
-        [Astro integration](https://better-auth.com/docs/integrations/astro)
-  - [ ] **test:** `getSession` from a separate function. Better Auth is **ESM-only**, so our
-        CommonJS functions need `await import()`.
-  - [ ] **test:** a passkey on the branch-deploy domain and on 716coffee.club (`rpID`).
-  - [ ] **test:** the sliding session, by setting `expiresIn` and `updateAge` to minutes.
+  - [x] **Tested 2026-11-16** (Spike: branch `spike`, https://spike--bocc-backend.netlify.app, Neon branch `spike-auth`):
+        - Login works in Astro on the branch deploy. The cookie is
+          `__Secure-better-auth.session_token; HttpOnly; Secure; SameSite=Lax`, Max-Age 30 days.
+        - `/admin` without a session redirects to `/login/`. Public sign-up is refused with
+          `EMAIL_PASSWORD_SIGN_UP_DISABLED`. A sign-in from another origin is refused with
+          `403 INVALID_ORIGIN`.
+        - Rate limiting: after 5 attempts in 60 s, sign-in returns 429. Counters are in the
+          `auth."rateLimit"` table. Sending a different `X-Forwarded-For` doesn't get around it,
+          and sessions record the real client IP from `x-nf-client-connection-ip`.
+        - A least-privilege `spike_auth` role (only the `auth` schema) is enough. It is denied
+          attendees, check-ins and streaks.
+  - [x] **Tested 2026-11-16:** `getSession` works from a separate CommonJS function through
+        `await import()`, both locally and as bundled by Netlify's esbuild. **Gotcha:** the
+        function refreshed the session using *its own* `expiresIn`, rewriting the expiry the
+        Astro side had set. Every instance must build Better Auth from one shared config module.
+  - [x] **Tested 2026-11-16 (locally):** the sliding session. With `expiresIn` 5 min and
+        `updateAge` 60 s, the expiry was unchanged at 30 s and moved to now + 5 min at 70 s.
+  - [ ] **test, needs Zack:** a passkey on the branch-deploy domain, from your phone or laptop
+        browser. The spike has an "Add a passkey" button on `/admin/`. The 716coffee.club `rpID`
+        can only be tested once the admin is on production.
 - **Neon** (ADR 0008, 0010)
   - [x] Passwords: a child branch gets "the same Postgres roles and passwords as the parent".
         "Resets are branch-scoped", so `ALTER ROLE … PASSWORD` on `dev` should leave
@@ -175,6 +206,13 @@ Zack's decision.
 5. **`NEON_PERMISSIONS.md`:** staging gets its own storage credential, made on `dev`. The
    password script runs once when `dev` is created. After any reset, the runbook only checks
    that production's password fails on `dev` (tested: a reset keeps `dev`'s own passwords).
+
+6. **ADR 0007, layout:** the Astro project lives at the repo root (the Netlify build base), not
+   in `website/`. The root `package.json` becomes the Astro app plus the functions' runtime
+   dependencies. `backend/` keeps its own CommonJS `package.json`. Production's
+   `NODE_VERSION` moves from 20 (end-of-life) to 24 as part of the port.
+7. **ADR 0008, shared config:** one module builds the Better Auth instance for every caller
+   (Astro routes, CommonJS functions, the `create-admin` CLI), so session settings can't drift.
 
 ## Phase 1: Astro port (released on its own, ADR 0007)
 
