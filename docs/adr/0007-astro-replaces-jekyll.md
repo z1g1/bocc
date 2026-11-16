@@ -46,7 +46,9 @@ community features may also sit behind a login.
 - Release check for the port: the list of output files matches the old `_site` (including
   `llms.txt` and `404.html`), the JSON-LD and the CSP are unchanged, and a debug check-in passes
   on the branch deploy.
-- *Unverified, Phase 0:* that `@astrojs/netlify` supports per-route prerendering next to the
-  existing `backend/netlify/functions`, and that the existing `[functions]` config still works.
+- *Phase 0 (2026-11-16):* per-route prerendering is confirmed in Astro's docs (`astro` 7.4.12,
+  `@astrojs/netlify` 8.2.14). Netlify says framework functions are appended to the user's.
+  *Still unverified:* that the existing `[functions]` config still works next to the adapter, in
+  a branch-deploy build. See the plan's Phase 0 section.
 - `CLAUDE.md`, `docs/architecture.md` and `docs/onboarding.md` are rewritten for Astro as part of
   the port.

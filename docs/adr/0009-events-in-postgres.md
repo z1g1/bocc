@@ -56,5 +56,8 @@ There is one event per day. The `bocc-afternoon` series has ended.
 - Event edits no longer cost deploys. The public event page needs the database to render, which
   a static rebuild did not. The CDN cache absorbs most of the load.
 - Admin URLs follow the date: `/admin/events/2026-11-24`.
-- *Unverified, Phase 0:* how the Astro Netlify adapter caches and clears pages (cache tags or
-  the purge API).
+- *Phase 0 (2026-11-16):* pages set `Netlify-CDN-Cache-Control` and `Netlify-Cache-Tag`
+  themselves, and saves call `purgeCache` from `@netlify/cache`. Astro's own route cache is
+  experimental and not used. Purges cover every deploy unless they pass `deployAlias`.
+  *Still unverified:* a scoped purge from the branch deploy leaving production alone.
+- *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 4 in the plan.

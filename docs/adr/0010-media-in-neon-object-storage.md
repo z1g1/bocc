@@ -45,8 +45,12 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
 
 - About 1 GB a year of new storage, well inside the 5 GB free tier for several years.
 - The sign-in board photos, which show handwritten names, are never publicly reachable.
-- *Unverified, Phase 0:*
-  - Whether the feature is GA or beta
-  - Whether iOS Safari turns HEIC into JPEG when a photo is picked, and whether the browser can
-    read HEIC to resize it
-  - Whether files inherited by a branch count again toward the 5 GB limit
+- *Settled in Phase 0 (2026-11-16), details and links in the plan:*
+  - Object Storage is GA (2026-09-18), though its API endpoints are still labelled Beta
+  - iOS Safari converts HEIC to the first type in `accept`. Only Safari 17+ decodes HEIC;
+    Chrome on desktop and Android can't
+  - Storage credentials work on the branch they're made on and all its children, so staging
+    needs its own
+- *Still unverified:* whether inherited objects count toward 5 GB, and presigned PUT from mobile
+  browsers.
+- *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 2 in the plan.

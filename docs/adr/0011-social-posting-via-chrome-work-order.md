@@ -71,6 +71,11 @@ accounts at risk under the platforms' terms.
   Netlify.
 - It depends on Modron's machine being awake with Chrome open. Unofficial reports say scheduled
   runs may wait for someone to click, so test that early. The Thursday check catches missed runs.
+  Anthropic's help says tasks run "as long as Chrome is open"; the unattended test on Modron's
+  machine is still pending (Phase 0).
+- *Phase 0 (2026-11-16):* Meta Business Suite reportedly doesn't post to Threads, and Instagram's
+  "Share to Threads" only works for posts published immediately. Threads links appear clickable.
+  *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 1 in the plan.
 - Browser automation still carries some terms-of-service risk on these platforms. Official APIs
   remain the long-term option, one channel at a time (Facebook scheduling, TikTok after audit).
 - Everything the agent can read is exposed to instructions planted in the web pages it visits.

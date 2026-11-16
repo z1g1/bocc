@@ -64,11 +64,17 @@ should not require changing how the app calls login.
 - Roles are enforced by the app, and Postgres permissions are the backstop.
 - No MFA beyond passkeys until the 2FA plugin is verified. Erasing an attendee stays a manual
   SQL task as the owner.
-- *Unverified, Phase 0:*
-  - `disableSignUp` for email/password (if it is missing, roles still block access)
-  - The 2FA plugin docs (the page returned 404)
-  - Where rate-limit counters are stored on serverless
-  - Better Auth's Astro integration
-  - The current version and license
+- *Settled in Phase 0 (2026-11-16), details and links in the plan:*
+  - `disableSignUp` exists and also blocks server-side `signUpEmail`; users are created with the
+    admin plugin's `createUser`
+  - The 2FA plugin docs exist; TOTP needs no email
+  - Rate-limit counters must use `storage: "database"` (a `rateLimit` table in `auth`)
+  - Better Auth's Astro integration is documented
+  - Version 1.7.25, MIT. Vercel acquired the project on 2026-07-07
+  - Tables go in `auth` through `database.schemaName`, since `search_path` doesn't survive
+    Neon's pooler
+- *Still unverified (hands-on tests):* login on a Netlify branch deploy, `getSession` from a
+  CommonJS function (the package is ESM-only), passkeys on our domains, the sliding session.
+- *Proposed change, waiting for Zack:* see "Proposed ADR changes" item 3 in the plan.
 - `docs/backend/NEON_PERMISSIONS.md` gains the `admin_app` identity and its verification
   checklist.

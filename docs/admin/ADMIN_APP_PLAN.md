@@ -37,34 +37,134 @@ Decisions: [ADR 0007](../adr/0007-astro-replaces-jekyll.md) (Astro),
 Each item gets a short spike on the `dev` branch deploy. A failure goes back to the ADR it came
 from before anything else proceeds.
 
-- [ ] **Astro + Netlify:**
-  - per-route prerendering alongside `backend/netlify/functions`
-  - CDN caching of rendered pages, and clearing it when an event is saved (cache tags or the
-    purge API)
-- [ ] **Better Auth:**
-  - running in Astro on Netlify
-  - `getSession` from a function
-  - `disableSignUp` for email/password
-  - the 2FA plugin
-  - passkeys on 716coffee.club
-  - 30-day sliding sessions
-  - where rate-limit counters are stored
-  - version and license
-- [ ] **Neon:**
-  - whether changing a role password on `dev` leaves `production` unchanged
-  - whether Object Storage is GA or beta
-  - presigned PUT from mobile Safari and Chrome
-  - whether files inherited by a branch count toward the 5 GB limit
-- [ ] **Media:**
-  - whether iOS Safari turns HEIC into JPEG when a photo is picked
-  - whether the browser can resize HEIC
-- [ ] **Chrome tasks:**
-  - a scheduled task runs with nobody present, since unofficial reports say runs can wait for a
-    click
-  - whether Business Suite and TikTok Studio can schedule a first comment
-  - whether Threads links are clickable
-- [ ] **LinkedIn CLI:** the API version pinned in `tools/linkedin-events` config, since 202511
-  was retired on 2026-11-16
+Doc checks were done on 2026-11-16 against live vendor pages. A ticked box means the docs (or our
+own code) settle it. An unticked box with "**test**" still needs a hands-on spike.
+**Proposed ADR changes** from these findings are listed at the end of this phase and wait for
+Zack's decision.
+
+- **Astro + Netlify** (ADR 0007, 0009)
+  - [x] Versions: `astro` 7.4.12 and `@astrojs/netlify` 8.2.14 are the stable releases (both
+        published 2026-11-13). Avoid the `beta`/`alpha`/`next` tags.
+        [npm](https://registry.npmjs.org/astro), [npm](https://registry.npmjs.org/@astrojs/netlify)
+  - [x] Static by default with per-route `export const prerender = false`, keeping
+        `output: 'static'`. [Astro docs](https://docs.astro.build/en/guides/on-demand-rendering/)
+  - [ ] **test:** the adapter coexisting with `backend/netlify/functions` in a branch-deploy
+        build. The adapter writes to `.netlify/v1/functions/ssr/` (seen in its shipped code; its
+        doc page still says `functions-internal`). Netlify says framework functions "are appended
+        to the ones defined by the user". Never name one of our functions `ssr`.
+        [Frameworks API](https://docs.netlify.com/build/frameworks/frameworks-api/)
+  - [x] CDN caching: set `Netlify-CDN-Cache-Control: public, durable, max-age=…,
+        stale-while-revalidate=…` and `Netlify-Cache-Tag` through `Astro.response.headers`.
+        Don't use the adapter's `cacheOnDemandPages`, which would cache `/admin/*` for a year,
+        or `Astro.cache`/`cacheNetlify()`, which are experimental.
+        [Netlify caching](https://docs.netlify.com/platform/caching/)
+  - [x] Purge: `purgeCache({ tags, deployAlias })` from `@netlify/cache`. It takes a few seconds
+        and is limited to 2 calls per 5 s per tag. Modern (default-export) functions get the token
+        automatically, but Lambda-style CommonJS functions must pass `purge_api_token`.
+        **Purges cover every deploy by default**, so a purge from staging would clear production;
+        always pass `deployAlias` or `domain`. Each deploy also clears its context's cache.
+        [Cache API](https://docs.netlify.com/build/caching/cache-api/)
+  - [ ] **test:** a purge with `deployAlias` from the `dev` branch deploy leaves production's cache
+        alone. Whether a purge costs credits is undocumented.
+- **Better Auth** (ADR 0008)
+  - [x] Version and license: 1.7.25 (2026-11-14), MIT. **Vercel acquired it on 2026-07-07** and
+        says it stays MIT. Releases come every 1–3 days and there have been about 45 advisories,
+        all fixed in 1.7.25. Pin an exact version and watch the advisories page.
+        [npm](https://registry.npmjs.org/better-auth/latest),
+        [LICENSE](https://github.com/better-auth/better-auth/blob/main/LICENSE.md),
+        [Vercel](https://vercel.com/blog/vercel-acquires-better-auth),
+        [advisories](https://github.com/better-auth/better-auth/security/advisories)
+  - [x] `disableSignUp` exists, and it also blocks server-side `auth.api.signUpEmail`. The admin
+        plugin's `createUser` still works, so `create-admin` must use that (or the internal
+        adapter). [options](https://better-auth.com/docs/reference/options)
+  - [x] 2FA plugin: the page exists, and TOTP plus backup codes need no email.
+        [2FA](https://better-auth.com/docs/plugins/2fa)
+  - [x] 30-day sliding sessions: `expiresIn` 30 d, `updateAge` 1 d. `getSession` **writes** to
+        refresh the session. Leave `cookieCache` off so revocation is immediate.
+        [sessions](https://better-auth.com/docs/concepts/session-management)
+  - [x] Rate-limit counters: in memory by default, which is useless on serverless. Use
+        `rateLimit.storage: "database"` (a `rateLimit` table in `auth`) and set
+        `ipAddressHeaders` to Netlify's client-IP header, not `X-Forwarded-For`.
+        [rate limit](https://better-auth.com/docs/concepts/rate-limit)
+  - [x] Schema: use `database.schemaName: "auth"`. `search_path` doesn't survive Neon's pooler.
+        `npx auth@latest generate` writes plain SQL (the old `@better-auth/cli` is unsupported).
+        [Postgres adapter](https://better-auth.com/docs/adapters/postgresql),
+        [CLI](https://better-auth.com/docs/concepts/cli)
+  - [x] Passkeys: separate package `@better-auth/passkey`. By default a passkey is added after a
+        password login, which fits our flow. [passkey](https://better-auth.com/docs/plugins/passkey)
+  - [ ] **test:** login in Astro on a Netlify branch deploy (handler at
+        `src/pages/api/auth/[...all].ts`, middleware calling `getSession`).
+        [Astro integration](https://better-auth.com/docs/integrations/astro)
+  - [ ] **test:** `getSession` from a separate function. Better Auth is **ESM-only**, so our
+        CommonJS functions need `await import()`.
+  - [ ] **test:** a passkey on the branch-deploy domain and on 716coffee.club (`rpID`).
+  - [ ] **test:** the sliding session, by setting `expiresIn` and `updateAge` to minutes.
+- **Neon** (ADR 0008, 0010)
+  - [x] Passwords: a child branch gets "the same Postgres roles and passwords as the parent".
+        "Resets are branch-scoped", so `ALTER ROLE … PASSWORD` on `dev` should leave
+        `production` alone. [branches](https://neon.com/docs/manage/branches),
+        [roles](https://neon.com/docs/manage/roles)
+  - [ ] **test:** change a password on `dev` and confirm the old one still works on
+        `production`. (Waiting for the Neon API key.)
+  - [ ] **test:** whether "reset from parent" brings back production's passwords on `dev`. The
+        docs don't say. [reset](https://neon.com/docs/guides/reset-from-parent)
+  - [x] Object Storage went GA on 2026-09-18, but its API endpoints are still labelled Beta. It
+        supports `aws-us-east-2`, 5 GB per project, and bucket CORS through the S3 API
+        (`PutBucketCors`). [changelog](https://neon.com/docs/changelog),
+        [S3 compatibility](https://neon.com/docs/storage/s3-compatibility)
+  - [x] Storage credentials are "scoped to a branch and valid for that branch and all its
+        descendants". A production credential works on `dev`, so staging needs its own, made on
+        `dev`. [auth](https://neon.com/docs/storage/authentication)
+  - [ ] Whether inherited objects count toward 5 GB: undocumented. Branches read the parent's
+        objects without copying, so probably not. Check the usage figure after the first upload.
+  - [ ] **test:** presigned PUT from mobile Safari and Chrome, with a CORS rule on the bucket.
+  - Note: `dev` shares production's 100 CU-hours and 5 GB transfer. If staging uses them up,
+    production's compute is suspended (SQLSTATE `53000`). [plans](https://neon.com/docs/introduction/plans)
+- **Media** (ADR 0010)
+  - [x] iOS Safari turns HEIC into the first type listed in `accept`, so use
+        `accept="image/jpeg,image/png"`, not `image/*`. Check the MIME type, not the extension.
+        Evidence is WebKit bugs, not an Apple doc.
+        [WebKit 292350](https://bugs.webkit.org/show_bug.cgi?id=292350)
+  - [x] HEIC decoding: Safari 17+ only. **Chrome on desktop and Android can't decode HEIC**, so an
+        iPhone HEIC uploaded from those breaks the resize step. See the proposed ADR 0010 change.
+        [caniuse](https://caniuse.com/heif)
+  - [x] `createImageBitmap` applies EXIF orientation by default, and canvas export drops EXIF/GPS.
+        [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/createImageBitmap)
+- **Chrome tasks** (ADR 0011)
+  - [ ] **test on Modron's machine (later this week):** a scheduled task runs with nobody present.
+        Anthropic's help says tasks run "as long as Chrome is open". Nothing says what happens if
+        the machine sleeps, and a missed run is probably skipped.
+        [Claude in Chrome](https://support.claude.com/en/articles/12012173-get-started-with-claude-in-chrome)
+  - [x] First comments: Meta Business Suite has no first-comment field, and LinkedIn has none
+        either. TikTok Studio is unknown. The Monday verify task adds them, as planned.
+        [Sked Social](https://skedsocial.com/blog/first-comment-scheduling)
+  - [x] Threads links: probably clickable ("threads can include … links"), so Threads follows the
+        FB caption rules. [Instagram Help](https://help.instagram.com/788669719351544/)
+  - [ ] **Contradicts ADR 0011:** Business Suite does not post to Threads, and Instagram's "Share
+        to Threads" only works for posts published immediately. Threads needs its own scheduling
+        step. Third-party source, so confirm by hand.
+        [Sprout](https://sproutsocial.com/insights/schedule-threads-posts/)
+  - Notes: TikTok Studio schedules 15 min to 10 days ahead and needs a Business Account. LinkedIn
+    Pages schedule 1 hour to 3 months ahead. Neither allows editing a scheduled post's content.
+- [x] **LinkedIn CLI:** `tools/linkedin-events/bocc_events/config.py` pins `202609`, which is
+      active until 2027-09-15. 202511 sunset on 2026-11-16, as expected.
+      [LinkedIn versioning](https://learn.microsoft.com/en-us/linkedin/marketing/integrations/migrations)
+
+### Proposed ADR changes (waiting for Zack)
+
+1. **ADR 0011, Threads:** add Threads as its own step in the Wednesday task, in the Threads web
+   app, instead of relying on the share from Business Suite.
+2. **ADR 0010, HEIC from non-Safari browsers:** if the browser can't decode a photo, refuse it
+   with a clear message ("upload from your iPhone, or export as JPEG"). Don't add a WASM HEIC
+   decoder in the MVP, since that is a new dependency to vet.
+3. **ADR 0008, roles:** keep `user_roles` as the only place roles live. Use the admin plugin only
+   for `createUser` and password resets, and never read its `role` column. Add the `rateLimit`
+   table to the `auth` migration.
+4. **ADR 0009, purge:** every purge passes `deployAlias` (or `domain`). The function that purges
+   is written in the modern default-export style, so Netlify supplies the token.
+5. **`NEON_PERMISSIONS.md`:** staging gets its own storage credential, made on `dev`, and the
+   password-reset script runs after every branch reset until the reset test shows it isn't
+   needed.
 
 ## Phase 1: Astro port (released on its own, ADR 0007)
 
