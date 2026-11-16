@@ -24,7 +24,7 @@ Decisions: [ADR 0007](../adr/0007-astro-replaces-jekyll.md) (Astro),
 | Chrome tasks | the real weekly runs | rehearsals |
 
 - **A branch inherits its parent's role passwords.** Generating new ones automatically is a paid
-  feature. After creating the `dev` branch, and again after every reset, set new passwords for
+  feature. After creating the `dev` branch, set new passwords for
   `checkin_writer` and `admin_app` on `dev`. Store them in Netlify's branch-scoped environment
   variables. Keep this as a script in `NEON_PERMISSIONS.md`.
 - Staging holds real attendee data and production's Better Auth users, so it needs the same login
@@ -104,10 +104,20 @@ Zack's decision.
         "Resets are branch-scoped", so `ALTER ROLE … PASSWORD` on `dev` should leave
         `production` alone. [branches](https://neon.com/docs/manage/branches),
         [roles](https://neon.com/docs/manage/roles)
-  - [ ] **test:** change a password on `dev` and confirm the old one still works on
-        `production`. (Waiting for the Neon API key.)
-  - [ ] **test:** whether "reset from parent" brings back production's passwords on `dev`. The
-        docs don't say. [reset](https://neon.com/docs/guides/reset-from-parent)
+  - [x] **Tested 2026-11-16** (neon CLI 4.17.3). We made throwaway branches `spike-pw-parent`
+        (from `production`) and `spike-pw-child`, plus a throwaway role `pw_probe` that existed
+        only on those branches. Then we changed the role's password on the child:
+        - Before the change, the child accepted the parent's password.
+        - After the change, the child accepted only the new password, and the parent still
+          accepted only the old one.
+        - Both branches were deleted afterwards. `production` was never written to, and a
+          read-only check shows it never had the role.
+  - [x] **Tested 2026-11-16:** "reset from parent" **kept** the child's changed password. The
+        reset did happen: a marker table on the child was gone afterwards and the parent's data
+        was back. So after creating `dev`, set new passwords **once**. A reset doesn't bring back
+        production's passwords. The docs don't promise this, so the reset runbook still checks
+        that production's password fails on `dev`.
+        [reset](https://neon.com/docs/guides/reset-from-parent)
   - [x] Object Storage went GA on 2026-09-18, but its API endpoints are still labelled Beta. It
         supports `aws-us-east-2`, 5 GB per project, and bucket CORS through the S3 API
         (`PutBucketCors`). [changelog](https://neon.com/docs/changelog),
@@ -162,9 +172,9 @@ Zack's decision.
    table to the `auth` migration.
 4. **ADR 0009, purge:** every purge passes `deployAlias` (or `domain`). The function that purges
    is written in the modern default-export style, so Netlify supplies the token.
-5. **`NEON_PERMISSIONS.md`:** staging gets its own storage credential, made on `dev`, and the
-   password-reset script runs after every branch reset until the reset test shows it isn't
-   needed.
+5. **`NEON_PERMISSIONS.md`:** staging gets its own storage credential, made on `dev`. The
+   password script runs once when `dev` is created. After any reset, the runbook only checks
+   that production's password fails on `dev` (tested: a reset keeps `dev`'s own passwords).
 
 ## Phase 1: Astro port (released on its own, ADR 0007)
 
