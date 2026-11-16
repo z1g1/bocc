@@ -273,7 +273,14 @@ compared.
     branch (`astro-staging-20261116t211245@example.com`). Use a direct API POST for debug rows
   - A direct `debug: "1"` POST returned 200 and its row landed in the Neon `dev` branch with
     `debug = true`. A read-only lookup on `production` found neither test row
-- [ ] Merge to `main` (one production deploy), with Zack's go-ahead
+- [x] Merge to `main` (one production deploy), with Zack's go-ahead: 2026-11-16, fast-forward
+      to `867dffa`. Checked on https://716coffee.club: every page, event page, `sitemap.xml`,
+      `feed.xml`, `llms.txt` and `robots.txt` returns 200; an expired event date 302s to `/`; an
+      unknown path gets the custom 404; `/checkin/bocc` (with and without `?token=`) returns 200
+      without a redirect, matches the local build byte for byte and has no analytics;
+      `js/checkin.js` is unchanged; no funding text; the page loads in headless Chromium with
+      no errors. A direct `debug: "1"` POST returned 200 and its row is in Neon `production` with
+      `debug = true` (`astro-release-debug-20261116t212035@example.com`)
 
 ## Phase 2: login, roles and data views (ADR 0008)
 

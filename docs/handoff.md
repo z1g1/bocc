@@ -8,8 +8,9 @@ Written 2026-11-16 (Monday) at the end of a long session. Read this first, then
 - **Phase 0** (spikes) is done. Results and the seven accepted ADR changes are in
   `docs/admin/ADMIN_APP_PLAN.md` and ADRs 0007–0011. The spike branch and its Neon/Netlify
   resources were cleaned up.
-- **Phase 1** (Jekyll → Astro port) is built, checked and live on staging, but **not yet in
-  production**. Everything is on `dev`, HEAD `15a6e6d`. Nothing has been pushed to `main`.
+- **Phase 1** (Jekyll → Astro port) is **in production** since 2026-11-16 (`main` at `867dffa`,
+  fast-forwarded from `dev`), including the check-in page as an Astro page. Release checks are
+  in the plan's Phase 1 section. The "Next step" section below is done; kept for reference.
 - **Phase 2+** (login, roles, data views, etc.) has **not started**. Zack wants Phase 1 shipped
   first.
 
