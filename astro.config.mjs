@@ -1,6 +1,10 @@
-// Astro config (ADR 0007). Static output: every page is prerendered at build time.
-// Phase 2 adds @astrojs/netlify for the on-demand /admin and auth routes.
+// Astro config (ADR 0007). Static output: every page is prerendered at build time,
+// except the few routes that opt out with `export const prerender = false` (the admin
+// app, ADR 0008: /admin/*, /api/auth/*, /login/, /logout). @astrojs/netlify serves
+// those from one SSR function next to backend/netlify/functions. Never name one of
+// our own functions `ssr`.
 import { defineConfig } from "astro/config";
+import netlify from "@astrojs/netlify";
 import { rename, rmdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
@@ -29,5 +33,8 @@ export default defineConfig({
   output: "static",
   trailingSlash: "ignore",
   build: { format: "directory" },
+  // Defaults matter here: cacheOnDemandPages stays off (it would cache /admin/* at the
+  // CDN for a year) and middleware runs in the SSR function, not at the edge.
+  adapter: netlify(),
   integrations: [flatPages],
 });

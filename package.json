@@ -4,7 +4,11 @@
   "private": true,
   "description": "The 716coffee.club Astro site (repo root = Netlify build base, ADR 0007) plus the runtime dependencies of backend/netlify/functions. Keep pg in sync with backend/package.json.",
   "dependencies": {
+    "@astrojs/netlify": "8.2.14",
+    "@better-auth/passkey": "1.7.25",
     "astro": "7.4.12",
+    "better-auth": "1.7.25",
+    "kysely": "0.29.9",
     "marked": "18.1.2",
     "pg": "^8.13.1",
     "smartypants": "0.2.2",
@@ -20,6 +24,9 @@
     "build:css": "node scripts/build-css.mjs",
     "dev": "npm run build:css && astro dev",
     "build": "npm run build:css && astro build",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "dev:admin": "npm run build:css && node --env-file=.env.admin node_modules/astro/bin/astro.mjs dev",
+    "create-admin": "node --env-file=.env.admin scripts/create-admin.mjs",
+    "test:db": "bash scripts/test-db.sh"
   }
 }
