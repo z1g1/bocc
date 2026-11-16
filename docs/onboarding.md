@@ -144,7 +144,8 @@ Database schema changes are **not** applied by deploys. Add a new file to
 
 ### Documentation
 - `docs/backend/NEON_PERMISSIONS.md` — Database roles, grants, and key handling
-- `docs/adr/` — Architecture decisions (datastore: 0003, 0004, 0005, 0006)
+- `docs/adr/` — Architecture decisions (datastore: 0003, 0004, 0005, 0006; admin app: 0007–0011)
+- `docs/admin/ADMIN_APP_PLAN.md` — Phased plan for the Astro port and admin app
 - `docs/strategy/` — Social media strategies and brand guide
 
 ## Common Tasks for Volunteers

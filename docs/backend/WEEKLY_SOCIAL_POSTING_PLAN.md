@@ -1,6 +1,9 @@
 # Plan: Weekly social posting beyond LinkedIn
 
-Status: **Proposed** (2026-10-27). Nothing here is built yet.
+Status: **Superseded in part** (2026-11-16). For the weekly promo video, the API approach here is
+replaced by Claude in Chrome tasks working from a work order in the admin app
+([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md)). The LinkedIn event CLI is unchanged.
+Originally proposed 2026-10-27. Nothing here was built.
 
 ## Goal
 

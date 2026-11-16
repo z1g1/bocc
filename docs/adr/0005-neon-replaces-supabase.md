@@ -52,7 +52,8 @@ Host the check-in store on **Neon Postgres** (free plan, project `young-queen-80
 
 - The first check-in after an idle period pays a compute cold start (well under the
   handler's timeout). An optional Tuesday-morning warm-up can remove it.
-- Free plan limits: 0.5 GB storage, 100 CU-hours/month. At ~1,500 check-ins/year that is
+- Free plan limits: 0.5 GB storage, 100 CU-hours/month. *(Note, 2026-11-16: Neon's plans page
+  now says 1 GB of Postgres storage per project on Free, plus 5 GB of Object Storage. See ADR 0010.)* At ~1,500 check-ins/year that is
   decades of headroom.
 - Point-in-time restore on the free plan covers only 6 hours. Take periodic logical
   backups (`pg_dump` as owner) if long-range recovery matters.

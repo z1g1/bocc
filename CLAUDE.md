@@ -184,7 +184,7 @@ the website, so no CORS is required.
 | Website (Jekyll) | `website/` → `website/_site` | `https://716coffee.club` |
 | Functions (API) | `backend/netlify/functions/` | `https://716coffee.club/.netlify/functions/` |
 
-Each push to `main` triggers one build = **15 credits**. Free tier = 300 credits/month. Limit pushes to `main` to batching work on `dev` (docs-only changes still rebuild the single site, so batch them too).
+Each push to `main` triggers one build = **15 credits**. Free tier = 300 credits/month. Limit pushes to `main` to batching work on `dev` (docs-only changes still rebuild the single site, so batch them too). Deploy Previews and branch deploys cost **0 credits** per build (functions on them still use a little compute and bandwidth credit). The planned staging setup is a branch deploy of `dev` against a Neon `dev` branch; see `docs/admin/ADMIN_APP_PLAN.md`.
 
 ---
 
