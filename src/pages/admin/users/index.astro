@@ -1,0 +1,91 @@
+---
+// /admin/users/: user management, admin role only (ADR 0008 decision 4). Social users
+// get 403. Plain HTML forms, no client script: each form POSTs back here and the page
+// answers 303 to a GET. All logic, the Origin check and the audit rows are in
+// src/lib/admin/users-actions.mjs.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { usersPage } = await import("../../../lib/admin/users-actions.mjs");
+const result = await usersPage(Astro.request, Astro.locals);
+if (result.response) return result.response;
+Astro.response.status = result.status;
+
+const { users, notice, error, form } = result;
+const { user, roles = [] } = Astro.locals;
+const ROLE_NAMES = ["admin", "social"];
+const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "America/New_York" });
+---
+<Admin title="Users" user={user} roles={roles}>
+  <h1>Users</h1>
+  {notice && <p class="notice" role="status">{notice}</p>}
+  {error && <p class="error" role="alert">{error}</p>}
+
+  <ul class="users">
+    {users.map((u: any) => (
+      <li>
+        <p class="who">
+          <strong>{u.name}</strong> {u.id === user!.id && <span class="muted">(you)</span>}<br>
+          <span>{u.email}</span>
+          <span class="muted"> · added {fmt.format(new Date(u.createdAt))}</span><br>
+          <span>Roles: {u.roles.length > 0 ? u.roles.join(", ") : <span class="muted">none (sees nothing)</span>}</span>
+        </p>
+        <div class="row">
+          {ROLE_NAMES.map((r) => (
+            <form method="post">
+              <input type="hidden" name="userId" value={u.id}>
+              <input type="hidden" name="role" value={r}>
+              {u.roles.includes(r)
+                ? <><input type="hidden" name="action" value="revoke"><button type="submit" class="secondary">Remove {r}</button></>
+                : <><input type="hidden" name="action" value="grant"><button type="submit" class="secondary">Make {r}</button></>}
+            </form>
+          ))}
+        </div>
+        <details>
+          <summary>Reset password</summary>
+          <form method="post">
+            <input type="hidden" name="action" value="reset">
+            <input type="hidden" name="userId" value={u.id}>
+            <label for={`pw-${u.id}`}>New password (at least 12 characters)</label>
+            <input id={`pw-${u.id}`} name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+            <button type="submit">Reset and sign them out</button>
+          </form>
+        </details>
+      </li>
+    ))}
+  </ul>
+
+  <h2>Add a user</h2>
+  <p class="muted">There is no public sign-up. Give the new user their password in person; they can add a passkey under Account.</p>
+  <form method="post">
+    <input type="hidden" name="action" value="create">
+    <label for="new-email">Email</label>
+    <input id="new-email" name="email" type="email" maxlength="254" autocomplete="off" required value={form.email}>
+    <label for="new-name">Name</label>
+    <input id="new-name" name="name" maxlength="100" autocomplete="off" required value={form.name}>
+    <label for="new-password">Initial password (at least 12 characters)</label>
+    <input id="new-password" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
+    <label for="new-role">Role</label>
+    <select id="new-role" name="role">
+      {ROLE_NAMES.map((r) => <option value={r} selected={form.role === r}>{r}</option>)}
+    </select>
+    <button type="submit">Create user</button>
+  </form>
+</Admin>
+
+<style>
+  .users { list-style: none; padding: 0; }
+  .users > li { padding: 0.75rem 0; border-bottom: 1px solid var(--line); }
+  .who { margin: 0 0 0.5rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .row form { margin: 0; }
+  .row button { margin: 0; }
+  details { margin-top: 0.5rem; }
+  summary { cursor: pointer; color: var(--accent); }
+  select { padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  .notice { padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
+</style>
