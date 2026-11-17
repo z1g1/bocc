@@ -365,11 +365,15 @@ compared.
     without a row renders as a new scheduled event; the first save creates it. Reports are
     refused on cancelled events and on dates after today (Eastern); cancelling is refused
     once a report exists. Editing an imported report makes it `source = 'admin'`
-- [ ] Photo upload from a phone:
+- [x] Photo upload from a phone (`EventMedia.astro`, `/api/admin/media/*`, `public/js/admin-media.js`;
+      admin only). The on-device check stays open in Phase 0 (presigned PUT from mobile Safari
+      and Chrome):
   - the browser makes the 1600px JPEG and 400px thumbnail
   - uploads go straight to the bucket via presigned PUT
   - a gallery shown through short-lived GET URLs
   - each photo tagged `signin_board` / `social_photo`, with `publicly_usable`
+  - pending uploads over a day old are listed on the event page for deletion; no storage
+    configured shows a message and the APIs answer 503
 - [x] Dashboard: upcoming events, and **"report missing"** for past dates still marked
       `scheduled` ("today" is the Eastern date). Also `/admin/events/`: upcoming, past (paged,
       `?missing=1`) and an open-a-date form
@@ -381,7 +385,10 @@ compared.
 - [ ] Run the import on Neon (staging, then production): pending Zack's go-ahead
 - [ ] Import the old sign-in board photos (45, from the Drive export) with a local script:
       HEIC converted on the operator's machine, matched to events by file-name date or capture
-      date, dry-run match table confirmed by Zack first (ADR 0010, amended 2026-11-17)
+      date, dry-run match table confirmed by Zack first (ADR 0010, amended 2026-11-17).
+      Script ready: `scripts/signin-photos/import.mjs` (dry run by default; `--apply --confirm`).
+      Dry run done 2026-11-17 against the Form's dates (no Neon read): 10 of 45 uncertain.
+      Pending Zack's confirmations, then `--apply` on Neon
 
 ## Phase 4: event pages from the database and readiness checklist (ADR 0009)
 
