@@ -14,6 +14,11 @@ export async function handleAuthRequest(request) {
   if (BLOCKED.test(pathname)) {
     return new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
   }
-  const { auth } = await import("./auth.mjs");
-  return auth.handler(request);
+  try {
+    const { auth } = await import("./auth.mjs");
+    return await auth.handler(request);
+  } catch (err) {
+    const { adminFailure } = await import("../admin/log.mjs");
+    return adminFailure("api/auth", err);
+  }
 }

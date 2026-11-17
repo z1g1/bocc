@@ -16,6 +16,7 @@
 import { defineMiddleware } from "astro:middleware";
 import { guardRequest, isPrivatePath, isProtectedPath } from "./lib/admin/guard.mjs";
 import { withPrivateHeaders } from "./lib/admin/headers.mjs";
+import { adminFailure } from "./lib/admin/log.mjs";
 
 export const onRequest = defineMiddleware(async (ctx, next) => {
   const path = ctx.url.pathname;
@@ -25,7 +26,12 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
   let setCookies: string[] = [];
 
   if (isProtectedPath(path)) {
-    const result = await guardRequest(ctx.url, ctx.request.headers);
+    let result;
+    try {
+      result = await guardRequest(ctx.url, ctx.request.headers);
+    } catch (err) {
+      return withPrivateHeaders(adminFailure("middleware", err), { setCookies, dev });
+    }
     setCookies = result.setCookies;
     if (result.response) return withPrivateHeaders(result.response, { setCookies, dev });
     ctx.locals.user = result.user;
