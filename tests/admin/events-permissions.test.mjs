@@ -44,8 +44,11 @@ const insertMedia = (db, m) => {
 
 describe("migration", () => {
   test("applied after the admin auth migration", async () => {
-    const { rows } = await owner.query("select filename from schema_migrations order by filename desc limit 1");
-    assert.equal(rows[0].filename, "20261118120000_events_media.sql");
+    // Later migrations (e.g. 20261119120000_media_heic_originals.sql) may follow it.
+    const { rows } = await owner.query("select filename from schema_migrations where filename >= '20261116' order by filename");
+    const names = rows.map((r) => r.filename);
+    assert.ok(names.indexOf("20261118120000_events_media.sql") > names.indexOf("20261116120000_admin_auth.sql"));
+    assert.ok(names.indexOf("20261116120000_admin_auth.sql") >= 0);
   });
 
   test("no Phase 4/5 tables yet", async () => {

@@ -172,6 +172,22 @@ describe("photo import: dates and matching", () => {
       [["09-10-2024.HEIC", "2024-09-10", false], ["IMG_2892.JPG", "2026-09-08", true]]);
   });
 
+  test("identical files under different names are flagged, and only one may be imported", () => {
+    const same = "d".repeat(64);
+    const rows = matchPhotos([
+      { name: "09-10-2024.HEIC", sha256: same, capture: "2024-09-10T08:00:00" },
+      { name: "09-10-2024 copy.HEIC", sha256: same, capture: "2024-09-10T08:00:00" },
+      { name: "09-03-2024.HEIC", sha256: "e".repeat(64), capture: "2024-09-03T08:00:00" },
+    ], { eventDates: events });
+    assert.ok(rows[0].flags.includes("same bytes as 09-10-2024 copy.HEIC"));
+    assert.ok(rows[1].flags.includes("same bytes as 09-10-2024.HEIC"));
+    assert.ok(!rows[2].flags.some((f) => f.startsWith("same bytes")));
+    const both = new Map([["09-10-2024.HEIC", "2024-09-10"], ["09-10-2024 copy.HEIC", "2024-09-10"]]);
+    assert.throws(() => resolvePlan(rows, both), /same bytes, skip all but one: 09-10-2024\.HEIC, 09-10-2024 copy\.HEIC/);
+    const { plan, skipped } = resolvePlan(rows, new Map([["09-10-2024.HEIC", "2024-09-10"], ["09-10-2024 copy.HEIC", "skip"]]));
+    assert.deepEqual([plan.map((p) => p.name), skipped], [["09-10-2024.HEIC", "09-03-2024.HEIC"], ["09-10-2024 copy.HEIC"]]);
+  });
+
   test("import ids are stable UUIDs derived from the file hash", () => {
     const h = "0123456789abcdef".repeat(4);
     const id = importId(h);

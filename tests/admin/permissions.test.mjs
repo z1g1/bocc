@@ -29,6 +29,7 @@ describe("migrations", () => {
       "20260912120000_streak_celebration_fields.sql",
       "20261116120000_admin_auth.sql",
       "20261118120000_events_media.sql",
+      "20261119120000_media_heic_originals.sql",
     ]);
   });
 

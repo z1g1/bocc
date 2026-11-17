@@ -16,6 +16,8 @@
 //      11-06-2024.HEIC,skip           # leave this photo out
 //
 // 3. Apply (writes): uploads three objects per photo through storage.mjs presignPut,
+//    (the original is the untouched file: HEIC stays HEIC, image/heic, which migration
+//    20261119120000 allows for signin_board only; display and thumbnail are JPEGs),
 //    then, in ONE transaction as the owner, creates missing events rows as `held`,
 //    inserts the event_media rows (kind signin_board, never publicly_usable, status
 //    ready, uploaded_by NULL) and one summary audit_log row.
@@ -23,6 +25,8 @@
 //        --photos <dir> --python <venv>/bin/python --apply --confirm <override file> \
 //        --work-dir <new empty dir outside the repo>
 //    Every uncertain row must be listed in the override file, or nothing is written.
+//    --confirm WITHOUT --apply is still a dry run: it checks the file and prints what
+//    --apply would do.
 //
 // Idempotent without a schema change: each photo's event_media id is derived from the
 // SHA-256 of its source file (match.mjs importId), so its object keys are fixed too. A
@@ -31,26 +35,34 @@
 // a re-run; the summary audit row lists every file, hash and id.)
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { formatTable, importId, matchPhotos, parseOverrides, resolvePlan } from "./match.mjs";
-import { createStorage, mediaKey, readStorageEnv } from "../../src/lib/admin/storage.mjs";
+import { createStorage, extForContentType, mediaKey, readStorageEnv } from "../../src/lib/admin/storage.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CONVERTER = join(HERE, "convert.py");
 export const AUDIT_ACTION = "media.import_signin_photos";
 
-/** Regular, non-hidden files under `dir` (the Drive export has one sub-folder). */
+/**
+ * Size caps for what the import uploads: the same as the browser path's
+ * (src/lib/admin/media.mjs LIMITS). The real originals are 0.1–3.2 MB.
+ */
+export const IMPORT_LIMITS = Object.freeze({ original: 25 * 1024 * 1024, display: 5 * 1024 * 1024, thumb: 1024 * 1024 });
+
+/** Regular, non-hidden files under `dir` (the Drive export has one sub-folder); symlinks refused. */
 export function listPhotoFiles(dir) {
   const out = [];
   const walk = (d, depth) => {
     for (const name of readdirSync(d).sort()) {
       if (name.startsWith(".") || name === "__MACOSX") continue;
       const p = join(d, name);
-      const st = statSync(p);
+      // lstat: never follow a symlink out of the (untrusted) extracted folder.
+      const st = lstatSync(p);
+      if (st.isSymbolicLink()) throw new Error(`refusing a symlink in the photo folder: ${name}`);
       if (st.isDirectory() && depth < 2) walk(p, depth + 1);
       else if (st.isFile()) out.push(p);
     }
@@ -71,8 +83,10 @@ function runPython(python, args) {
   return r.stdout.trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 
-/** EXIF capture date and hash for each file. */
+/** EXIF capture date and hash for each file. Files over the original cap are refused. */
 export function inspectPhotos(python, files) {
+  const big = files.filter((f) => lstatSync(f).size > IMPORT_LIMITS.original).map((f) => basename(f));
+  if (big.length) throw new Error(`over the ${IMPORT_LIMITS.original} byte cap: ${big.join(", ")}`);
   const info = runPython(python, ["inspect", ...files]);
   return info.map((p, i) => ({ ...p, path: files[i] }));
 }
@@ -112,7 +126,12 @@ export async function applyImport({ client, storage, resolved, paths, convert, w
     const out = join(workDir, item.id);
     mkdirSync(out, { recursive: false });
     const files = convert(paths.get(item.name), out);
-    const ext = files.original.contentType === "image/png" ? "png" : "jpg";
+    const ext = extForContentType(files.original.contentType);
+    if (!["jpg", "png", "heic", "heif"].includes(ext)) throw new Error(`${item.name}: unexpected original type ${files.original.contentType}`);
+    for (const v of ["original", "display", "thumb"]) {
+      if (!(files[v].size > 0 && files[v].size <= IMPORT_LIMITS[v])) throw new Error(`${item.name}: ${v} is ${files[v].size} bytes, over the cap`);
+      if (v !== "original" && files[v].contentType !== "image/jpeg") throw new Error(`${item.name}: ${v} must be a JPEG`);
+    }
     const keys = {
       original: mediaKey(item.date, item.id, "original", ext),
       display: mediaKey(item.date, item.id, "display", "jpg"),
@@ -212,12 +231,23 @@ async function main() {
     console.log(formatTable(rows));
     const unsure = rows.filter((r) => r.uncertain).length;
     console.log(`\n${rows.length} photos, ${unsure} uncertain (marked ?)${eventDates ? `; ${eventDates.length} known events (${client ? "database" : a["events-file"]})` : "; events NOT checked (--no-db)"}`);
-    if (!a.apply) {
+    if (!a.apply && !a.confirm) {
       console.log("Dry run: nothing was written.");
       return;
     }
 
     const resolved = resolvePlan(rows, parseOverrides(readFileSync(a.confirm, "utf8")));
+    if (!a.apply) {
+      // Dry run WITH the confirm file: show exactly what --apply would do.
+      const known = new Set(eventDates ?? []);
+      const newEvents = [...new Set(resolved.plan.map((p) => p.date))].filter((d) => !known.has(d)).sort();
+      console.log(`\nWith ${a.confirm}: every uncertain row is confirmed. --apply would import ${resolved.plan.length}` +
+        ` (${resolved.plan.filter((p) => p.overridden).length} with a changed date), skip ${resolved.skipped.length},` +
+        ` and create ${newEvents.length} events as held${newEvents.length ? `: ${newEvents.join(", ")}` : ""}.`);
+      for (const p of resolved.plan.filter((x) => x.overridden)) console.log(`  ${p.name} -> ${p.date}`);
+      console.log("Dry run: nothing was written.");
+      return;
+    }
     const s = readStorageEnv();
     if (!s.enabled) throw new Error(s.message);
     const workDir = resolve(a["work-dir"]);

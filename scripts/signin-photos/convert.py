@@ -11,11 +11,11 @@ inspect  one JSON object per line: name, sha256, size, format, width, height,
          DateTime, else null) and offset (OffsetTimeOriginal, informational).
 convert  writes three files to <outdir> (which must exist and be empty) and prints one
          JSON object describing them:
-           original.jpg|.png  JPEG and PNG sources are copied byte for byte. A HEIC is
-                              converted to a full-resolution JPEG (quality 95, EXIF and
-                              colour profile kept), which is what iOS Safari uploads when
-                              a HEIC is picked with accept="image/jpeg,image/png"; the
-                              schema only stores JPEG/PNG originals.
+           original.<ext>     the source file, byte for byte (the archive): .jpg for
+                              JPEG (Pillow calls many phone JPEGs "MPO"), .png, and
+                              .heic / .heif for HEIF files (by the ftyp brand). HEIC/HEIF
+                              originals are allowed for signin_board only (migration
+                              20261119120000); browser uploads still refuse HEIC.
            display.jpg        long edge 1600px (never upscaled), quality 85
            thumb.jpg          long edge 400px, from the display copy, quality 80
          The copies match the browser path (public/js/admin-media.js): EXIF orientation
@@ -29,12 +29,22 @@ import json
 import os
 import shutil
 import sys
+import warnings
 
 import pillow_heif
 from PIL import Image, ImageCms, ImageOps
 
 pillow_heif.register_heif_opener()
-Image.MAX_IMAGE_PIXELS = 120_000_000  # a 48 MP photo is fine; refuse decompression bombs
+# Decompression bombs: Pillow WARNS above MAX_IMAGE_PIXELS and only errors above twice
+# that. Make the warning an error too, so anything over 120 MP is refused (a 48 MP
+# phone photo is fine). The importer also caps the file size (import.mjs).
+Image.MAX_IMAGE_PIXELS = 120_000_000
+warnings.simplefilter("error", Image.DecompressionBombWarning)
+
+# HEIF major brands (ISO/IEC 23008-12): HEVC-coded stills are image/heic, the generic
+# ones image/heif. Sequences, AVIF and anything else are refused.
+HEIC_BRANDS = {b"heic", b"heix", b"heim", b"heis"}
+HEIF_BRANDS = {b"mif1"}
 
 DISPLAY_EDGE, DISPLAY_QUALITY = 1600, 85
 THUMB_EDGE, THUMB_QUALITY = 400, 80
@@ -106,28 +116,35 @@ def save_jpeg(im, path, quality):
     im.save(path, "JPEG", quality=quality, optimize=True, progressive=True)
 
 
+def heif_type(path):
+    with open(path, "rb") as f:
+        head = f.read(12)
+    if head[4:8] != b"ftyp":
+        raise SystemExit("convert: HEIF file without an ftyp box")
+    brand = head[8:12]
+    if brand in HEIC_BRANDS:
+        return "heic", "image/heic"
+    if brand in HEIF_BRANDS:
+        return "heif", "image/heif"
+    raise SystemExit(f"convert: unsupported HEIF brand {brand!r}")
+
+
 def convert(src, outdir):
     if not os.path.isdir(outdir) or os.listdir(outdir):
         raise SystemExit("convert: outdir must be an existing empty directory")
     with Image.open(src) as im:
         fmt = im.format
-        if fmt == "JPEG":
-            original, ctype = os.path.join(outdir, "original.jpg"), "image/jpeg"
-            shutil.copyfile(src, original)
+        if fmt in ("JPEG", "MPO"):
+            ext, ctype = "jpg", "image/jpeg"
         elif fmt == "PNG":
-            original, ctype = os.path.join(outdir, "original.png"), "image/png"
-            shutil.copyfile(src, original)
+            ext, ctype = "png", "image/png"
         elif fmt in ("HEIF", "HEIC"):
-            original, ctype = os.path.join(outdir, "original.jpg"), "image/jpeg"
-            kw = {"quality": 95}
-            exif = im.info.get("exif")
-            if exif:
-                kw["exif"] = exif
-            if im.info.get("icc_profile"):
-                kw["icc_profile"] = im.info["icc_profile"]
-            im.convert("RGB").save(original, "JPEG", **kw)
+            ext, ctype = heif_type(src)
         else:
             raise SystemExit(f"convert: unsupported format {fmt}")
+        # The original is the untouched source file.
+        original = os.path.join(outdir, f"original.{ext}")
+        shutil.copyfile(src, original)
 
         upright = to_srgb_rgb(im)
     dw, dh = fit_within(upright.width, upright.height, DISPLAY_EDGE)

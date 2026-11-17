@@ -2,14 +2,16 @@
 // ADR 0010 decision 4) against the throwaway database and MinIO, with tiny generated
 // images only (never real photos):
 //   - a fake converter: rows, events created as `held`, one summary audit row, objects
-//     in the bucket, and a re-run that imports nothing (idempotent)
+//     in the bucket (a HEIC original stored as image/heic, untouched), and a re-run that
+//     imports nothing (idempotent)
+//   - the photo folder: symlinks and files over the size cap are refused
 //   - the real converter (convert.py) when BOCC_PHOTO_PYTHON points at a Python with
 //     Pillow and pillow-heif: a synthetic HEIC and a rotated JPEG, end to end
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OWNER_URL, connect } from "./helpers.mjs";
@@ -34,17 +36,35 @@ after(async () => {
   if (dir) rmSync(dir, { recursive: true, force: true });
 });
 
-/** Writes the three variants as the real converter would, from the source bytes. */
+/** Writes the three variants as the real converter would: the original untouched. */
 const fakeConvert = (src, out) => {
   const bytes = readFileSync(src);
+  const heic = src.endsWith(".HEIC");
   const files = {};
   for (const v of ["original", "display", "thumb"]) {
-    const p = join(out, `${v}.jpg`);
+    const p = join(out, `${v}.${v === "original" && heic ? "heic" : "jpg"}`);
     writeFileSync(p, v === "original" ? bytes : Buffer.concat([JPEG, Buffer.from(v)]));
-    files[v] = { path: p, contentType: "image/jpeg", size: readFileSync(p).length };
+    files[v] = { path: p, contentType: v === "original" && heic ? "image/heic" : "image/jpeg", size: readFileSync(p).length };
   }
   return files;
 };
+
+describe("the photo folder is untrusted", () => {
+  test("symlinks are refused, not followed", () => {
+    const d = mkdtempSync(join(dir, "links-"));
+    mkdirSync(join(d, "Signin Sheets"));
+    writeFileSync(join(d, "Signin Sheets", "09-10-2024.HEIC"), JPEG);
+    symlinkSync("/etc/passwd", join(d, "Signin Sheets", "IMG_0009.HEIC"));
+    assert.throws(() => listPhotoFiles(d), /refusing a symlink in the photo folder: IMG_0009\.HEIC/);
+  });
+  test("files over the 25 MB cap are refused before decoding", () => {
+    const d = mkdtempSync(join(dir, "big-"));
+    const f = join(d, "IMG_0010.HEIC");
+    writeFileSync(f, "");
+    truncateSync(f, 25 * 1024 * 1024 + 1); // sparse
+    assert.throws(() => inspectPhotos("/nonexistent-python", listPhotoFiles(d)), /over the 26214400 byte cap: IMG_0010\.HEIC/);
+  });
+});
 
 describe("photo import --apply against MinIO", { skip }, () => {
   test("uploads, inserts ready signin_board rows, creates held events, one audit row; a re-run does nothing", async () => {
@@ -91,11 +111,13 @@ describe("photo import --apply against MinIO", { skip }, () => {
          from event_media where id = any($1::uuid[]) order by event_date`, [ids]);
     assert.equal(media.length, 2);
     for (const m of media) {
-      assert.deepEqual([m.kind, m.publicly_usable, m.status, m.uploaded_by, m.content_type], ["signin_board", false, "ready", null, "image/jpeg"]);
-      assert.equal(m.original_key, `events/${m.d}/${m.id}/original.jpg`);
+      assert.deepEqual([m.kind, m.publicly_usable, m.status, m.uploaded_by, m.content_type], ["signin_board", false, "ready", null, "image/heic"]);
+      assert.equal(m.original_key, `events/${m.d}/${m.id}/original.heic`);
+      assert.equal(m.display_key, `events/${m.d}/${m.id}/display.jpg`);
       for (const k of [m.original_key, m.display_key, m.thumb_key]) assert.ok(await storage.headObject({ key: k }), k);
     }
     const original = await fetch(storage.presignGet({ key: media[0].original_key }).url);
+    assert.equal(original.headers.get("content-type"), "image/heic");
     assert.deepEqual(Buffer.from(await original.arrayBuffer()), photos[0].bytes, "original stored as given");
 
     const { rows: audit } = await owner.query(
@@ -128,24 +150,44 @@ ex = Image.Exif(); ex.get_ifd(0x8769)[36867] = "2025:03:04 08:45:00"
 Image.new("RGB", (2000, 1000), (10, 120, 200)).save(d + "/03-04-2025.HEIC", exif=ex.tobytes())
 ex2 = Image.Exif(); ex2[274] = 6; ex2.get_ifd(0x8769)[36867] = "2025:03:11 09:00:00"; ex2.get_ifd(0x8825)[1] = "N"
 Image.new("RGB", (1000, 600), (200, 50, 50)).save(d + "/IMG_0003.JPG", exif=ex2.tobytes(), quality=90)
+ex3 = Image.Exif(); ex3.get_ifd(0x8769)[36867] = "2025:03:18 08:40:00"
+Image.new("RGB", (800, 600), (0, 0, 0)).save(d + "/IMG_0004.JPG", "MPO", save_all=True,
+    append_images=[Image.new("RGB", (800, 600), (9, 9, 9))], exif=ex3.tobytes())
 `, src], { encoding: "utf8" });
     assert.equal(gen.status, 0, gen.stderr);
 
     const files = listPhotoFiles(src);
     const info = inspectPhotos(PYTHON, files);
-    assert.deepEqual(info.map((p) => [p.name, p.capture, p.format]),
-      [["03-04-2025.HEIC", "2025-03-04T08:45:00", "HEIF"], ["IMG_0003.JPG", "2025-03-11T09:00:00", "JPEG"]]);
+    assert.deepEqual(info.map((p) => [p.name, p.capture, p.format]), [
+      ["03-04-2025.HEIC", "2025-03-04T08:45:00", "HEIF"], ["IMG_0003.JPG", "2025-03-11T09:00:00", "JPEG"],
+      ["IMG_0004.JPG", "2025-03-18T08:40:00", "MPO"],
+    ]);
 
     const convert = pythonConverter(PYTHON);
     const out1 = mkdtempSync(join(dir, "c1-"));
     const heic = convert(files[0], out1);
-    assert.equal(heic.original.contentType, "image/jpeg", "HEIC archived as a full-size JPEG");
+    assert.equal(heic.original.contentType, "image/heic", "HEIC archived as itself");
+    assert.match(heic.original.path, /original\.heic$/);
+    assert.deepEqual(readFileSync(heic.original.path), readFileSync(files[0]), "HEIC original byte for byte");
     assert.deepEqual([heic.display.width, heic.display.height, heic.thumb.width, heic.thumb.height], [1600, 800, 400, 200]);
     const out2 = mkdtempSync(join(dir, "c2-"));
     const jpg = convert(files[1], out2);
     assert.deepEqual(readFileSync(jpg.original.path), readFileSync(files[1]), "a JPEG original is byte for byte");
     assert.deepEqual([jpg.display.width, jpg.display.height], [600, 1000], "rotated upright, not upscaled");
     assert.deepEqual([jpg.thumb.width, jpg.thumb.height], [240, 400]);
+
+    const mpo = convert(files[2], mkdtempSync(join(dir, "c3-")));
+    assert.equal(mpo.original.contentType, "image/jpeg", "Pillow's MPO is a JPEG");
+    assert.match(mpo.original.path, /original\.jpg$/);
+    assert.deepEqual([mpo.display.width, mpo.display.height], [800, 600]);
+
+    // Decompression bombs: over 120 MP is refused (Pillow only warns up to 240 MP).
+    const bombDir = mkdtempSync(join(dir, "bomb-"));
+    const bomb = spawnSync(PYTHON, ["-I", "-c",
+      "import sys; from PIL import Image; Image.MAX_IMAGE_PIXELS=None; Image.new('1', (11000, 11000)).save(sys.argv[1] + '/IMG_0005.PNG')",
+      bombDir], { encoding: "utf8" });
+    assert.equal(bomb.status, 0, bomb.stderr);
+    assert.throws(() => inspectPhotos(PYTHON, listPhotoFiles(bombDir)), /DecompressionBomb/);
 
     // The copies carry no metadata at all.
     const meta = spawnSync(PYTHON, ["-I", "-c", `

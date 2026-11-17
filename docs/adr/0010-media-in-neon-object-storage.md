@@ -47,8 +47,12 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
    from Drive) are imported once, in Phase 3, by a local script (amended 2026-11-17, previously
    deferred):
    - it runs on an operator's machine, not the server, so "no images are processed on the
-     server" still holds. It converts HEIC with a local decoder and writes the same three
-     objects per photo as a browser upload (original, 1600px JPEG, 400px thumbnail)
+     server" still holds. It decodes HEIC with a local decoder and writes the same three
+     objects per photo as a browser upload: the untouched original (the iPhone **HEIC
+     itself**, `image/heic`), a 1600px JPEG and a 400px thumbnail
+   - HEIC/HEIF originals are allowed for `signin_board` only, and only through this import
+     (migration `20261119120000_media_heic_originals.sql`). The browser upload still accepts
+     only JPEG and PNG, as in decision 3. Display copies and thumbnails are always JPEG
    - each photo is matched to an event by the date in its file name, else by its capture date
      (the most recent event on or before it). A dry run prints the match table, and the
      operator confirms uncertain matches before anything is written
@@ -68,4 +72,5 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
 - *Still unverified:* whether inherited objects count toward 5 GB, and presigned PUT from mobile
   browsers.
 - *Amended 2026-11-16:* the HEIC refusal above.
-- *Amended 2026-11-17:* the one-time import of the old sign-in board photos (decision 4).
+- *Amended 2026-11-17:* the one-time import of the old sign-in board photos (decision 4),
+  keeping the original HEIC files as the archive.

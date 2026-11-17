@@ -254,7 +254,9 @@ configured (`src/lib/admin/headers.mjs`).
   the branch's storage credential. They are private and unreferenced, so this is cleanup only.
 - *Sign-in board photo import* (`scripts/signin-photos/import.mjs`, one time): it needs the
   owner URL (`.env.local`) and the branch's `STORAGE_*` values (a separate env file), and it
-  writes only with `--apply --confirm <file>`.
+  writes only with `--apply --confirm <file>`. Its originals are the untouched HEIC files
+  (`original.heic`, `image/heic`), which the database allows for `signin_board` only
+  (migration `20261119120000`). Run migrations on the branch before the import.
 
 ## Verification checklist
 

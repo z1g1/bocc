@@ -122,12 +122,17 @@ describe("media keys", () => {
     assert.throws(() => mediaKey("2026-11-24", "../../etc", "original", "jpg"), /uuid/);
     assert.throws(() => mediaKey("2026-11-24", id.toUpperCase(), "original", "jpg"), /uuid/);
     assert.throws(() => mediaKey("2026-11-24", id, "huge", "jpg"), /variant/);
-    assert.throws(() => mediaKey("2026-11-24", id, "original", "heic"), /extension/);
+    assert.throws(() => mediaKey("2026-11-24", id, "original", "gif"), /extension/);
+    assert.throws(() => mediaKey("2026-11-24", id, "display", "heic"), /originals only/);
+    assert.throws(() => mediaKey("2026-11-24", id, "thumb", "heif"), /originals only/);
   });
   test("extension per allowed content type", () => {
     assert.equal(extForContentType("image/jpeg"), "jpg");
     assert.equal(extForContentType("video/quicktime"), "mov");
-    assert.equal(extForContentType("image/heic"), null);
+    assert.equal(extForContentType("image/heic"), "heic"); // imported originals only
+    assert.equal(extForContentType("image/heif"), "heif");
+    assert.equal(mediaKey("2026-11-24", id, "original", "heic"), `events/2026-11-24/${id}/original.heic`);
+    assert.equal(extForContentType("image/gif"), null);
     assert.equal(extForContentType("toString"), null);
   });
 });

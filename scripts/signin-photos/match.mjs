@@ -14,6 +14,8 @@
 //   - more than one photo matches the same date (allowed, but listed)
 //   - the file-name date is not a Tuesday
 //   - there is no date at all
+//   - another file has the same bytes (same SHA-256); all but one must then be skipped,
+//     since the row id is derived from the hash (resolvePlan refuses otherwise)
 
 const DAY_MS = 86400000;
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -107,6 +109,12 @@ export function matchPhotos(photos, { eventDates = null } = {}) {
     const n = r.matched ? perDate.get(r.matched) : 0;
     if (n > 1) r.flags.push(`${n} photos for this date`);
   }
+  const perHash = new Map();
+  for (const r of rows) if (r.sha256) perHash.set(r.sha256, [...(perHash.get(r.sha256) ?? []), r.name]);
+  for (const r of rows) {
+    const same = (r.sha256 ? perHash.get(r.sha256) : []).filter((n) => n !== r.name);
+    if (same.length) r.flags.push(`same bytes as ${same.join(", ")}`);
+  }
   return rows.map((r) => ({ ...r, uncertain: r.flags.length > 0 }));
 }
 
@@ -149,6 +157,15 @@ export function resolvePlan(rows, overrides) {
   const problems = [];
   if (unknown.length) problems.push(`not in the import: ${unknown.join(", ")}`);
   if (unconfirmed.length) problems.push(`uncertain and not confirmed: ${unconfirmed.join(", ")}`);
+  // Identical files would get the same id and keys: only one of them may be imported.
+  const kept = new Map();
+  for (const r of rows) {
+    if (!r.sha256 || overrides.get(r.name) === "skip") continue;
+    kept.set(r.sha256, [...(kept.get(r.sha256) ?? []), r.name]);
+  }
+  for (const names of kept.values()) {
+    if (names.length > 1) problems.push(`same bytes, skip all but one: ${names.join(", ")}`);
+  }
   if (problems.length) throw new Error(`refusing to apply:\n  ${problems.join("\n  ")}`);
 
   const plan = [];

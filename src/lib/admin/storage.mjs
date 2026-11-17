@@ -134,7 +134,14 @@ export function storageOrigin(configOrEnv = process.env) {
 // ─── Keys ────────────────────────────────────────────────────────────────────
 
 export const MEDIA_VARIANTS = /** @type {const} */ (["original", "display", "thumb"]);
-const EXT_BY_TYPE = { "image/jpeg": "jpg", "image/png": "png", "video/mp4": "mp4", "video/quicktime": "mov" };
+// heic/heif: only the untouched originals of the one-time sign-in board photo import
+// (ADR 0010 decision 4, migration 20261119120000). Browser uploads still refuse HEIC,
+// and display copies and thumbnails are always JPEG.
+const EXT_BY_TYPE = {
+  "image/jpeg": "jpg", "image/png": "png", "image/heic": "heic", "image/heif": "heif",
+  "video/mp4": "mp4", "video/quicktime": "mov",
+};
+const ORIGINAL_ONLY_EXTS = ["heic", "heif"];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** File extension for an allowed media content type, or null. */
@@ -156,13 +163,14 @@ export function isIsoDate(s) {
  * @param {string} eventDate  YYYY-MM-DD
  * @param {string} id         event_media.id (lowercase uuid)
  * @param {"original"|"display"|"thumb"} variant
- * @param {"jpg"|"png"|"mp4"|"mov"} ext
+ * @param {"jpg"|"png"|"heic"|"heif"|"mp4"|"mov"} ext  heic/heif for the original only
  */
 export function mediaKey(eventDate, id, variant, ext) {
   if (!isIsoDate(eventDate)) throw new Error("mediaKey: eventDate must be YYYY-MM-DD");
   if (typeof id !== "string" || !UUID_RE.test(id)) throw new Error("mediaKey: id must be a lowercase uuid");
   if (!MEDIA_VARIANTS.includes(variant)) throw new Error("mediaKey: unknown variant");
   if (!Object.values(EXT_BY_TYPE).includes(ext)) throw new Error("mediaKey: unknown extension");
+  if (ORIGINAL_ONLY_EXTS.includes(ext) && variant !== "original") throw new Error("mediaKey: heic/heif is for originals only");
   return `events/${eventDate}/${id}/${variant}.${ext}`;
 }
 
