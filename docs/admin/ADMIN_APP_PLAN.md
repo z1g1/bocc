@@ -329,10 +329,24 @@ compared.
     `debug = true`; nothing in production. An expired event date still 302s to `/`, an unknown
     path gets the custom 404, sitemap/feed/llms/robots 200
 - [ ] Zack: sign in on staging and add a passkey
-- [ ] Production (`docs/admin/PHASE2_RELEASE.md`): migrate Neon `production`, set its own
-      `admin_app` password, check the production values of `ADMIN_DB_URL` and
-      `BETTER_AUTH_SECRET` (both already set; make sure they aren't the `dev` ones), merge to
-      `main` with Zack's go-ahead, `create-admin`, then the passkey `rpID` check on 716coffee.club
+- [x] Production, 2026-11-17, with Zack's go-ahead: Neon `production` migrated, `admin_app` given
+      its own password, `main` fast-forwarded to `9a0ca47`. Every admin route returned an empty
+      500 and the function log was empty: the Production `ADMIN_DB_URL`/`BETTER_AUTH_SECRET`
+      values were wrong (Netlify's API returns placeholders for secrets, so this couldn't be
+      checked beforehand). Zack re-entered them; `fb0041e` (which logs such failures, with
+      variable names only and connection strings redacted) went out as the redeploy. Then on
+      https://716coffee.club:
+  - `/admin/` 302s to `/login/`, `/api/admin/me` 401. A failed sign-in left its rate-limit
+    row in Neon **production** and nothing in `dev`, which shows production's `ADMIN_DB_URL`
+    is correct. Sign-up refused, cross-origin sign-in 403, `/api/auth/admin/*` 404, `/login/`
+    `noindex` and `no-store`
+  - Every public page, event page, sitemap, feed, `llms.txt`, `robots.txt` 200; an expired
+    event date 302s to `/`; unknown path → custom 404. `/checkin/bocc` (with and without
+    `?token=`) 200, same bytes as before, no analytics; `js/checkin.js` unchanged. A `debug:
+    "1"` POST returned 200 and is in Neon `production` with `debug = true`
+    (`phase2-release-debug-20261117t202057@example.com`), not in `dev`
+- [ ] Zack: `create-admin` with production values in `.env.admin`, sign in on 716coffee.club and
+      add a passkey (the `rpID` check), then point `.env.admin` back at `dev` or delete it
 
 ## Phase 3: Google Form replacement and media (ADRs 0009, 0010)
 
