@@ -354,21 +354,31 @@ compared.
 - [ ] Migration: `events`, `event_reports`, `event_media`
 - [ ] Neon bucket (private) and `storage:read`/`storage:write` credentials for staging and
       production
-- [ ] `/admin/events/YYYY-MM-DD`:
+- [x] `/admin/events/YYYY-MM-DD`:
   - status
   - location
   - cancel flow (reason, announced on socials)
   - report form (Gives and Asks count, notes, Bling given and details)
   - calculated check-in count shown next to the report
+  - Built on `dev` 2026-11-17 (`src/lib/admin/events.mjs`). Audit actions `event.update`,
+    `event.cancel`, `event.uncancel`, `event_report.submit`, `event_report.update`. A date
+    without a row renders as a new scheduled event; the first save creates it. Reports are
+    refused on cancelled events and on dates after today (Eastern); cancelling is refused
+    once a report exists. Editing an imported report makes it `source = 'admin'`
 - [ ] Photo upload from a phone:
   - the browser makes the 1600px JPEG and 400px thumbnail
   - uploads go straight to the bucket via presigned PUT
   - a gallery shown through short-lived GET URLs
   - each photo tagged `signin_board` / `social_photo`, with `publicly_usable`
-- [ ] Dashboard: upcoming events, and **"report missing"** for past dates still marked
-      `scheduled`
-- [ ] Import the Google Form CSV (fix `7/14/0026`), using a backfill script like the Airtable
-      one
+- [x] Dashboard: upcoming events, and **"report missing"** for past dates still marked
+      `scheduled` ("today" is the Eastern date). Also `/admin/events/`: upcoming, past (paged,
+      `?missing=1`) and an open-a-date form
+- [x] Import script for the Google Form CSV (fix `7/14/0026`), like the Airtable backfill:
+      `backend/scripts/import-google-form.js` (dry run by default, `--apply` writes as the owner,
+      idempotent, never overwrites `source = 'admin'`, one `event_report.import` audit row).
+      Dry run of the real export: 135 rows (22 `google_form`, 113 `pre_form`), 3 year fixes,
+      0 errors
+- [ ] Run the import on Neon (staging, then production): pending Zack's go-ahead
 - [ ] Import the old sign-in board photos (45, from the Drive export) with a local script:
       HEIC converted on the operator's machine, matched to events by file-name date or capture
       date, dry-run match table confirmed by Zack first (ADR 0010, amended 2026-11-17)
