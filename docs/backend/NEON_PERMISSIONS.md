@@ -4,7 +4,8 @@ Required roles, grants, and key handling for BOCC's Neon Postgres check-in store
 Follows the root `CLAUDE.md` policy: **least privilege, never the owner/admin credential
 in the app, document the exact permissions, verify with the restricted role.**
 Decision context: ADR 0003 (Postgres data model), ADR 0004 (streaks), ADR 0005 (Neon host),
-ADR 0008 (admin login, roles and the `admin_app` identity).
+ADR 0008 (admin login, roles and the `admin_app` identity), ADR 0009 (events), ADR 0010 (media
+in Neon Object Storage).
 
 - Project: `young-queen-80162551`, branch `production`, database `neondb`, region `us-east-2`
 - Migrations: `backend/db/migrations/*.sql`, applied by `npm run migrate`
@@ -16,6 +17,7 @@ ADR 0008 (admin login, roles and the `admin_app` identity).
 | `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`; `SELECT` on `held_occurrences`, `streaks` | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
 | `neondb_owner` | operator only: `npm run migrate` | owner of schema objects, creates roles | local `.env.local` from `neon link` (gitignored). **Never in Netlify.** |
+| Storage credential (one per branch) | admin app: presigned media URLs (`src/lib/admin/storage.mjs`); `scripts/storage-cors.mjs` | `storage:read`, `storage:write` on the branch it was made on and its descendants. Not a Postgres role | Netlify env `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY`; see "Storage" |
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
 
 `checkin_writer` has **no** `UPDATE`, `DELETE`, DDL, or access to `schema_migrations`.
@@ -39,6 +41,8 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `attendees` columns `ok_to_email`, `name`, `business_name`, `phone` | `UPDATE` (no other column) |
 | `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
+| `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`) |
+| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the only table it may delete from; the app deletes the objects too) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -46,6 +50,12 @@ see every row; there is deliberately no INSERT or DELETE policy. It has **no** `
 append-only twice over: no `UPDATE`/`DELETE`/`TRUNCATE` grant, and a trigger refuses those
 statements even for the owner. Roles live only in `user_roles`; the Better Auth admin plugin's
 `role` column is never read.
+
+The Phase 3 tables (`events`, `event_reports`, `event_media`) have no RLS, like `user_roles` and
+`audit_log`: their rows aren't split between users, so the grants are the whole policy. Nothing
+else is granted on them: `checkin_writer` and `public` get nothing, and Supabase-style `anon` /
+`authenticated` roles are revoked if they exist. `event_links`, `social_posts` and
+`social_post_channels` (Phases 4 and 5) get their grants in their own migrations.
 
 ## Connection
 
@@ -75,6 +85,13 @@ is an optional override; a malformed value fails closed.
 | `BETTER_AUTH_SECRET` | Netlify (required for the admin app) | at least 32 characters (`openssl rand -hex 32`); signs session cookies. Its own value per context |
 | `BETTER_AUTH_URL` | Netlify (required for the admin app) | the site origin, no path. Production `https://716coffee.club`; Branch deploys `https://dev--bocc-backend.netlify.app`; local `http://localhost:4321`. Passkeys (`rpID`) and the admin CSRF check are bound to it |
 | `ADMIN_DB_POOL_MAX` | Netlify (optional) | `admin_app` pool size per function instance, default `3`, minimum `2` (a password reset holds one connection while Better Auth uses another) |
+
+| `STORAGE_ENDPOINT` | Netlify (optional; media is off without it) | the branch's S3 endpoint, see "Storage". Not secret |
+| `STORAGE_BUCKET` | Netlify (optional) | `bocc-media`. Not secret |
+| `STORAGE_REGION` | Netlify (optional) | `us-east-2` (the default). Not secret |
+| `STORAGE_ACCESS_KEY_ID` | Netlify (optional) | the credential's `token_id` (`nak_live_…`) |
+| `STORAGE_SECRET_ACCESS_KEY` | Netlify (optional) | the credential's `s3_secret_access_key` (`nsk_live_…`). **Secret** |
+| `STORAGE_FORCE_PATH_STYLE` | Netlify (optional) | default `true`; leave unset (Neon is path-style only) |
 
 The four admin variables are read only by on-demand admin routes and the `create-admin` CLI
 (`src/lib/auth/env.mjs` fails fast listing every missing one). The static build and the
@@ -153,10 +170,78 @@ its `alter role` statement again.
 **Object Storage.** A storage credential "is scoped to a branch and valid for that branch and
 all its descendants" (https://neon.com/docs/storage/authentication). A production credential
 therefore also works on `dev`, so staging gets **its own credential, created on `dev`**, and
-production's is never given to the `dev` deploy.
+production's is never given to the `dev` deploy. Buckets, CORS and the Netlify variables are under "Storage" below.
 
 **Shared limits.** `dev` uses the same 100 CU-hours and 5 GB of transfer a month as production.
 If staging uses them up, production's compute is suspended too (SQLSTATE `53000`).
+
+## Storage (media bucket, ADR 0010)
+
+One **private** bucket, `bocc-media`, per Neon branch that serves a deploy. There is no public
+bucket. Browsers never hold a storage credential: the admin hands out presigned URLs for one
+object and one method (PUT 5 minutes, GET 10 minutes by default), after checking the user's role
+(`src/lib/admin/storage.mjs`). Object keys are built by the server
+(`events/<date>/<uuid>/{original,display,thumb}.<ext>`), never from a filename.
+
+| Branch | Bucket | `STORAGE_ENDPOINT` | Netlify context |
+|---|---|---|---|
+| `production` (`br-noisy-poetry-a5q2e3cd`) | `bocc-media` | `https://br-noisy-poetry-a5q2e3cd.storage.c-1.us-east-2.aws.neon.tech` | Production |
+| `dev` (`br-falling-butterfly-a54mukj8`) | `bocc-media` | `https://br-falling-butterfly-a54mukj8.storage.c-1.us-east-2.aws.neon.tech` | Branch deploys (and Deploy Previews) |
+
+**Endpoint, region, addressing** (verified on `dev` 2026-11-17 with `scripts/storage-cors.mjs
+smoke`): the endpoint is per branch, `https://<branch-id>.storage.c-1.us-east-2.aws.neon.tech`.
+The `c-1` cell is required: without it the host still resolves but answers `NoSuchBucket`.
+Requests are path-style only (`<endpoint>/<bucket>/<key>`) and SigV4 only; the signing region is
+`us-east-2` (Neon also accepted a request signed for `us-east-1`, so it doesn't appear to check
+the region; use `us-east-2` anyway). The access key id is the credential's `token_id` (`nak_live_…`), not its
+`api_token`. The production endpoint follows the same pattern (same project and cell) but has
+not been called yet.
+
+**Buckets and branches.** A child branch sees the buckets and objects its parent had when it
+was created ("branches inherit the parent's objects at the moment of forking", no data copied).
+A bucket created on `production` **after** `dev` existed is **not** visible on `dev`, so each
+branch got its own `bocc-media` (2026-11-17). A reset of `dev` from its parent would presumably
+replace `dev`'s storage with production's; check the bucket and its CORS rule after any reset.
+
+**Credentials.** Storage credentials are separate from Postgres roles. A credential "is scoped
+to a branch and valid for that branch and all its descendants"
+(https://neon.com/docs/storage/authentication), so a production credential would also work on
+`dev`. Each branch therefore has **its own** credential, made on that branch, with scopes
+`storage:read` and `storage:write` (`neon credentials create`; its secret is shown once).
+Production's credential is never given to a non-production context.
+
+**Netlify.** Set the five `STORAGE_*` variables (table under "Environment variables") with a
+**Production** value from the `production` branch and a **Branch deploys** value (also used for
+Deploy Previews) from `dev`. Mark only `STORAGE_SECRET_ACCESS_KEY` as a **secret**. The endpoint,
+bucket and region appear in this repo, and Netlify's secret scanning fails a build when a value
+marked secret is found in the repo or the build output, so they must not be marked secret.
+Without the variables the admin still works and shows media as switched off. Env changes need a
+redeploy.
+
+**CORS.** A new Neon bucket starts with a wide-open rule (seen on `dev` 2026-11-17: origin `*`,
+methods GET/PUT/POST/HEAD/DELETE, any header). Replace it, per branch, with one rule:
+
+| Field | Value |
+|---|---|
+| AllowedOrigin | production: `https://716coffee.club`; `dev`: `https://dev--bocc-backend.netlify.app` and `http://localhost:4321` |
+| AllowedMethod | `PUT`, `GET`, `HEAD` |
+| AllowedHeader | `content-type` |
+| MaxAgeSeconds | `3000` |
+
+```sh
+# env file with the branch's STORAGE_* values (mode 600, outside the repo or gitignored)
+node --env-file=<file> scripts/storage-cors.mjs set https://716coffee.club   # PutBucketCors
+node --env-file=<file> scripts/storage-cors.mjs get                         # check
+node --env-file=<file> scripts/storage-cors.mjs smoke https://716coffee.club  # PUT/GET/HEAD/DELETE under smoke/
+```
+
+Done on `dev` 2026-11-17: rule set as above; the smoke test passed (preflight from the staging
+origin allowed and from another origin refused with 403; a PUT with the wrong content type or
+size refused with 403; GET, HEAD and DELETE worked; nothing left in the bucket). Production's
+bucket still has Neon's default rule until its release.
+
+The admin CSP adds the endpoint's origin to `img-src` and `connect-src` only when storage is
+configured (`src/lib/admin/headers.mjs`).
 
 ## Verification checklist
 
@@ -193,6 +278,14 @@ Run as `admin_app` on `dev`, then on `production`, inside `begin; … rollback;`
 - [ ] `select * from schema_migrations` → permission denied; `create table t (x int)` →
       permission denied for schema public
 - [ ] Netlify holds only `ADMIN_DB_URL` for the admin app's database access (no owner URL)
+
+Run as `admin_app` once `20261118120000_events_media.sql` is applied, inside `begin; … rollback;`:
+
+- [ ] `select count(*) from events` / `event_reports` / `event_media` → succeeds
+- [ ] `delete from events` / `delete from event_reports` → permission denied;
+      `delete from event_media where false` → succeeds
+- [ ] `truncate event_media` → permission denied
+- [ ] as `checkin_writer`: `select * from events` → permission denied
 
 `npm run test:db` asserts all of the above against a throwaway Postgres with the real
 migrations (`tests/admin/permissions.test.mjs`); this list is for the real Neon branches.
