@@ -243,6 +243,19 @@ bucket still has Neon's default rule until its release.
 The admin CSP adds the endpoint's origin to `img-src` and `connect-src` only when storage is
 configured (`src/lib/admin/headers.mjs`).
 
+**Media (operations).** Photo uploads (`src/lib/admin/media.mjs`) presign their PUTs for
+15 minutes, not the 5-minute default, because a phone sends three files one after another.
+- *Unfinished uploads:* a row stays `pending` until the browser's `complete` call finds all
+  three objects. Pending rows over a day old are listed on their event page with a delete
+  button; there is no cron.
+- *Orphaned objects:* deleting a photo removes the row first, then the objects. If an object
+  delete fails, the function log (Netlify → Logs → Functions → ssr) has a line
+  `[admin] media delete <id>: … still in the bucket: <keys>`. Remove those keys by hand with
+  the branch's storage credential. They are private and unreferenced, so this is cleanup only.
+- *Sign-in board photo import* (`scripts/signin-photos/import.mjs`, one time): it needs the
+  owner URL (`.env.local`) and the branch's `STORAGE_*` values (a separate env file), and it
+  writes only with `--apply --confirm <file>`.
+
 ## Verification checklist
 
 Run as `checkin_writer`. All verified 2026-09-12:
