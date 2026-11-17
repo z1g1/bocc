@@ -388,10 +388,8 @@ compared.
       HEIC converted on the operator's machine, matched to events by file-name date or capture
       date, dry-run match table confirmed by Zack first (ADR 0010, amended 2026-11-17).
       Script ready: `scripts/signin-photos/import.mjs` (dry run by default; `--apply --confirm`).
-      Originals are stored as the untouched HEIC (migration `20261119120000`, `signin_board`
-      only). Dry run done 2026-11-17 against the Form's dates (no Neon read): 10 of 45
-      uncertain, all confirmed by Zack (3 date changes); with the confirm file it would import
-      45 and create 2024-11-12 and 2026-08-18 as `held`. Pending: `--apply` on Neon
+      Dry run done 2026-11-17 against the Form's dates (no Neon read): 10 of 45 uncertain.
+      Pending Zack's confirmations, then `--apply` on Neon
 
 ## Phase 4: event pages from the database and readiness checklist (ADR 0009)
 
