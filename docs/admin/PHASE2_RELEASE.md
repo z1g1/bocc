@@ -58,6 +58,9 @@ straight into its destination); never give a non-production context a production
    | `ADMIN_DB_POOL_MAX` | optional; leave unset (default 3) |
 
    Login only works on the `dev` branch deploy; deploy previews have their own host.
+   Mark `ADMIN_DB_URL` and `BETTER_AUTH_SECRET` as secret, but **not** `BETTER_AUTH_URL`: it is a
+   public URL that appears throughout the repo, so Netlify's secrets scanner fails the build
+   (found 2026-11-17). Netlify can't unmark a secret; delete and recreate the variable.
 
 5. **Your staging login.** Put the same three values in the gitignored `.env.admin` at the repo
    root (mode 600), then `npm run create-admin` (prompts for email, name and password; role

@@ -284,26 +284,55 @@ compared.
 
 ## Phase 2: login, roles and data views (ADR 0008)
 
-- [ ] Migration:
+- [x] Migration:
   - `auth` schema from Better Auth's generated SQL
   - `user_roles`
   - `audit_log`
   - the `admin_app` role and its permissions
   - update `NEON_PERMISSIONS.md` and its verification checklist
-- [ ] Login:
+- [x] Login:
   - password and passkey
   - no public sign-up
   - `create-admin` for your account
   - an admin page to create users and reset passwords
-- [ ] Every `/admin/*` route and admin API checks the session and role on the server. A user
+- [x] Every `/admin/*` route and admin API checks the session and role on the server. A user
       with no role sees nothing
-- [ ] **Check-ins** view: latest event by default, with a toggle for test rows
-- [ ] **Active streaks** view
-- [ ] **Email list** view, with CSV export (each export audited) and **opt-out**
+- [x] **Check-ins** view: latest event by default, with a toggle for test rows
+- [x] **Active streaks** view
+- [x] **Email list** view, with CSV export (each export audited) and **opt-out**
       (`ok_to_email → false`, audited, in the same transaction)
-- [ ] Attendee corrections (name, business, phone), audited
-- [ ] Tests: role checks for each route, the `social` role denied attendee data, and the audit
+- [x] Attendee corrections (name, business, phone), audited
+- [x] Tests: role checks for each route, the `social` role denied attendee data, and the audit
       log can't be changed by `admin_app`
+- [x] Built on `dev` 2026-11-16/17 (`55f7455`…`e7d8179`). Backend jest 152/152, `npm run test:db`
+      87/87 (throwaway Postgres). The public site's build output is byte-identical. Notes:
+  - The admin plugin's `createUser` skips `minPasswordLength` and its `setUserPassword` reads the
+    plugin's `role` column, so `src/lib/admin/users.mjs` enforces the minimum (12) and resets
+    through Better Auth's internal adapter. Creating a user can't share a transaction with its
+    role grant (Better Auth writes on its own connection); a failed grant deletes the user again.
+    A password reset writes its audit row first in an open transaction and commits after the
+    reset, so `ADMIN_DB_POOL_MAX` must be at least 2
+  - `BETTER_AUTH_URL` is required (no fallback to Netlify's `URL`/`DEPLOY_PRIME_URL`, which
+    would bind passkeys to the wrong host) and must **not** be marked secret in Netlify: the
+    secrets scanner then fails the build, since the URL appears throughout the repo
+  - The adapter sends unmatched paths to its SSR function, so unknown URLs cost a function call
+- [x] Staging, 2026-11-17 (https://dev--bocc-backend.netlify.app, deploy of `e7d8179`, Neon `dev`
+      migrated, `admin_app` login enabled with its own password, Zack's admin account created):
+  - No session: `/admin/*` 302s to `/login/?next=…`, `/api/admin/me` 401. Sign-up refused
+    (`EMAIL_PASSWORD_SIGN_UP_DISABLED`), cross-origin sign-in 403 `INVALID_ORIGIN`, the admin
+    plugin's `/api/auth/admin/*` 404. `/login/` sends `noindex`, `no-store` and the strict CSP
+  - Throwaway users, deleted afterwards: no role → 403 on every admin page and API; `social`
+    → 200 on `/admin/`, `/admin/account/` and `/api/admin/me` only, 403 on check-ins, streaks,
+    email list, attendees, users, CSV export and opt-out
+  - `/checkin/bocc` (with and without `?token=`) 200, byte-identical to production, no analytics;
+    `js/checkin.js` identical. A `debug: "1"` POST returned 200 and landed in Neon `dev` with
+    `debug = true`; nothing in production. An expired event date still 302s to `/`, an unknown
+    path gets the custom 404, sitemap/feed/llms/robots 200
+- [ ] Zack: sign in on staging and add a passkey
+- [ ] Production (`docs/admin/PHASE2_RELEASE.md`): migrate Neon `production`, set its own
+      `admin_app` password, check the production values of `ADMIN_DB_URL` and
+      `BETTER_AUTH_SECRET` (both already set; make sure they aren't the `dev` ones), merge to
+      `main` with Zack's go-ahead, `create-admin`, then the passkey `rpID` check on 716coffee.club
 
 ## Phase 3: Google Form replacement and media (ADRs 0009, 0010)
 
