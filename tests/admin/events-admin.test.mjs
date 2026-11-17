@@ -220,7 +220,17 @@ describe("events module", () => {
     assert.equal((await eventRow(d)).status, "cancelled");
 
     await assert.rejects(ev.submitReport(actor.id, "2026-11-18", REPORT, { today: TODAY }), ConflictError);
-    assert.equal(await eventRow("2026-11-18"), null);
+    // Nor can a future date be marked held by hand (it would show as held, no report).
+    // A 2001 date with "today" the day before stands in for a future date.
+    const f = pastDate();
+    const dayBefore = new Date(Date.parse(`${f}T00:00:00Z`) - 86400_000).toISOString().slice(0, 10);
+    await assert.rejects(ev.saveEvent(actor.id, f, { status: "held" }, { today: dayBefore }),
+      (e) => e instanceof ConflictError && "status" in e.errors);
+    assert.equal(await eventRow(f), null);
+    await ev.saveEvent(actor.id, f, { status: "scheduled", location: "lobby" }, { today: dayBefore });
+    assert.equal((await eventRow(f)).status, "scheduled");
+    await ev.saveEvent(actor.id, f, { status: "held", location: "lobby" }, { today: f });
+    assert.equal((await eventRow(f)).status, "held", "held is fine on the day itself");
     // Today itself is fine (Eastern); use a 2001 date as "today" to keep the DB tidy.
     const t = pastDate();
     await ev.submitReport(actor.id, t, REPORT, { today: t });

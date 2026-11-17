@@ -28,7 +28,7 @@
 //     of time, or re-saving a cancelled event's reason/announced flag, is allowed.
 //   - The details form sets only `scheduled` or `held`; `cancelled` goes through the
 //     cancel flow, and a cancelled event keeps its status there (un-cancel first).
-//     `scheduled` is refused while a report exists.
+//     `scheduled` is refused while a report exists, and `held` on a date after today.
 //   - The check-in count is calculated here and never stored. It is not attendance: not
 //     everyone checks in.
 //   - Editing an imported report (source google_form/pre_form) makes it source = 'admin'
@@ -342,10 +342,17 @@ async function audited(actorUserId, date, table, fn) {
   }
 }
 
-/** Status (scheduled/held) and location. Creates the event on its first save. */
-export async function saveEvent(actorUserId, date, input) {
+/**
+ * Status (scheduled/held) and location. Creates the event on its first save.
+ * `held` is refused for a date after today (Eastern), like a report.
+ * @param {{ today?: string }} [opts]  "today" (Eastern); tests pass it
+ */
+export async function saveEvent(actorUserId, date, input, { today = todayEastern() } = {}) {
   checkDate(date);
   const v = validateEventInput(input);
+  if (v.status === "held" && date > today) {
+    throw new ConflictError({ status: "That date hasn't happened yet, so it can't be held." });
+  }
   return audited(actorUserId, date, "events", async (client) => {
     const { created, row } = await lockEvent(client, date);
     let status = row.status;
