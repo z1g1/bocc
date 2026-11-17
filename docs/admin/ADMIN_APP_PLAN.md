@@ -369,6 +369,9 @@ compared.
       `scheduled`
 - [ ] Import the Google Form CSV (fix `7/14/0026`), using a backfill script like the Airtable
       one
+- [ ] Import the old sign-in board photos (45, from the Drive export) with a local script:
+      HEIC converted on the operator's machine, matched to events by file-name date or capture
+      date, dry-run match table confirmed by Zack first (ADR 0010, amended 2026-11-17)
 
 ## Phase 4: event pages from the database and readiness checklist (ADR 0009)
 

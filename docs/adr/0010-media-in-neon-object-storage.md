@@ -43,9 +43,17 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
    iPhone HEIC picked in Chrome on a desktop or Android), the upload is refused with a clear
    message: "upload from your iPhone, or export the photo as JPEG". No WASM HEIC decoder in the
    MVP (amended 2026-11-16).
-4. **Google Drive is not used.** Importing the old Drive photos (matched to events by capture
-   date) is deferred and not part of the MVP, since the counts that matter come from the Google
-   Form import.
+4. **Google Drive is not used.** The old sign-in board photos (45, Aug 2024 to Nov 2026, exported
+   from Drive) are imported once, in Phase 3, by a local script (amended 2026-11-17, previously
+   deferred):
+   - it runs on an operator's machine, not the server, so "no images are processed on the
+     server" still holds. It converts HEIC with a local decoder and writes the same three
+     objects per photo as a browser upload (original, 1600px JPEG, 400px thumbnail)
+   - each photo is matched to an event by the date in its file name, else by its capture date
+     (the most recent event on or before it). A dry run prints the match table, and the
+     operator confirms uncertain matches before anything is written
+   - imported photos are `signin_board`, never `publicly_usable`
+   Other old Drive photos (social photos) are still out of scope.
 
 ## Consequences
 
@@ -60,3 +68,4 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
 - *Still unverified:* whether inherited objects count toward 5 GB, and presigned PUT from mobile
   browsers.
 - *Amended 2026-11-16:* the HEIC refusal above.
+- *Amended 2026-11-17:* the one-time import of the old sign-in board photos (decision 4).
