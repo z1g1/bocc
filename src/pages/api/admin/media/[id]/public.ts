@@ -1,7 +1,7 @@
 // POST /api/admin/media/{id}/public: set "OK to use publicly" on a social photo
 // (sign-in board photos never are; the CHECK on event_media agrees). Admin only,
 // Origin-checked, audited.
-//   form post  publiclyUsable=1|0, return=/admin/…  -> 303 back with ?media=public-on|public-off
+//   form post  publiclyUsable=1|0  -> 303 to the photo's event page with ?media=public-on|public-off
 //   JSON       { publiclyUsable: true|false }        -> 200 { id, publiclyUsable }
 //   400 (not a social photo, bad value) · 404 · 401/403 · 405 · 503 when storage is off
 import type { APIRoute } from "astro";
@@ -18,7 +18,7 @@ export const POST: APIRoute = (ctx) =>
     const value = form ? FORM_BOOL[String(raw)] : raw;
     const { setPubliclyUsable } = await import("../../../../../lib/admin/media.mjs");
     const result = await setPubliclyUsable(user.id, String(ctx.params.id), value as boolean);
-    return formOrJson(request, form, result.publiclyUsable ? "public-on" : "public-off", {
+    return formOrJson(form, result.eventDate, result.publiclyUsable ? "public-on" : "public-off", {
       id: result.id, publiclyUsable: result.publiclyUsable,
     });
   });

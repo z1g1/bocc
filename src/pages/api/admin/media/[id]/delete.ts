@@ -1,6 +1,6 @@
 // POST /api/admin/media/{id}/delete: delete one photo's row (audited) and then its
 // three objects. Admin only, Origin-checked.
-//   form post (gallery button)  -> 303 back to `return` (an /admin path) with
+//   form post (gallery button)  -> 303 to /admin/events/<the photo's date>/ with
 //                                  ?media=deleted, or ?media=deleted-partial when an
 //                                  object couldn't be removed (logged with its key)
 //   JSON (upload script giving up on a failed upload) -> 200 { id, eventDate, leftovers[] }
@@ -15,7 +15,7 @@ export const POST: APIRoute = (ctx) =>
     const { form } = await readFormOrJson(request);
     const { deleteMedia } = await import("../../../../../lib/admin/media.mjs");
     const result = await deleteMedia(user.id, storage, String(ctx.params.id));
-    return formOrJson(request, form, result.leftovers.length ? "deleted-partial" : "deleted", result);
+    return formOrJson(form, result.eventDate, result.leftovers.length ? "deleted-partial" : "deleted", result);
   });
 
 export const ALL: APIRoute = methodNotAllowed;

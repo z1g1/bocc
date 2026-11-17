@@ -248,6 +248,34 @@ describe("upload flow against MinIO", { skip }, () => {
     assert.equal((await row(board.id)).publicly_usable, false);
   });
 
+  test("the database allows HEIC/HEIF originals for signin_board only (migration 20261119120000)", async () => {
+    const date = await freshDate();
+    await owner.query("insert into events (event_date) values ($1)", [date]);
+    const admin = await connect(process.env.TEST_ADMIN_URL);
+    await admin.query("begin");
+    try {
+      const ins = (kind, contentType, ext, displayExt = "jpg") => {
+        const id = crypto.randomUUID();
+        const base = `events/${date}/${id}`;
+        return admin.query(
+          `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes)
+           values ($1, $2, $3, $4, $5, $6, $7, 10)`,
+          [id, date, kind, `${base}/original.${ext}`, `${base}/display.${displayExt}`, `${base}/thumb.jpg`, contentType]);
+      };
+      await ins("signin_board", "image/heic", "heic");
+      await ins("signin_board", "image/heif", "heif");
+      for (const [kind, type] of [["social_photo", "image/heic"], ["social_photo", "image/heif"], ["signin_board", "image/gif"],
+        ["promo_video", "image/heic"]]) {
+        await admin.query("savepoint s");
+        await assert.rejects(ins(kind, type, "heic"), /check constraint/, `${kind} ${type}`);
+        await admin.query("rollback to savepoint s");
+      }
+    } finally {
+      await admin.query("rollback");
+      await admin.end();
+    }
+  });
+
   test("pending rows over a day old are listed as stale", async () => {
     const date = await freshDate();
     const old = await media.startUpload(actor.id, storage(), body(date));
@@ -288,7 +316,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
   const routes = (date) => [
     { path: "/api/admin/media/uploads", json: body(date) },
     { path: `/api/admin/media/${someId}/complete`, json: {} },
-    { path: `/api/admin/media/${someId}/delete`, form: { return: "/admin/" } },
+    { path: `/api/admin/media/${someId}/delete`, form: {} },
     { path: `/api/admin/media/${someId}/public`, form: { publiclyUsable: "1" } },
   ];
 
@@ -381,7 +409,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(page, /Social photo/);
 
     const on = await req(`/api/admin/media/${plan.id}/public`, {
-      cookie: admin.cookie, form: { publiclyUsable: "1", return: `/admin/events/${date}/` } });
+      cookie: admin.cookie, form: { publiclyUsable: "1" } });
     assert.equal(on.status, 303);
     assert.equal(on.headers.get("location"), `/admin/events/${date}/?media=public-on#event-media`);
     assert.equal((await row(plan.id)).publicly_usable, true);
@@ -391,7 +419,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
 
     const evil = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: "https://evil.example/" } });
     assert.equal(evil.status, 303);
-    assert.equal(evil.headers.get("location"), "/admin/?media=deleted#event-media", "return is /admin only");
+    assert.equal(evil.headers.get("location"), `/admin/events/${date}/?media=deleted#event-media`, "the row's own event page");
     assert.equal(await row(plan.id), undefined);
     for (const v of ["original", "display", "thumb"]) assert.equal(await exists(`events/${date}/${plan.id}/${v}.jpg`), false);
     assert.deepEqual((await audits(plan.id)).map((a) => [a.action, a.actor_user_id]),
@@ -416,6 +444,35 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(page, /Unfinished uploads/);
     assert.match(page, new RegExp(`action="/api/admin/media/${plan.id}/delete"`));
     assert.ok(!page.includes(`${plan.id}/thumb.jpg`), "pending media is not in the gallery");
+  });
+
+  test("redirects go to the photo's event page, whatever `return` says (no open redirect)", async () => {
+    const date = await freshDate();
+    const probes = ["/admin/..//evil.example/x", "/admin/%2e%2e//evil.example", "//evil.example", "https://evil.example/"];
+    for (const ret of probes) {
+      const plan = await (await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "social_photo" }) })).json();
+      const toggle = await req(`/api/admin/media/${plan.id}/public`, { cookie: admin.cookie, form: { publiclyUsable: "1", return: ret } });
+      assert.equal(toggle.status, 303);
+      assert.equal(toggle.headers.get("location"), `/admin/events/${date}/?media=public-on#event-media`, ret);
+      const del = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: ret } });
+      assert.equal(del.status, 303);
+      const loc = del.headers.get("location");
+      assert.equal(loc, `/admin/events/${date}/?media=deleted#event-media`, ret);
+      assert.equal(new URL(loc, BASE).origin, BASE);
+    }
+  });
+
+  test("HEIC/HEIF are refused by the upload API (ADR 0010 decision 3), though the import may store them", async () => {
+    const date = await freshDate();
+    for (const contentType of ["image/heic", "image/heif"]) {
+      for (const kind of ["signin_board", "social_photo"]) {
+        const res = await req("/api/admin/media/uploads", {
+          cookie: admin.cookie, json: body(date, { kind, original: { contentType, size: 1000 } }) });
+        assert.equal(res.status, 400, `${kind} ${contentType}`);
+        assert.match((await res.json()).errors.join(" "), /original\.contentType must be image\/jpeg or image\/png/);
+      }
+    }
+    assert.equal((await owner.query("select 1 from events where event_date = $1", [date])).rowCount, 0);
   });
 
   test("the browser scripts are served as JavaScript", async () => {

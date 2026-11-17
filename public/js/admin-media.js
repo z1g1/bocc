@@ -99,35 +99,46 @@ async function uploadOne(file, opts, step) {
   if (start.status !== 201) throw new UserError(await serverMessage(start, "the upload couldn't start"));
   const plan = await start.json();
 
-  try {
-    const parts = [
-      ["thumb", thumb, "thumbnail"],
-      ["display", display, "display copy"],
-      ["original", file, `original (${formatBytes(file.size)})`],
-    ];
-    for (const [variant, blob, label] of parts) {
-      step(`uploading the ${label}…`);
-      const u = plan.uploads[variant];
-      let res;
-      try {
-        res = await fetch(u.url, { method: "PUT", headers: u.headers, body: blob, credentials: "omit" });
-      } catch {
-        throw new UserError(`the ${label} upload failed (network). Try again.`);
-      }
-      if (!res.ok) throw new UserError(`the ${label} upload was refused (${res.status}). Try again.`);
+  // Clean up (delete the pending row and anything that landed) only when the photo
+  // certainly did NOT complete: a PUT failed, or /complete answered 409 (pending). If
+  // /complete may have succeeded on the server but its answer was lost, leave the row:
+  // it is either ready already, or shows up under "unfinished uploads" a day later.
+  const abandon = () => { postJson(`/api/admin/media/${plan.id}/delete`, {}).catch(() => {}); };
+  const parts = [
+    ["thumb", thumb, "thumbnail"],
+    ["display", display, "display copy"],
+    ["original", file, `original (${formatBytes(file.size)})`],
+  ];
+  for (const [variant, blob, label] of parts) {
+    step(`uploading the ${label}…`);
+    const u = plan.uploads[variant];
+    let res;
+    try {
+      res = await fetch(u.url, { method: "PUT", headers: u.headers, body: blob, credentials: "omit" });
+    } catch {
+      abandon();
+      throw new UserError(`the ${label} upload failed (network). Try again.`);
     }
-    step("checking…");
-    const done = await postJson(`/api/admin/media/${plan.id}/complete`, {});
-    if (done.status !== 200) {
-      const body = await done.json().catch(() => ({}));
-      throw new UserError(`the upload didn't complete${body.problems ? ` (${body.problems.join("; ")})` : ""}.`);
+    if (!res.ok) {
+      abandon();
+      throw new UserError(`the ${label} upload was refused (${res.status}). Try again.`);
     }
-  } catch (err) {
-    // Best effort: drop the pending row and anything that did land. If this fails too,
-    // the row shows up under "unfinished uploads" a day later for an admin to delete.
-    postJson(`/api/admin/media/${plan.id}/delete`, {}).catch(() => {});
-    throw err;
   }
+
+  step("checking…");
+  let done;
+  try {
+    done = await postJson(`/api/admin/media/${plan.id}/complete`, {});
+  } catch {
+    throw new UserError("the connection dropped while finishing. Reload the page to see whether the photo arrived.");
+  }
+  if (done.status === 200) return;
+  if (done.status === 409) {
+    const body = await done.json().catch(() => ({}));
+    abandon();
+    throw new UserError(`the upload didn't complete${body.problems ? ` (${body.problems.join("; ")})` : ""}. Try again.`);
+  }
+  throw new UserError(`the upload couldn't be confirmed (${done.status}). Reload the page to see whether the photo arrived.`);
 }
 
 function postJson(url, body) {

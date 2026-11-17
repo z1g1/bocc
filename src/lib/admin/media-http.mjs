@@ -7,9 +7,8 @@
 
 import { requireRole } from "./roles.mjs";
 import { checkOrigin } from "./csrf.mjs";
-import { getStorage } from "./storage.mjs";
+import { getStorage, isIsoDate } from "./storage.mjs";
 import { adminFailure } from "./log.mjs";
-import { safeNext } from "./next.mjs";
 
 export const STORAGE_OFF_MESSAGE = "Photo storage is not set up on this site, so photos can't be uploaded or changed.";
 const MAX_JSON_BYTES = 4096;
@@ -56,18 +55,21 @@ export async function readJson(request) {
 }
 
 /**
- * Answer a gallery form post: a 303 back to the (admin-only) page it came from with
- * ?media=<notice>, or JSON when the request was JSON.
- * @param {Request} request
+ * Answer a gallery form post: a 303 to the photo's own event page
+ * (/admin/events/<date>/?media=<notice>), or JSON when the request was JSON. The
+ * target is built from the row's event_date, never from a client-supplied value, so it
+ * can't be turned into an open redirect (e.g. "/admin/..//evil.example" normalising to
+ * a protocol-relative "//evil.example").
  * @param {FormData|null} form
+ * @param {string} eventDate  YYYY-MM-DD, from the database row
  * @param {string} notice
  * @param {Record<string, unknown>} body
  */
-export function formOrJson(request, form, notice, body) {
+export function formOrJson(form, eventDate, notice, body) {
   if (!form) return json(200, body);
-  const back = new URL(safeNext(String(form.get("return") ?? "/admin/")), "http://x");
-  back.searchParams.set("media", notice);
-  return new Response(null, { status: 303, headers: { location: `${back.pathname}${back.search}#event-media`, ...NO_STORE } });
+  if (!isIsoDate(eventDate)) throw new Error("formOrJson: eventDate must be YYYY-MM-DD");
+  const location = `/admin/events/${eventDate}/?media=${encodeURIComponent(notice)}#event-media`;
+  return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
 
 /** Read the body of a gallery action: a form post, or JSON from the upload script. */

@@ -31,7 +31,6 @@ const NOTICES: Record<string, string> = {
   "public-off": "No longer marked OK to use publicly.",
 };
 const notice = NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
-const returnTo = `/admin/events/${date}/`;
 
 let ready: any[] = [];
 let pending: any[] = [];
@@ -91,13 +90,11 @@ const fmtTime = (d: Date) =>
                 <div class="media-actions">
                   {m.kind === "social_photo" && (
                     <form method="post" action={`/api/admin/media/${m.id}/public`} class="inline">
-                      <input type="hidden" name="return" value={returnTo}>
                       <input type="hidden" name="publiclyUsable" value={m.publiclyUsable ? "0" : "1"}>
                       <button type="submit" class="small secondary">{m.publiclyUsable ? "Not public" : "OK to use publicly"}</button>
                     </form>
                   )}
                   <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this photo? This can't be undone.">
-                    <input type="hidden" name="return" value={returnTo}>
                     <button type="submit" class="small secondary">Delete</button>
                   </form>
                 </div>
@@ -116,7 +113,6 @@ const fmtTime = (d: Date) =>
                 <li>
                   <span>{KIND_LABEL[m.kind]}, started {fmtTime(m.createdAt)}</span>
                   <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this unfinished upload?">
-                    <input type="hidden" name="return" value={returnTo}>
                     <button type="submit" class="small secondary">Delete</button>
                   </form>
                 </li>
