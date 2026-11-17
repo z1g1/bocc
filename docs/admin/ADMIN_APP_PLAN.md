@@ -345,8 +345,9 @@ compared.
     `?token=`) 200, same bytes as before, no analytics; `js/checkin.js` unchanged. A `debug:
     "1"` POST returned 200 and is in Neon `production` with `debug = true`
     (`phase2-release-debug-20261117t202057@example.com`), not in `dev`
-- [ ] Zack: `create-admin` with production values in `.env.admin`, sign in on 716coffee.club and
-      add a passkey (the `rpID` check), then point `.env.admin` back at `dev` or delete it
+- [x] Zack's production account (2026-11-17): `create-admin` → one user, `admin` role, a
+      `user.create` audit row; signed in on 716coffee.club and added a passkey (the `rpID`
+      check passed). **Phase 2 is complete.**
 
 ## Phase 3: Google Form replacement and media (ADRs 0009, 0010)
 
