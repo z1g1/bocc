@@ -43,7 +43,10 @@ if (allowed && storage) {
     ...m,
     thumbUrl: storage.presignGet({ key: m.thumbKey }).url,
     displayUrl: storage.presignGet({ key: m.displayKey }).url,
-    originalUrl: storage.presignGet({ key: m.originalKey }).url,
+    originalUrl: storage.presignGet({
+      key: m.originalKey,
+      downloadName: `bocc-${date}-${m.kind}-${String(m.id).slice(0, 8)}.${m.originalKey.split(".").pop()}`,
+    }).url,
   }));
   pending = media.pending;
 }

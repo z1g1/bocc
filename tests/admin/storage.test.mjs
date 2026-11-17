@@ -28,6 +28,10 @@ describe("presigned URLs against MinIO", { skip }, () => {
     assert.equal(got.headers.get("content-type"), "image/jpeg");
     assert.deepEqual(new Uint8Array(await got.arrayBuffer()), body);
 
+    const dl = await fetch(s.presignGet({ key: k, downloadName: 'bocc 2026/11/24 "x".jpg' }).url);
+    assert.equal(dl.status, 200);
+    assert.equal(dl.headers.get("content-disposition"), 'attachment; filename="bocc_2026_11_24__x_.jpg"');
+
     const head = await s.headObject({ key: k });
     assert.equal(head.contentType, "image/jpeg");
     assert.equal(head.contentLength, body.length);

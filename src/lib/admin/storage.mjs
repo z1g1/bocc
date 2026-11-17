@@ -281,11 +281,19 @@ export function createStorage(config, { now = () => new Date(), fetch: fetchImpl
 
     /**
      * A short-lived URL to show or download one object.
-     * @param {{ key: string, expiresIn?: number }} opts
+     * With `downloadName`, the response carries `Content-Disposition: attachment` (a
+     * signed `response-content-disposition`), since browsers ignore `<a download>` on
+     * another origin such as the bucket. The name is reduced to safe characters.
+     * @param {{ key: string, expiresIn?: number, downloadName?: string }} opts
      * @returns {{ url: string, expiresAt: Date }}
      */
-    presignGet({ key, expiresIn = DEFAULT_GET_EXPIRES }) {
-      const p = presign("GET", key, { expiresIn });
+    presignGet({ key, expiresIn = DEFAULT_GET_EXPIRES, downloadName }) {
+      const query = {};
+      if (downloadName) {
+        const safe = String(downloadName).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 100) || "download";
+        query["response-content-disposition"] = `attachment; filename="${safe}"`;
+      }
+      const p = presign("GET", key, { expiresIn, query });
       return { url: p.url, expiresAt: p.expiresAt };
     },
 
