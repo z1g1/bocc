@@ -67,7 +67,11 @@ describe("CSV parser and date rules", () => {
   test("the plan: sources, fixes, cancel, location, notes, Bling details, zero counts", () => {
     const { items, errors, warnings, fixes } = imp.planImport(imp.parseCsv(GOOD));
     assert.deepEqual(errors, []);
-    assert.deepEqual(fixes, ["row 3: 1/14/0081 → 2081-01-14 (year from the Timestamp)"]);
+    assert.deepEqual(fixes, [
+      "row 3: 1/14/0081 → 2081-01-14 (year from the Timestamp)",
+      "row 6 (2081-02-04): Bling inferred from details (answer was No)",
+      "row 7 (2081-02-11): Bling inferred from details (answer was blank)",
+    ]);
     const by = Object.fromEntries(items.map((i) => [i.date, i]));
     assert.deepEqual(Object.keys(by), ["2081-01-07", "2081-01-14", "2081-01-21", "2081-01-28", "2081-02-04", "2081-02-11", "2081-02-18"]);
     assert.deepEqual(items.map((i) => i.source), ["google_form", "google_form", "google_form", "google_form", "pre_form", "pre_form", "pre_form"]);
@@ -79,14 +83,20 @@ describe("CSV parser and date rules", () => {
     assert.deepEqual([by["2081-01-21"].status, by["2081-01-21"].cancel, by["2081-01-21"].report],
       ["cancelled", { reason: "weather", reasonOther: null, announced: true }, undefined]);
     assert.deepEqual([by["2081-01-28"].location, by["2081-01-28"].locationOther], ["other", "Rooftop patio"]);
-    assert.deepEqual(by["2081-02-04"].report, { givesAsksCount: 0, blingGiven: false, blingDetails: null, notes: null });
-    assert.deepEqual(by["2081-02-11"].report.blingDetails, "Pat brought Sam", "kept: Bling blank allows details");
+    // Names in the "who" column mean Bling was given, whatever the Yes/No answer says.
+    assert.deepEqual(by["2081-02-04"].report, { givesAsksCount: 0, blingGiven: true, blingDetails: "Someone", notes: null });
+    assert.equal(by["2081-02-04"].fix, "Bling inferred from details (answer was No)");
+    assert.deepEqual([by["2081-02-11"].report.blingGiven, by["2081-02-11"].report.blingDetails], [true, "Pat brought Sam"]);
     assert.deepEqual([by["2081-02-18"].report.blingGiven, by["2081-02-18"].location], [null, null]);
-    assert.equal(warnings.length, 2);
-    assert.match(warnings[0], /row 6 .*Bling = No; details dropped/);
-    assert.match(warnings[1], /row 7 .*Bling is blank; details kept/);
+    assert.deepEqual(warnings, []);
     // The email column is never carried into the plan.
     assert.ok(!JSON.stringify(items).includes("host@example.com"));
+  });
+
+  test("a date that isn't a Tuesday is imported as is and listed for information only", () => {
+    const { items, errors, warnings, info } = imp.planImport(imp.parseCsv(csv(`,4/21/2024,53,,,,,,,,,,`)));
+    assert.deepEqual([errors, warnings, items.map((i) => i.date)], [[], [], ["2024-04-21"]]);
+    assert.deepEqual(info, ["row 2 (2024-04-21): not a Tuesday (Sun); imported as is"]);
   });
 
   test("errors: duplicates after fixing, unfixable years, bad numbers", () => {
@@ -110,6 +120,15 @@ describe("CSV parser and date rules", () => {
     assert.deepEqual(imp.mapCancelReason("Building closed"), { reason: "facility", reasonOther: null });
     assert.deepEqual(imp.mapCancelReason("Another event in the lobby"), { reason: "other_event", reasonOther: null });
     assert.deepEqual(imp.mapCancelReason("Host sick"), { reason: "other", reasonOther: "Host sick" });
+    // Whole words only: no weather hiding inside other words.
+    for (const t of ["Office move", "Short notice", "Police activity", "Staff training"]) {
+      assert.deepEqual(imp.mapCancelReason(t), { reason: "other", reasonOther: t }, t);
+    }
+    assert.deepEqual(imp.mapCancelReason("Heavy rain"), { reason: "weather", reasonOther: null });
+    assert.deepEqual(imp.mapCancelReason("Snowstorm"), { reason: "weather", reasonOther: null });
+    // Facility and holiday wording wins over weather words.
+    assert.deepEqual(imp.mapCancelReason("Building closed for the snow"), { reason: "facility", reasonOther: null });
+    assert.deepEqual(imp.mapCancelReason("Holiday week, cold too"), { reason: "other_event", reasonOther: null });
     assert.deepEqual(imp.mapCancelReason(""), { reason: "other", reasonOther: "No reason given in the Google Form" });
   });
 });
@@ -162,12 +181,15 @@ describe("import script against the database", () => {
     const before = await snapshot();
     const r = run(write("form.csv", GOOD));
     assert.equal(r.code, 0, r.err);
-    assert.match(r.out, /^row\s+date\s+source\s+count\s+bling\s+location\s+action\s+fix/m);
+    assert.match(r.out, /^row\s+date\s+source\s+count\s+bling\s+location\s+cancel reason\s+action\s+fix/m);
     assert.match(r.out, /\[dry-run\] would create 6, would update 0, unchanged 0, skipped 1/);
     assert.match(r.out, /2081-02-18\s+pre_form\s+33\s+skip \(admin report\)/);
     assert.match(r.out, /zero at Gives and Asks \(imported as is\): 2081-02-04 \(row 6\)/);
     assert.match(r.out, /FIX\s+row 3: 1\/14\/0081 → 2081-01-14/);
-    assert.ok(!r.out.includes("host@example.com") && !r.out.includes("Cecelia"), "no emails or names printed");
+    assert.match(r.out, /2081-01-21\s+google_form\s+CANCELLED\s+lobby\s+weather ← "Snow storm"\s+create/);
+    assert.match(r.out, /FIX\s+row 6 \(2081-02-04\): Bling inferred from details/);
+    assert.ok(!r.out.includes("host@example.com") && !r.out.includes("Cecelia") && !r.out.includes("Someone"),
+      "no emails or names printed");
     assert.deepEqual(await snapshot(), before);
   });
 
@@ -186,7 +208,8 @@ describe("import script against the database", () => {
     assert.deepEqual([ev["2081-01-28"].location, ev["2081-01-28"].location_other], ["other", "Rooftop patio"]);
     assert.deepEqual([rep["2081-01-14"].source, rep["2081-01-14"].submitted_by, rep["2081-01-14"].bling_details],
       ["google_form", null, "Cecelia, Muhammed"]);
-    assert.deepEqual([rep["2081-02-04"].source, rep["2081-02-04"].gives_asks_count, rep["2081-02-04"].bling_details], ["pre_form", 0, null]);
+    assert.deepEqual([rep["2081-02-04"].source, rep["2081-02-04"].gives_asks_count, rep["2081-02-04"].bling_given, rep["2081-02-04"].bling_details],
+      ["pre_form", 0, true, "Someone"]);
     assert.deepEqual([rep["2081-02-18"].source, rep["2081-02-18"].gives_asks_count], ["admin", 99], "admin report untouched");
     const audits = await importAudits();
     assert.equal(audits.length, auditsBefore + 1);
@@ -202,14 +225,20 @@ describe("import script against the database", () => {
     assert.equal((await importAudits()).length, auditsBefore + 1, "no audit row for a run that changed nothing");
   });
 
-  test("a changed CSV updates imported reports but never an admin's edit", async () => {
+  test("a changed CSV updates imported reports but never an admin's edit or un-cancel", async () => {
     // An admin edits one imported report: it becomes source admin.
     await owner.query(`update event_reports set gives_asks_count = 41, source = 'admin' where event_date = '2081-01-07'`);
+    // An admin un-cancels the imported cancellation: a re-run must not cancel it again.
+    await owner.query(`update events set status = 'scheduled', cancel_reason = null, cancel_reason_other = null,
+                         cancel_announced = false where event_date = '2081-01-21'`);
     const changed = GOOD.replace("1/29/2081 11:00:00,1/28/2081,12,", "1/29/2081 11:00:00,1/28/2081,13,")
       .replace("1/7/2081 15:53:09,1/7/2081,40,", "1/7/2081 15:53:09,1/7/2081,45,");
     const r = run(write("form2.csv", changed), "--apply");
     assert.equal(r.code, 0, r.err);
-    assert.match(r.out, /\[apply\] create 0, update 1, unchanged 4, skipped 2/);
+    assert.match(r.out, /\[apply\] create 0, update 1, unchanged 3, skipped 3/);
+    assert.match(r.out, /2081-01-21 .*skip \(status changed in the database\)/);
+    const { rows: [unc] } = await owner.query(`select status, cancel_reason from events where event_date = '2081-01-21'`);
+    assert.deepEqual(unc, { status: "scheduled", cancel_reason: null });
     const { rows } = await owner.query(
       `select event_date::text as d, gives_asks_count as n, source from event_reports where event_date in ('2081-01-07', '2081-01-28') order by 1`);
     assert.deepEqual(rows, [{ d: "2081-01-07", n: 41, source: "admin" }, { d: "2081-01-28", n: 13, source: "google_form" }]);

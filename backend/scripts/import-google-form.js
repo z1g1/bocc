@@ -26,8 +26,9 @@
  *     the Timestamp's year, and is refused without a Timestamp. Every fix is reported.
  *     The date may not be after the Timestamp's date. Duplicate dates are errors.
  *   - Gives and Asks: an integer, blank = NULL. Bling: Yes/No, blank = NULL. Bling
- *     details are kept only when Bling is Yes, or blank (the CHECK allows details when
- *     bling_given is NULL); otherwise the row gets a warning and they are dropped.
+ *     details (the "who" column) mean Bling was given: a No or blank answer with
+ *     details is imported as bling_given = true and listed as a fix (Zack, 2026-11-17).
+ *   - A date that isn't a Tuesday is listed for information only and imported as is.
  *   - Notes: "Any notes/feedback from today?" and the cancel section's "Any notes?",
  *     joined by a blank line.
  *   - Location: "Lobby (normal)" → lobby, "Food Hall" → food_hall, blank → NULL, else
@@ -189,12 +190,22 @@ function parseLocation(raw) {
   return { location: 'other', locationOther: t };
 }
 
-/** The Form's free-text cancel reason → events.cancel_reason (+ text for `other`). */
+/**
+ * The Form's free-text cancel reason → events.cancel_reason (+ text for `other`).
+ * Whole words only (so "office" isn't ice and "training" isn't rain), and facility and
+ * other-event wording first: "building closed for the snow" is a facility closure.
+ */
 function mapCancelReason(raw) {
   const t = raw.trim().replace(/\s+/g, ' ');
-  if (/weather|snow|storm|ice|icy|rain|cold/i.test(t)) return { reason: 'weather', reasonOther: null };
-  if (/facility|building|power|closed|closure|maintenance|room|venue|space/i.test(t)) return { reason: 'facility', reasonOther: null };
-  if (/other event|another event|conflict|holiday/i.test(t)) return { reason: 'other_event', reasonOther: null };
+  if (/\b(facility|building|power|closed|closure|closing|maintenance|room|venue|space|outage)\b/i.test(t)) {
+    return { reason: 'facility', reasonOther: null };
+  }
+  if (/\b(other event|another event|private event|conflict|conflicting|holidays?)\b/i.test(t)) {
+    return { reason: 'other_event', reasonOther: null };
+  }
+  if (/\b(weather|snow\w*|storms?|blizzard|ice|icy|rain\w*|cold|freezing|flood\w*)\b/i.test(t)) {
+    return { reason: 'weather', reasonOther: null };
+  }
   return { reason: 'other', reasonOther: t === '' ? 'No reason given in the Google Form' : t.slice(0, 500) };
 }
 
@@ -206,7 +217,7 @@ const text = (raw) => {
 /**
  * Turn parsed CSV rows into an import plan. Pure: no database.
  * @param {string[][]} rows  header first
- * @returns {{ items: object[], errors: string[], warnings: string[], fixes: string[] }}
+ * @returns {{ items: object[], errors: string[], warnings: string[], info: string[], fixes: string[] }}
  *   items: { row, date, source, status, cancel?, report?, location, locationOther, fix }
  */
 function planImport(rows) {
@@ -215,6 +226,7 @@ function planImport(rows) {
   const items = [];
   const errors = [];
   const warnings = [];
+  const info = []; // informational only: imported as is, no action needed
   const fixes = [];
   const seen = new Map();
 
@@ -229,7 +241,7 @@ function planImport(rows) {
       if (fix) fixes.push(`row ${row}: ${fix}`);
       // Not an error (a few real events fell on other days), but worth a look for typos.
       const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-      if (weekday !== 2) warnings.push(`row ${row} (${date}): not a Tuesday (${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][weekday]})`);
+      if (weekday !== 2) info.push(`row ${row} (${date}): not a Tuesday (${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][weekday]}); imported as is`);
       for (const j of extra) {
         if ((cells[j] ?? '').trim() !== '') warnings.push(`row ${row} (${date}): an unnamed extra column has data; ignored`);
       }
@@ -243,19 +255,21 @@ function planImport(rows) {
         const announced = parseYesNo(get('cancelAnnounced'), 'Announced answer') === true;
         item.status = 'cancelled';
         item.cancel = { ...mapCancelReason(get('cancelWhy')), announced };
+        item.cancelText = get('cancelWhy').trim().replace(/\s+/g, ' ').slice(0, 80);
         const leftover = [get('count'), get('bling'), get('blingDetails')].some((v) => v.trim() !== '') || notes;
         if (leftover) warnings.push(`row ${row} (${date}): cancelled, so its report fields and notes are not imported`);
       } else {
         const givesAsksCount = parseCount(get('count'));
-        const blingGiven = parseYesNo(get('bling'), 'Bling answer');
-        let blingDetails = text(get('blingDetails'));
+        let blingGiven = parseYesNo(get('bling'), 'Bling answer');
+        const blingDetails = text(get('blingDetails'));
         if (blingDetails !== null && blingGiven !== true) {
-          if (blingGiven === false) {
-            warnings.push(`row ${row} (${date}): Bling details present but Bling = No; details dropped (the CHECK forbids them)`);
-            blingDetails = null;
-          } else {
-            warnings.push(`row ${row} (${date}): Bling details present but Bling is blank; details kept`);
-          }
+          // Zack, 2026-11-17: names in the "who" column mean Bling was given, whatever
+          // the Yes/No answer says.
+          const was = blingGiven === false ? 'No' : 'blank';
+          blingGiven = true;
+          const f = `Bling inferred from details (answer was ${was})`;
+          item.fix = item.fix ? `${item.fix}; ${f}` : f;
+          fixes.push(`row ${row} (${date}): ${f}`);
         }
         if (blingDetails && blingDetails.length > 1000) throw new Error('Bling details longer than 1000 characters');
         if (notes && notes.length > 4000) throw new Error('notes longer than 4000 characters');
@@ -273,7 +287,7 @@ function planImport(rows) {
     }
   });
   items.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  return { items, errors, warnings, fixes };
+  return { items, errors, warnings, info, fixes };
 }
 
 // ── Database ─────────────────────────────────────────────────────────────────
@@ -296,7 +310,9 @@ function decide(item, ev, rep, warnings) {
   if (item.status === 'cancelled') {
     if (rep) return { action: 'skip', why: 'has a report' };
     if (!ev) return { action: 'create' };
-    if (ev.status === 'held') return { action: 'skip', why: 'held in the database' };
+    // Never cancel an existing row that isn't cancelled already: an admin may have
+    // un-cancelled it, and a re-run must not undo that.
+    if (ev.status !== 'cancelled') return { action: 'skip', why: 'status changed in the database' };
     const c = item.cancel;
     const same = ev.status === 'cancelled' && ev.cancel_reason === c.reason &&
       (ev.cancel_reason_other ?? null) === c.reasonOther && ev.cancel_announced === c.announced;
@@ -369,12 +385,13 @@ async function write(db, item, ev, rep) {
 // ── Output ───────────────────────────────────────────────────────────────────
 
 function table(items) {
-  const head = ['row', 'date', 'source', 'count', 'bling', 'location', 'action', 'fix'];
+  const head = ['row', 'date', 'source', 'count', 'bling', 'location', 'cancel reason', 'action', 'fix'];
   const body = items.map((it) => [
     String(it.row), it.date, it.source,
     it.status === 'cancelled' ? 'CANCELLED' : it.report.givesAsksCount == null ? '' : String(it.report.givesAsksCount),
     it.report ? (it.report.blingGiven == null ? '' : it.report.blingGiven ? 'yes' : 'no') : '',
     it.location === 'other' ? 'other' : it.location ?? '',
+    it.cancel ? `${it.cancel.reason} ← "${it.cancelText}"` : '',
     it.action ? `${it.action}${it.why ? ` (${it.why})` : ''}` : '',
     it.fix ?? '',
   ]);
@@ -404,7 +421,7 @@ async function main(argv, env, out = console) {
     out.error(`${mode} ${err.message}`);
     return 1;
   }
-  const { items, errors, warnings, fixes } = plan;
+  const { items, errors, warnings, info, fixes } = plan;
 
   const url = env.DATABASE_URL_UNPOOLED || env.DATABASE_URL;
   if (APPLY && !url) {
@@ -452,7 +469,7 @@ async function main(argv, env, out = console) {
               updated: counts.update,
               unchanged: counts.unchanged,
               skipped: counts.skip,
-              dateFixes: fixes.length,
+              fixes: fixes.length,
               dates: items.filter((it) => it.action === 'create' || it.action === 'update').map((it) => it.date),
             })]);
         }
@@ -483,10 +500,12 @@ async function main(argv, env, out = console) {
   }
   const zero = items.filter((i) => i.report?.givesAsksCount === 0);
   out.log(`${mode} zero at Gives and Asks (imported as is): ${zero.length ? zero.map((i) => `${i.date} (row ${i.row})`).join(', ') : 'none'}`);
-  out.log(`${mode} date fixes: ${fixes.length}`);
+  out.log(`${mode} fixes: ${fixes.length}`);
   fixes.forEach((f) => out.log(`  FIX   ${f}`));
   out.log(`${mode} warnings: ${warnings.length}`);
   warnings.forEach((w) => out.log(`  WARN  ${w}`));
+  out.log(`${mode} for information only (imported as is, no action needed): ${info.length}`);
+  info.forEach((n) => out.log(`  INFO  ${n}`));
   if (errors.length) {
     out.log(`${mode} errors: ${errors.length}`);
     errors.forEach((e) => out.log(`  ERROR ${e}`));
