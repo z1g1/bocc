@@ -8,6 +8,9 @@
 //   streaks             SELECT
 //   user_roles          SELECT, INSERT, DELETE
 //   audit_log           SELECT, INSERT (append-only; a trigger refuses UPDATE/DELETE)
+//   events,
+//   event_reports       SELECT, INSERT, UPDATE (migration 20261118120000_events_media.sql)
+//   event_media         SELECT, INSERT, UPDATE, DELETE
 //   auth.*              Better Auth's tables
 // Anything else is refused by Postgres, whatever the app code says.
 //
