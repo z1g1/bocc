@@ -1,14 +1,138 @@
 ---
-// Photos for one event on /admin/events/YYYY-MM-DD (ADR 0010). PLACEHOLDER: agent C
-// (phone photo upload) fills this in: the upload form (browser-made 1600px display
-// copy and 400px thumbnail, presigned PUTs from src/lib/admin/storage.mjs) and the
-// gallery through short-lived presigned GETs. The event page imports it as-is
-// meanwhile, so keep the props stable:
+// Photos for one event on /admin/events/YYYY-MM-DD (ADR 0010). Admin only: anyone
+// else gets nothing rendered (the `social` role reads media through the Phase 5 work
+// order, ADR 0008). Props are stable for the event page:
 //   <EventMedia date="2026-11-24" />
+//
+// - Upload form: /js/admin-media.js makes the 1600px display copy and the 400px
+//   thumbnail in the browser and PUTs all three files straight to the private bucket
+//   (presigned URLs from /api/admin/media/uploads). Hidden until that script runs.
+// - Gallery: `ready` photos, thumbnails through short-lived presigned GETs (re-signed
+//   on every render); the thumbnail links to the display copy, plus the original.
+// - Unfinished uploads (pending over a day) listed with a delete button. No cron.
+// - Storage not configured: a message, no upload UI, no gallery.
+import { hasRole } from "../../lib/admin/roles.mjs";
+import { getStorage, isIsoDate } from "../../lib/admin/storage.mjs";
+import { STORAGE_OFF_MESSAGE } from "../../lib/admin/media-http.mjs";
+
 interface Props {
   /** The event's date, YYYY-MM-DD. */
   date: string;
 }
 const { date } = Astro.props;
+const allowed = hasRole(Astro.locals, "admin") && isIsoDate(date);
+const { storage } = allowed ? getStorage() : { storage: null };
+
+const KIND_LABEL: Record<string, string> = { signin_board: "Sign-in board", social_photo: "Social photo" };
+const NOTICES: Record<string, string> = {
+  deleted: "Photo deleted.",
+  "deleted-partial": "Photo deleted. Some of its files couldn't be removed from storage; they are logged for cleanup.",
+  "public-on": "Marked OK to use publicly.",
+  "public-off": "No longer marked OK to use publicly.",
+};
+const notice = NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+const returnTo = `/admin/events/${date}/`;
+
+let ready: any[] = [];
+let pending: any[] = [];
+if (allowed && storage) {
+  const { listEventMedia } = await import("../../lib/admin/media.mjs");
+  const { pool } = await import("../../lib/admin/db.mjs");
+  const media = await listEventMedia(pool, date);
+  ready = media.ready.map((m: any) => ({
+    ...m,
+    thumbUrl: storage.presignGet({ key: m.thumbKey }).url,
+    displayUrl: storage.presignGet({ key: m.displayKey }).url,
+    originalUrl: storage.presignGet({ key: m.originalKey }).url,
+  }));
+  pending = media.pending;
+}
+const stale = pending.filter((m) => m.stale);
+const recent = pending.length - stale.length;
+const statusId = `media-status-${date}`;
+const fmtTime = (d: Date) =>
+  new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
 ---
-<section class="event-media" data-event-date={date} hidden></section>
+{allowed && (
+  <section class="event-media" id="event-media" data-event-date={date}>
+    <h2>Photos</h2>
+    {notice && <p class="notice" role="status">{notice}</p>}
+    {!storage ? (
+      <p class="muted" data-media-off>{STORAGE_OFF_MESSAGE}</p>
+    ) : (
+      <>
+        <p class="muted" data-media-nojs>Uploading photos needs JavaScript.</p>
+        <form class="media-upload" data-media-upload data-event-date={date} data-status={statusId} hidden>
+          <label for={`media-files-${date}`}>Photos (JPEG or PNG)</label>
+          <input id={`media-files-${date}`} type="file" name="files" accept="image/jpeg,image/png" multiple required>
+          <label for={`media-kind-${date}`}>What is it?</label>
+          <select id={`media-kind-${date}`} name="kind">
+            <option value="signin_board">Sign-in board</option>
+            <option value="social_photo">Social photo</option>
+          </select>
+          <label class="check"><input type="checkbox" name="publiclyUsable" value="1"> OK to use publicly (social photos only)</label>
+          <button type="submit">Upload</button>
+        </form>
+        <p class="media-status" id={statusId} role="status" aria-live="polite"></p>
+
+        {ready.length === 0 ? <p class="muted">No photos yet.</p> : (
+          <ul class="media-grid">
+            {ready.map((m) => (
+              <li>
+                <a href={m.displayUrl}><img src={m.thumbUrl} alt={`${KIND_LABEL[m.kind]}, ${date}`} loading="lazy" decoding="async"></a>
+                <p>
+                  {KIND_LABEL[m.kind]}
+                  {m.publiclyUsable && <span class="tag">OK to use publicly</span>}
+                </p>
+                <p><a href={m.originalUrl} download>Download original</a></p>
+                <div class="media-actions">
+                  {m.kind === "social_photo" && (
+                    <form method="post" action={`/api/admin/media/${m.id}/public`} class="inline">
+                      <input type="hidden" name="return" value={returnTo}>
+                      <input type="hidden" name="publiclyUsable" value={m.publiclyUsable ? "0" : "1"}>
+                      <button type="submit" class="small secondary">{m.publiclyUsable ? "Not public" : "OK to use publicly"}</button>
+                    </form>
+                  )}
+                  <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this photo? This can't be undone.">
+                    <input type="hidden" name="return" value={returnTo}>
+                    <button type="submit" class="small secondary">Delete</button>
+                  </form>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {recent > 0 && <p class="muted">{recent} upload{recent === 1 ? "" : "s"} in progress or unfinished (less than a day old).</p>}
+        {stale.length > 0 && (
+          <div class="media-stale">
+            <h3>Unfinished uploads</h3>
+            <p class="muted">Started over a day ago and never completed. Delete them to tidy up.</p>
+            <ul class="plain">
+              {stale.map((m) => (
+                <li>
+                  <span>{KIND_LABEL[m.kind]}, started {fmtTime(m.createdAt)}</span>
+                  <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this unfinished upload?">
+                    <input type="hidden" name="return" value={returnTo}>
+                    <button type="submit" class="small secondary">Delete</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <script is:inline type="module" src="/js/admin-media.js"></script>
+      </>
+    )}
+  </section>
+)}
+
+<style>
+  .media-grid { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 1rem; }
+  .media-grid li { margin: 0; }
+  .media-grid img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+  .media-grid p { margin: 0.25rem 0; font-size: 0.875rem; }
+  .media-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .media-status { min-height: 1.5em; }
+  .media-upload select { width: 100%; }
+</style>
