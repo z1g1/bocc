@@ -1,0 +1,241 @@
+---
+// /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
+// Status and location, the cancel flow, the after-event report (it replaces the
+// Google Form) and the photos (EventMedia, ADR 0010).
+//
+// A date with no events row still renders, as a new scheduled event; the first save
+// of any form creates the row. Plain HTML forms, no client script: each POSTs back
+// here with an `action` field, is Origin-checked, and answers 303 to a GET with a
+// fixed ?notice= (post/redirect/get). Invalid input re-renders with 400 (409 for a
+// refused state change) and the messages next to the fields. All logic and the audit
+// rows are in src/lib/admin/events.mjs.
+import Admin from "../../../layouts/Admin.astro";
+import EventMedia from "../../../components/admin/EventMedia.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { checkOrigin } from "../../../lib/admin/csrf.mjs";
+import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const ev = await import("../../../lib/admin/events.mjs");
+const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
+
+const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
+const date = ev.parseDate(Astro.params.date ?? "");
+if (!date) return notFound();
+
+const NOTICES: Record<string, string> = {
+  saved: "Saved.",
+  cancelled: "Event cancelled.",
+  uncancelled: "Event un-cancelled. It is scheduled again.",
+  report: "Report saved. The event is marked held.",
+  unchanged: "Nothing changed.",
+};
+const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>) => Promise<{ changed: boolean }>> = {
+  save: ev.saveEvent,
+  cancel: ev.cancelEvent,
+  uncancel: (actor, d) => ev.uncancelEvent(actor, d),
+  report: ev.submitReport,
+};
+const DONE: Record<string, string> = { save: "saved", cancel: "cancelled", uncancel: "uncancelled", report: "report" };
+
+let errors: Record<string, string> = {};
+let posted: { action: string; values: Record<string, string> } | null = null;
+
+if (Astro.request.method === "POST") {
+  const refused = checkOrigin(Astro.request);
+  if (refused) return refused;
+  let data: FormData;
+  try {
+    data = await Astro.request.formData();
+  } catch {
+    return new Response("Bad Request", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
+  }
+  const action = String(data.get("action") ?? "");
+  const run = ACTIONS[action];
+  if (!run) return new Response("Bad Request: unknown action", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
+  const values: Record<string, string> = {};
+  for (const [k, v] of data) if (typeof v === "string") values[k] = v;
+  try {
+    const { changed } = await run(user!.id, date, values);
+    return Astro.redirect(`/admin/events/${date}/?notice=${changed ? DONE[action] : "unchanged"}`, 303);
+  } catch (err: any) {
+    if (!(err instanceof ev.ValidationError)) throw err;
+    errors = (err as any).errors;
+    posted = { action, values };
+    Astro.response.status = err.status;
+  }
+} else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
+}
+
+const { pool } = await import("../../../lib/admin/db.mjs");
+const event = await ev.getEvent(pool, date);
+const today = ev.todayEastern();
+const isFuture = date > today;
+const missing = ev.isReportMissing(event, today);
+const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
+
+// Form values: what was just posted (on an error), else what is stored.
+const from = (action: string) => (posted?.action === action ? posted.values : null);
+const det = from("save") ?? {
+  status: event.status === "cancelled" ? "" : event.status,
+  location: event.location ?? "",
+  locationOther: event.locationOther ?? "",
+};
+const can = from("cancel") ?? {
+  cancelReason: event.cancelReason ?? "",
+  cancelReasonOther: event.cancelReasonOther ?? "",
+  cancelAnnounced: event.cancelAnnounced ? "on" : "",
+};
+const r = event.report;
+const rep = from("report") ?? {
+  givesAsksCount: r?.givesAsksCount == null ? "" : String(r.givesAsksCount),
+  notes: r?.notes ?? "",
+  blingGiven: r?.blingGiven == null ? "" : r.blingGiven ? "yes" : "no",
+  blingDetails: r?.blingDetails ?? "",
+};
+const errFor = (action: string) => (posted?.action === action ? errors : {});
+const detErr = errFor("save");
+const canErr = errFor("cancel");
+const repErr = errFor("report");
+const SOURCES: Record<string, string> = { admin: "the admin", google_form: "the Google Form import", pre_form: "the pre-Form history import" };
+const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status === "held" ? "Held" : "Scheduled";
+---
+<Admin title={`Event ${date}`} user={user} roles={roles}>
+  <p><a href="/admin/events/">← Events</a></p>
+  <h1>{longDay(date)}</h1>
+  <p class="status">
+    <span class={`badge ${event.status}`}>{statusLabel}</span>
+    {missing && <span class="badge missing">Report missing</span>}
+    {!event.exists && <span class="muted"> Not saved yet: the first save creates this event.</span>}
+  </p>
+  {notice && <p class="notice" role="status">{notice}</p>}
+  {posted && errors.date && <p class="error" role="alert">{errors.date}</p>}
+
+  <section aria-labelledby="h-details">
+    <h2 id="h-details">Status and location</h2>
+    <form method="post" class="narrow">
+      <input type="hidden" name="action" value="save">
+      {event.status === "cancelled"
+        ? <p class="muted">Status: cancelled. Un-cancel below to change it.</p>
+        : (
+          <fieldset>
+            <legend>Status</legend>
+            <label class="check"><input type="radio" name="status" value="scheduled" checked={det.status === "scheduled"}> Scheduled</label>
+            <label class="check"><input type="radio" name="status" value="held" checked={det.status === "held"}> Held</label>
+            {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
+          </fieldset>
+        )}
+      <fieldset>
+        <legend>Location</legend>
+        <label class="check"><input type="radio" name="location" value="" checked={det.location === ""}> Not set</label>
+        {Object.entries(LOCATIONS).map(([v, label]) => (
+          <label class="check"><input type="radio" name="location" value={v} checked={det.location === v}> {label}</label>
+        ))}
+        {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
+        <label for="locationOther">Where, if Other</label>
+        <input id="locationOther" name="locationOther" maxlength={LIMITS.locationOther} value={det.locationOther}
+          aria-invalid={detErr.locationOther ? "true" : undefined}>
+        {detErr.locationOther && <p class="error" role="alert">{detErr.locationOther}</p>}
+      </fieldset>
+      <button type="submit">Save status and location</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="h-report">
+    <h2 id="h-report">Report</h2>
+    {r && (
+      <p class="muted">
+        From {SOURCES[r.source] ?? r.source}{r.by && <> ({r.by})</>}, last saved {easternDateTime(r.updatedAt)}.
+      </p>
+    )}
+    {event.status === "cancelled"
+      ? <p class="muted">No report for a cancelled event. Un-cancel it first if it went ahead.</p>
+      : isFuture
+        ? <p class="muted">The report opens on the day of the event.</p>
+        : (
+          <form method="post" class="narrow">
+            <input type="hidden" name="action" value="report">
+            <label for="givesAsksCount">People counted at Gives and Asks</label>
+            <div class="count-row">
+              <input id="givesAsksCount" name="givesAsksCount" type="number" inputmode="numeric" min="0" max={LIMITS.givesAsks} step="1"
+                required value={rep.givesAsksCount} aria-invalid={repErr.givesAsksCount ? "true" : undefined} aria-describedby="checkin-note">
+              <p id="checkin-note" class="checkins">
+                <strong>{event.checkinCount}</strong> checked in on the form
+                <span class="muted">(not attendance: not everyone checks in; test check-ins left out)</span>
+                {event.checkinCount > 0 && <> · <a href={`/admin/checkins/?date=${date}`}>who</a></>}
+              </p>
+            </div>
+            {repErr.givesAsksCount && <p class="error" role="alert">{repErr.givesAsksCount}</p>}
+
+            <fieldset>
+              <legend>Bring a Friend Bling given out?</legend>
+              <label class="check"><input type="radio" name="blingGiven" value="yes" checked={rep.blingGiven === "yes"} required> Yes</label>
+              <label class="check"><input type="radio" name="blingGiven" value="no" checked={rep.blingGiven === "no"}> No</label>
+              {repErr.blingGiven && <p class="error" role="alert">{repErr.blingGiven}</p>}
+            </fieldset>
+            <label for="blingDetails">Bling details, if given <span class="muted">(who got it, who they brought)</span></label>
+            <textarea id="blingDetails" name="blingDetails" rows="2" maxlength={LIMITS.blingDetails}
+              aria-invalid={repErr.blingDetails ? "true" : undefined}>{rep.blingDetails}</textarea>
+            {repErr.blingDetails && <p class="error" role="alert">{repErr.blingDetails}</p>}
+
+            <label for="notes">Notes and feedback</label>
+            <textarea id="notes" name="notes" rows="4" maxlength={LIMITS.notes}
+              aria-invalid={repErr.notes ? "true" : undefined}>{rep.notes}</textarea>
+            {repErr.notes && <p class="error" role="alert">{repErr.notes}</p>}
+            <button type="submit">{r ? "Update report" : "Submit report"}</button>
+          </form>
+        )}
+  </section>
+
+  <section aria-labelledby="h-cancel">
+    <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
+    {r && event.status !== "cancelled"
+      ? <p class="muted">This event has a report, so it was held.</p>
+      : (
+        <form method="post" class="narrow">
+          <input type="hidden" name="action" value="cancel">
+          <fieldset>
+            <legend>Why?</legend>
+            {Object.entries(CANCEL_REASONS).map(([v, label]) => (
+              <label class="check"><input type="radio" name="cancelReason" value={v} checked={can.cancelReason === v} required> {label}</label>
+            ))}
+            {canErr.cancelReason && <p class="error" role="alert">{canErr.cancelReason}</p>}
+            <label for="cancelReasonOther">Reason, if Other</label>
+            <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={can.cancelReasonOther}
+              aria-invalid={canErr.cancelReasonOther ? "true" : undefined}>
+            {canErr.cancelReasonOther && <p class="error" role="alert">{canErr.cancelReasonOther}</p>}
+          </fieldset>
+          <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={can.cancelAnnounced === "on"}> Announced on all socials</label>
+          <button type="submit" class={event.status === "cancelled" ? undefined : "secondary"}>
+            {event.status === "cancelled" ? "Save cancellation" : "Cancel event"}
+          </button>
+        </form>
+      )}
+    {event.status === "cancelled" && (
+      <form method="post">
+        <input type="hidden" name="action" value="uncancel">
+        <button type="submit" class="secondary">Un-cancel (back to scheduled)</button>
+      </form>
+    )}
+  </section>
+
+  <EventMedia date={date} />
+</Admin>
+
+<style>
+  section { margin-top: 2rem; }
+  fieldset { border: 0; padding: 0; margin: 0.75rem 0 0; }
+  legend { font-weight: 600; padding: 0; }
+  textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  .count-row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+  .count-row input { width: 8rem; }
+  .checkins { margin: 0; }
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
+  .badge.cancelled, .badge.missing { color: var(--err); border-color: var(--err); }
+  .badge.held { color: var(--accent); border-color: var(--accent); }
+</style>

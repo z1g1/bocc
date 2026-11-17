@@ -7,6 +7,7 @@
 // its work order pages (Phase 5) go in SOCIAL_LINKS.
 import Admin from "../../layouts/Admin.astro";
 import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
+import { longDay } from "../../lib/admin/format.mjs";
 export const prerender = false;
 
 const denied = requireRole(Astro.locals, "admin", "social");
@@ -17,6 +18,7 @@ const isAdmin = hasRole(Astro.locals, "admin");
 const isSocial = hasRole(Astro.locals, "social");
 
 const ADMIN_LINKS: Array<{ href: string; label: string; note?: string }> = [
+  { href: "/admin/events/", label: "Events", note: "reports, cancellations, photos" },
   { href: "/admin/checkins/", label: "Check-ins", note: "the latest event by default" },
   { href: "/admin/streaks/", label: "Active streaks" },
   { href: "/admin/email-list/", label: "Email list", note: "CSV export and opt-out" },
@@ -24,9 +26,36 @@ const ADMIN_LINKS: Array<{ href: string; label: string; note?: string }> = [
   { href: "/admin/users/", label: "Users", note: "create logins, reset passwords, roles" },
 ];
 const SOCIAL_LINKS: Array<{ href: string; label: string; note?: string }> = [];
+
+// Admin-only events block (plan Phase 3): the next events and the "report missing"
+// count, with "today" the Eastern calendar day.
+let events: { upcoming: any[]; missing: number; nextTue: string } | null = null;
+if (isAdmin) {
+  const { pool } = await import("../../lib/admin/db.mjs");
+  const ev = await import("../../lib/admin/events.mjs");
+  const today = ev.todayEastern();
+  const [upcoming, missing] = await Promise.all([
+    ev.listUpcoming(pool, { today, limit: 2 }),
+    ev.reportMissingCount(pool, { today }),
+  ]);
+  events = { upcoming, missing, nextTue: ev.nextTuesday(today) };
+}
+const statusText = (s: string) => (s === "cancelled" ? "cancelled" : s === "held" ? "held" : "scheduled");
 ---
 <Admin title="Home" user={user} roles={roles}>
   <h1>Hello, {user!.name}</h1>
+
+  {events && (
+    <section>
+      <h2>Events</h2>
+      {events.missing > 0 && (
+        <p><a class="missing" href="/admin/events/?missing=1"><strong>{events.missing} report{events.missing === 1 ? "" : "s"} missing</strong></a></p>
+      )}
+      {events.upcoming.length > 0
+        ? <ul>{events.upcoming.map((e) => <li>Next: <a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a> <span class="muted">{statusText(e.status)}</span></li>)}</ul>
+        : <p class="muted">No upcoming events saved. <a href={`/admin/events/${events.nextTue}/`}>Open next Tuesday ({longDay(events.nextTue)})</a></p>}
+    </section>
+  )}
 
   {isAdmin && (
     <section>
@@ -48,3 +77,7 @@ const SOCIAL_LINKS: Array<{ href: string; label: string; note?: string }> = [];
 
   <p><a href="/admin/account/">Your account</a>: add a passkey for this device.</p>
 </Admin>
+
+<style>
+  .missing { color: var(--err); }
+</style>

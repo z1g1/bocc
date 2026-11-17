@@ -1,0 +1,109 @@
+---
+// /admin/events/: upcoming events and past events (ADR 0009, plan Phase 3). Admin only.
+// "Today" is the Eastern calendar day. A past date still `scheduled` is flagged
+// "report missing". The past list is paged (?page=N, 25 a page); ?missing=1 shows only
+// the report-missing ones. ?date=YYYY-MM-DD (the "open a date" GET form, no script)
+// redirects to /admin/events/YYYY-MM-DD/.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const ev = await import("../../../lib/admin/events.mjs");
+
+const requested = Astro.url.searchParams.get("date");
+if (requested !== null && ev.parseDate(requested.trim())) {
+  return Astro.redirect(`/admin/events/${requested.trim()}/`, 303);
+}
+
+const { pool } = await import("../../../lib/admin/db.mjs");
+const PER_PAGE = 25;
+const today = ev.todayEastern();
+const missingOnly = Astro.url.searchParams.get("missing") === "1";
+const page = Math.max(1, Math.min(1000, Number.parseInt(Astro.url.searchParams.get("page") ?? "1", 10) || 1));
+const [upcoming, past, missingCount] = await Promise.all([
+  ev.listUpcoming(pool, { today }),
+  ev.listPast(pool, { today, limit: PER_PAGE, offset: (page - 1) * PER_PAGE, missingOnly }),
+  ev.reportMissingCount(pool, { today }),
+]);
+const pages = Math.max(1, Math.ceil(past.total / PER_PAGE));
+const pageHref = (p: number) => `/admin/events/?${missingOnly ? "missing=1&" : ""}page=${p}`;
+const nextTue = ev.nextTuesday(today);
+const LOC: Record<string, string> = ev.LOCATIONS;
+const where = (e: any) => (e.location === "other" ? e.locationOther : e.location ? LOC[e.location] : "");
+const statusText = (e: any) => (e.status === "cancelled" ? "Cancelled" : e.status === "held" ? "Held" : "Scheduled");
+const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "No");
+---
+<Admin title="Events" user={user} roles={roles} wide>
+  <h1>Events</h1>
+
+  <form method="get" class="filters">
+    <label for="date">Open a date</label>
+    <input id="date" name="date" type="date" required value={nextTue}>
+    <button type="submit">Open</button>
+  </form>
+  {requested !== null && <p class="error" role="alert">“{requested}” is not a date (YYYY-MM-DD).</p>}
+
+  <h2>Upcoming</h2>
+  {upcoming.length === 0
+    ? <p class="muted">No upcoming events saved yet. <a href={`/admin/events/${nextTue}/`}>Open next Tuesday ({longDay(nextTue)})</a>.</p>
+    : (
+      <ul>
+        {upcoming.map((e: any) => (
+          <li>
+            <a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a>
+            {e.date === today && <span class="tag">today</span>}
+            <span class="muted"> {statusText(e)}{where(e) && ` · ${where(e)}`}</span>
+          </li>
+        ))}
+      </ul>
+    )}
+
+  <h2>Past</h2>
+  <p>
+    {missingCount === 0
+      ? <span class="muted">No reports missing.</span>
+      : <strong class="missing">{missingCount} report{missingCount === 1 ? "" : "s"} missing</strong>}
+    {missingOnly
+      ? <> · <a href="/admin/events/">Show all past events</a></>
+      : missingCount > 0 && <> · <a href="/admin/events/?missing=1">Show only those</a></>}
+  </p>
+  {past.rows.length === 0
+    ? <p class="muted">None.</p>
+    : (
+      <div class="scroll">
+        <table class="data">
+          <thead><tr><th>Date</th><th>Status</th><th>Location</th><th class="num">Gives and Asks</th><th class="num">Checked in</th><th>Bling</th></tr></thead>
+          <tbody>
+            {past.rows.map((e: any) => (
+              <tr>
+                <td><a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a></td>
+                <td>{e.reportMissing ? <strong class="missing">Report missing</strong> : statusText(e)}</td>
+                <td>{where(e)}</td>
+                <td class="num">{e.report?.givesAsksCount ?? ""}</td>
+                <td class="num">{e.checkinCount || ""}</td>
+                <td>{yesNo(e.report?.blingGiven)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  {pages > 1 && (
+    <p class="pager">
+      {page > 1 && <a href={pageHref(page - 1)}>← Newer</a>}
+      <span class="muted">Page {page} of {pages}</span>
+      {page < pages && <a href={pageHref(page + 1)}>Older →</a>}
+    </p>
+  )}
+  <p class="muted">“Checked in” counts the check-in form (test rows left out). It is not attendance: not everyone checks in.</p>
+</Admin>
+
+<style>
+  .missing { color: var(--err); }
+  .pager { display: flex; gap: 1rem; }
+</style>
