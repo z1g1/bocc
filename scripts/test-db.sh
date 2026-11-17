@@ -14,21 +14,75 @@
 #      re-run applies nothing.
 #   3. Gives the NOLOGIN app roles (admin_app, checkin_writer) LOGIN and a random
 #      test password, as the operator does out of band on Neon.
-#   4. Writes TEST_OWNER_URL / TEST_ADMIN_URL / TEST_CHECKIN_URL (+ DB_CA_CERT_FILE)
-#      to $STATE/test-db.env for the tests.
+#   4. Starts a throwaway MinIO (S3-compatible, standing in for Neon Object Storage,
+#      ADR 0010) with one bucket, on a random 127.0.0.1 port, path-style, with a random
+#      root credential. If the image can't be pulled or MinIO doesn't come up, it
+#      carries on without it and the storage integration tests skip.
+#   5. Writes TEST_OWNER_URL / TEST_ADMIN_URL / TEST_CHECKIN_URL (+ DB_CA_CERT_FILE)
+#      and, when MinIO is up, STORAGE_* to $STATE/test-db.env for the tests.
 #
-# Env: PG_IMAGE (default postgres:17-alpine), BOCC_TEST_DB_NAME (container name).
+# Env: PG_IMAGE (default postgres:17-alpine), MINIO_IMAGE (default pinned below; "none"
+# skips MinIO), BOCC_TEST_DB_NAME (container name; MinIO's is "<name>-minio", so
+# parallel runs with different names stay isolated).
+#
+# MinIO image: the official minio/minio images can no longer be pulled from Docker Hub
+# or quay.io (checked 2026-11-17), so this uses Bitnami's frozen legacy build, pinned by
+# digest. It is only a local test double, never deployed.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAME="${BOCC_TEST_DB_NAME:-bocc-admin-test-db}"
 IMAGE="${PG_IMAGE:-postgres:17-alpine}"
+MINIO_NAME="${NAME}-minio"
+MINIO_IMAGE="${MINIO_IMAGE:-bitnamilegacy/minio:2025.4.22@sha256:50cec18ac4184af4671a78aedd5554942c8ae105d51a465fa82037949046da01}"
+MINIO_BUCKET="bocc-media-test"
+MINIO_REGION="us-east-2"
 STATE="${TMPDIR:-/tmp}/${NAME}"
 ENV_FILE="$STATE/test-db.env"
 
 down() {
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  docker rm -f "$NAME" "$MINIO_NAME" >/dev/null 2>&1 || true
   rm -rf "$STATE"
+}
+
+# Start MinIO and write $STATE/storage.env. Never fails the run: without MinIO the
+# storage integration tests skip.
+minio_up() {
+  if [ "$MINIO_IMAGE" = "none" ]; then
+    echo "MinIO skipped (MINIO_IMAGE=none); storage integration tests will skip"
+    return 0
+  fi
+  local user pw port=""
+  user="test$(openssl rand -hex 8)"
+  pw="$(openssl rand -hex 24)"
+  if ! docker run -d --name "$MINIO_NAME" -p 127.0.0.1::9000 \
+      -e MINIO_ROOT_USER="$user" -e MINIO_ROOT_PASSWORD="$pw" \
+      -e MINIO_DEFAULT_BUCKETS="$MINIO_BUCKET" -e MINIO_SITE_REGION="$MINIO_REGION" \
+      "$MINIO_IMAGE" >/dev/null 2>&1; then
+    echo "MinIO unavailable (could not start $MINIO_IMAGE); storage integration tests will skip"
+    docker rm -f "$MINIO_NAME" >/dev/null 2>&1 || true
+    return 0
+  fi
+  for _ in $(seq 1 60); do
+    port="$(docker port "$MINIO_NAME" 9000/tcp 2>/dev/null | head -1 | sed 's/.*://')"
+    # Ready once the server answers and the image has created the bucket.
+    if [ -n "$port" ] && curl -sf "http://127.0.0.1:${port}/minio/health/ready" >/dev/null 2>&1 \
+        && docker exec "$MINIO_NAME" sh -c 'test -d "/bitnami/minio/data/$1"' _ "$MINIO_BUCKET" 2>/dev/null; then
+      {
+        echo "STORAGE_ENDPOINT=http://localhost:${port}"
+        echo "STORAGE_BUCKET=${MINIO_BUCKET}"
+        echo "STORAGE_REGION=${MINIO_REGION}"
+        echo "STORAGE_ACCESS_KEY_ID=${user}"
+        echo "STORAGE_SECRET_ACCESS_KEY=${pw}"
+        echo "STORAGE_FORCE_PATH_STYLE=true"
+      } >"$STATE/storage.env"
+      echo "MinIO up: container $MINIO_NAME on 127.0.0.1:${port}, bucket $MINIO_BUCKET"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "MinIO did not become ready; storage integration tests will skip"
+  docker rm -f "$MINIO_NAME" >/dev/null 2>&1 || true
 }
 
 up() {
@@ -84,12 +138,15 @@ alter role admin_app      login password '${admin_pw}';
 alter role checkin_writer login password '${writer_pw}';
 SQL
 
+  minio_up
+
   cat >"$ENV_FILE" <<EOF
 TEST_OWNER_URL=${owner_url}
 TEST_ADMIN_URL=postgresql://admin_app:${admin_pw}@localhost:${port}/neondb
 TEST_CHECKIN_URL=postgresql://checkin_writer:${writer_pw}@localhost:${port}/neondb
 DB_CA_CERT_FILE=$STATE/server.crt
 EOF
+  if [ -f "$STATE/storage.env" ]; then cat "$STATE/storage.env" >>"$ENV_FILE"; fi
   chmod 600 "$ENV_FILE"
   echo "test database up: container $NAME on 127.0.0.1:${port}; env in $ENV_FILE"
 }

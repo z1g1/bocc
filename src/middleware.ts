@@ -16,6 +16,7 @@
 import { defineMiddleware } from "astro:middleware";
 import { guardRequest, isPrivatePath, isProtectedPath } from "./lib/admin/guard.mjs";
 import { withPrivateHeaders } from "./lib/admin/headers.mjs";
+import { storageOrigin } from "./lib/admin/storage.mjs";
 import { adminFailure } from "./lib/admin/log.mjs";
 
 export const onRequest = defineMiddleware(async (ctx, next) => {
@@ -23,6 +24,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
   if (ctx.isPrerendered || !isPrivatePath(path)) return next();
 
   const dev = import.meta.env.DEV;
+  const mediaOrigin = storageOrigin(); // null when media storage isn't configured
   let setCookies: string[] = [];
 
   if (isProtectedPath(path)) {
@@ -30,15 +32,15 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
     try {
       result = await guardRequest(ctx.url, ctx.request.headers);
     } catch (err) {
-      return withPrivateHeaders(adminFailure("middleware", err), { setCookies, dev });
+      return withPrivateHeaders(adminFailure("middleware", err), { setCookies, dev, mediaOrigin });
     }
     setCookies = result.setCookies;
-    if (result.response) return withPrivateHeaders(result.response, { setCookies, dev });
+    if (result.response) return withPrivateHeaders(result.response, { setCookies, dev, mediaOrigin });
     ctx.locals.user = result.user;
     ctx.locals.session = result.session;
     ctx.locals.roles = result.roles;
   }
 
   const response = await next();
-  return withPrivateHeaders(response, { setCookies, dev });
+  return withPrivateHeaders(response, { setCookies, dev, mediaOrigin });
 });
