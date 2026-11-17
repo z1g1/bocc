@@ -1,0 +1,14 @@
+---
+// Photos for one event on /admin/events/YYYY-MM-DD (ADR 0010). PLACEHOLDER: agent C
+// (phone photo upload) fills this in: the upload form (browser-made 1600px display
+// copy and 400px thumbnail, presigned PUTs from src/lib/admin/storage.mjs) and the
+// gallery through short-lived presigned GETs. The event page imports it as-is
+// meanwhile, so keep the props stable:
+//   <EventMedia date="2026-11-24" />
+interface Props {
+  /** The event's date, YYYY-MM-DD. */
+  date: string;
+}
+const { date } = Astro.props;
+---
+<section class="event-media" data-event-date={date} hidden></section>
