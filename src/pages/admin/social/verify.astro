@@ -1,0 +1,165 @@
+---
+// /admin/social/verify/: the Monday (about 7:20 AM ET) Claude in Chrome task (ADR 0011
+// decisions 3, 4; plan Phase 5 part B). Admin and social. Plain server-rendered HTML,
+// no script, one <section id="channel-<key>"> per channel.
+//
+// Which post: the one whose publish time passed most recently, while its event is
+// today or still ahead (findVerify, src/lib/admin/social.mjs); otherwise a "Nothing to
+// verify" section (id="nothing"). Per channel: its post URL as a link to open, a form
+// with "Mark <Channel> live" / "Mark <Channel> failed" (post URL and notes), and on
+// Instagram and TikTok the first comment to paste with a "First comment posted on
+// <Channel>" button. The to-do list (id="todo") says what is left; "All done" when
+// nothing is.
+//
+// Shows the work order only, never personal data (ADR 0008). POSTs as on
+// /admin/social/next/ (Origin-checked, 303 with ?notice=). JSON: GET /api/admin/social/verify.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { checkOrigin } from "../../../lib/admin/csrf.mjs";
+import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "social");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const sp = await import("../../../lib/admin/social-pages.mjs");
+const so = await import("../../../lib/admin/social.mjs");
+const PAGE = "/admin/social/verify/";
+
+let errors: Record<string, string> = {};
+let posted: { channel: string; values: Record<string, string> } | null = null;
+if (Astro.request.method === "POST") {
+  const refused = checkOrigin(Astro.request);
+  if (refused) return refused;
+  const r: any = await sp.handleChannelPost(Astro.request, user!.id, PAGE);
+  if (r.response) return r.response;
+  errors = r.errors;
+  posted = r.posted;
+  Astro.response.status = r.status;
+} else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
+}
+
+const pick: any = await sp.loadPick("verify");
+const order = pick.order ?? null;
+const notice = posted ? null : sp.noticeText(Astro.url.searchParams);
+const val = (c: any) => (posted?.channel === c.channel ? posted.values : { postUrl: c.postUrl ?? "", notes: c.notes ?? "" });
+const errFor = (c: string) => (posted?.channel === c ? errors : {});
+const hasComment = (c: string) => so.COMMENT_CHANNELS.includes(c);
+---
+<Admin title="Social: verify" user={user} roles={roles}>
+  <h1 id="title">Verify social posts</h1>
+  {notice && <p class="notice" role="status" id="notice">{notice}</p>}
+  {posted && (errors.date || errors.channel) && <p class="error" role="alert">{errors.date ?? errors.channel}</p>}
+
+  {!order && (
+    <section id="nothing" aria-labelledby="h-nothing">
+      <h2 id="h-nothing">Nothing to verify</h2>
+      <p id="nothing-reason">{pick.message}</p>
+      {pick.nextPublish && (
+        <p id="next-publish">The next post ({pick.nextPublish.date}) publishes {so.formatPublishAt(pick.nextPublish.publishAt).et} ({so.formatPublishAt(pick.nextPublish.publishAt).utc}).</p>
+      )}
+      <p>Stop here and report: "Nothing to verify."</p>
+    </section>
+  )}
+
+  {order && (
+    <>
+      <section id="summary" aria-labelledby="h-summary">
+        <h2 id="h-summary">Post to verify</h2>
+        <dl>
+          <dt>Event date</dt><dd id="event-date" data-date={order.date}>{order.date} ({longDay(order.date)})</dd>
+          <dt>Published at (Eastern)</dt><dd id="publish-at-eastern">{order.publishAtDisplay.et}</dd>
+          <dt>Published at (UTC)</dt><dd id="publish-at-utc" data-iso={order.publishAtDisplay.iso}>{order.publishAtDisplay.utc}</dd>
+        </dl>
+        {!order.ready && <p class="error" id="not-ready">This post was not marked ready, so it may never have been scheduled.</p>}
+      </section>
+
+      <section id="todo" aria-labelledby="h-todo" data-all-done={pick.allDone ? "true" : "false"}>
+        <h2 id="h-todo">To do</h2>
+        {pick.allDone
+          ? <p id="all-done">All done: every channel is live or failed, and every first comment is posted.</p>
+          : <ul>{pick.todo.map((t: any) => <li data-channel={t.channel} data-task={t.task}><a href={`#channel-${t.channel}`}>{t.message}</a></li>)}</ul>}
+      </section>
+
+      {order.channels.map((c: any) => {
+        const v = val(c);
+        const e = errFor(c.channel);
+        return (
+          <section id={`channel-${c.channel}`} class="channel" data-status={c.status} aria-labelledby={`h-channel-${c.channel}`}>
+            <h2 id={`h-channel-${c.channel}`}>{c.label}: {c.status}</h2>
+            {c.postUrl
+              ? <p>Post URL: <a id={`post-url-${c.channel}`} href={c.postUrl} rel="noopener noreferrer" target="_blank">{c.postUrl}</a></p>
+              : <p id={`post-url-${c.channel}`} class="muted">No post URL saved. Find the post on {c.label} and enter its URL below.</p>}
+            {c.verifiedAt && <p>Verified live {easternDateTime(c.verifiedAt)} Eastern.</p>}
+            {c.notes && <p>Notes: <span class="pre-line">{c.notes}</span></p>}
+            <form method="post" action={PAGE} id={`form-${c.channel}`}>
+              <input type="hidden" name="date" value={order.date}>
+              <input type="hidden" name="channel" value={c.channel}>
+              <label for={`postUrl-${c.channel}`}>{c.label} post URL <span class="muted">(https, on {so.POST_URL_DOMAINS[c.channel].join(" or ")})</span></label>
+              <input id={`postUrl-${c.channel}`} name="postUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+                maxlength={so.LIMITS.postUrl} value={v.postUrl} aria-invalid={e.postUrl ? "true" : undefined}>
+              {e.postUrl && <p class="error" role="alert">{e.postUrl}</p>}
+              <label for={`notes-${c.channel}`}>{c.label} notes <span class="muted">(required when marking it failed: say why)</span></label>
+              <textarea id={`notes-${c.channel}`} name="notes" rows="2" maxlength={so.LIMITS.notes}
+                aria-invalid={e.notes ? "true" : undefined}>{v.notes}</textarea>
+              {e.notes && <p class="error" role="alert">{e.notes}</p>}
+              {e.status && <p class="error" role="alert">{e.status}</p>}
+              {e.verified && <p class="error" role="alert">{e.verified}</p>}
+              {e.commentPosted && !hasComment(c.channel) && <p class="error" role="alert">{e.commentPosted}</p>}
+              <div class="buttons">
+                <button type="submit" name="status" value="live">Mark {c.label} live</button>
+                <button type="submit" name="status" value="failed" class="secondary">Mark {c.label} failed</button>
+              </div>
+            </form>
+            {hasComment(c.channel) && (
+              <div class="comment" id={`comment-${c.channel}`}>
+                <h3>First comment for {c.label}</h3>
+                <pre id={`first-comment-${c.channel}`}>{c.firstComment}</pre>
+                {e.commentPosted && <p class="error" role="alert">{e.commentPosted}</p>}
+                {c.commentPostedAt
+                  ? (
+                    <>
+                      <p id={`comment-posted-${c.channel}`}>First comment posted {easternDateTime(c.commentPostedAt)} Eastern.</p>
+                      <form method="post" action={PAGE}>
+                        <input type="hidden" name="date" value={order.date}>
+                        <input type="hidden" name="channel" value={c.channel}>
+                        <input type="hidden" name="commentPosted" value="false">
+                        <button type="submit" class="secondary">Undo: first comment not posted on {c.label}</button>
+                      </form>
+                    </>
+                  )
+                  : c.status === "live"
+                    ? (
+                      <form method="post" action={PAGE} id={`comment-form-${c.channel}`}>
+                        <p>Paste the comment above on the live {c.label} post, then:</p>
+                        <input type="hidden" name="date" value={order.date}>
+                        <input type="hidden" name="channel" value={c.channel}>
+                        <input type="hidden" name="commentPosted" value="true">
+                        <button type="submit">First comment posted on {c.label}</button>
+                      </form>
+                    )
+                    : <p class="muted">Mark {c.label} live first, then post this comment.</p>}
+              </div>
+            )}
+            {!hasComment(c.channel) && <p class="muted">{c.label} has no first comment.</p>}
+          </section>
+        );
+      })}
+    </>
+  )}
+</Admin>
+
+<style>
+  section { margin-top: 2rem; }
+  .channel { border-top: 1px solid var(--line); padding-top: 0.75rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  .pre-line { white-space: pre-line; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+  dt { font-weight: 600; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .comment { margin-top: 1rem; }
+</style>

@@ -19,6 +19,11 @@
 //     …
 //   };
 
+// The social role is also fenced in one level up: src/lib/admin/guard.mjs answers 403
+// for any /admin/* or /api/admin/* path not in SOCIAL_PATHS before the route runs
+// (ADR 0008/0011: the account the Chrome tasks use must never reach personal data).
+// A new social page goes in SOCIAL_PATHS AND names "social" in its requireRole().
+
 /** Every role public.user_roles accepts (its CHECK constraint). */
 export const ROLES = Object.freeze(["admin", "social"]);
 
@@ -52,3 +57,29 @@ const plain = (status, text) =>
     status,
     headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
   });
+
+/**
+ * The only protected paths a user without the admin role may reach: the admin home,
+ * their own account page, the social work order pages and their JSON API, and
+ * /api/admin/me. Everything else (events, attendees, check-ins, streaks, the email
+ * list, users, media) is refused by the guard whatever the route itself says.
+ */
+export const SOCIAL_PATHS = Object.freeze([
+  /^\/admin\/?$/,
+  /^\/admin\/account\/?$/,
+  /^\/admin\/social(\/|$)/,
+  /^\/api\/admin\/social(\/|$)/,
+  /^\/api\/admin\/me\/?$/,
+]);
+
+/**
+ * May a user holding `roles` reach the protected `path` at all? admin: everything;
+ * social: SOCIAL_PATHS only; no role: nothing. The route's requireRole() still runs.
+ * @param {string[]} roles
+ * @param {string} path  a URL pathname
+ */
+export function mayReach(roles = [], path = "") {
+  if (roles.includes("admin")) return true;
+  if (roles.includes("social")) return SOCIAL_PATHS.some((r) => r.test(path));
+  return false;
+}

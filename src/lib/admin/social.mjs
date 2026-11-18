@@ -37,17 +37,40 @@
 //       caption / firstComment overrides; blank, or exactly the default, stores NULL
 //       (so the channel keeps following the default). On a ready post, a caption over
 //       the channel's limit is refused.
+//   setChannelResult(actor, date, channel, input, { now })   social_post_channel.result
+//       What the Chrome tasks write back (the social role's /admin/social/* pages and
+//       POST /api/admin/social/channel). Never creates a post (404 without one).
+//       input: status (pending|scheduled|live|failed; absent = keep), postUrl and notes
+//       (absent = keep, blank = clear), verified (true: stamp verified_at again on a
+//       live post), commentPosted (true: stamp comment_posted_at, false: clear it).
+//       Rules: the changes in TRANSITIONS (social-rules.mjs; only live -> pending is
+//       refused, 409); moving INTO scheduled needs an actionable post (ready, no
+//       problems; 409); live needs a post URL; failed needs a note; a post URL must
+//       be https on the channel's domain (postUrlProblem). Becoming live stamps
+//       verified_at; leaving live clears it. The first comment exists only on
+//       Instagram and TikTok (COMMENT_CHANNELS) and can be marked posted only while
+//       the channel is live.
 // Returns { changed, eventCreated }: the caller purges the public page only when the
 // events row was created (nothing here shows on the public page).
 //
-// Errors: ValidationError (400; .errors is { field: message }) from ./events.mjs.
+// The social role's pages pick their post with:
+//   findNext(db, { now, today })    the next upcoming post (event_date >= today Eastern,
+//       publish_at still ahead) that is actionable and has a pending channel:
+//       { state: "ready", order } or { state: "nothing", reason, message, date,
+//       problems, upcoming } with reason no_post | not_ready | problems | all_done.
+//   findVerify(db, { now, today })  the post whose publish_at passed most recently,
+//       up to and including its event day: { state: "verify", order, todo, allDone }
+//       or { state: "nothing", message, nextPublish }.
+//
+// Errors: ValidationError (400; .errors is { field: message }), ConflictError (409)
+// from ./events.mjs, NotFoundError (404) from here.
 
 import { withAudit } from "./db.mjs";
-import { parseDate, ValidationError } from "./events.mjs";
+import { ConflictError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
 import { isUuid } from "./attendees.mjs";
 import {
-  CHANNEL_KEYS, LIMITS, buildWorkOrder, defaultPublishAt, defaultTexts, easternToUtc, isChannel,
-  normaliseHashtags, publishAtProblem,
+  CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, STATUSES, TRANSITIONS, buildWorkOrder, canTransition,
+  defaultPublishAt, defaultTexts, easternToUtc, isChannel, normaliseHashtags, postUrlProblem, publishAtProblem,
 } from "./social-rules.mjs";
 
 export * from "./social-rules.mjs";
@@ -158,6 +181,10 @@ export function validateChannelInput(channel, input) {
   if (firstComment !== null && len(firstComment) > LIMITS.firstComment) errors.firstComment = `At most ${LIMITS.firstComment} characters.`;
   if (Object.keys(errors).length) throw new ValidationError(errors);
   return { caption, firstComment };
+}
+
+export class NotFoundError extends ValidationError {
+  status = 404;
 }
 
 function checkDate(date) {
@@ -313,4 +340,185 @@ export async function saveChannel(actorUserId, date, channel, input) {
         where event_date = $1::date and channel = $2`, [date, channel, after.caption, after.first_comment]);
     return { action: "social_post_channel.update", details: { channel, created, eventCreated, before: d.before, after: d.after } };
   });
+}
+
+// ── Channel results ──────────────────────────────────────────────────────────
+
+const has = (o, k) => o != null && Object.hasOwn(o, k) && o[k] !== undefined;
+const flag = (v) => {
+  if (typeof v === "boolean") return v;
+  const t = str(v).trim().toLowerCase();
+  if (["on", "true", "1", "yes"].includes(t)) return true;
+  if (["off", "false", "0", "no", ""].includes(t)) return false;
+  return null;
+};
+
+/**
+ * The input of setChannelResult(), checked on its own (before any database work).
+ * @returns {{ status?: string, postUrl?: string|null, notes?: string|null, verified: boolean, commentPosted?: boolean }}
+ */
+export function validateResultInput(channel, input) {
+  if (!isChannel(channel)) throw new ValidationError({ channel: "Unknown channel." });
+  const errors = {};
+  const out = { verified: false };
+  if (has(input, "status")) {
+    const st = str(input.status).trim();
+    if (!STATUSES.includes(st)) errors.status = `Status must be one of ${STATUSES.join(", ")}.`;
+    else out.status = st;
+  }
+  if (has(input, "postUrl")) {
+    const u = text(input.postUrl);
+    if (u !== null) {
+      const p = postUrlProblem(channel, u);
+      if (p) errors.postUrl = p;
+    }
+    out.postUrl = u;
+  }
+  if (has(input, "notes")) {
+    const n = text(input.notes);
+    if (n !== null && len(n) > LIMITS.notes) errors.notes = `At most ${LIMITS.notes} characters.`;
+    out.notes = n;
+  }
+  if (has(input, "verified")) {
+    const f = flag(input.verified);
+    if (f === null) errors.verified = "verified must be true or false.";
+    else out.verified = f;
+  }
+  if (has(input, "commentPosted")) {
+    const f = flag(input.commentPosted);
+    if (f === null) errors.commentPosted = "commentPosted must be true or false.";
+    else if (!COMMENT_CHANNELS.includes(channel)) {
+      errors.commentPosted = `${CHANNELS[channel]} has no first comment (only ${COMMENT_CHANNELS.map((c) => CHANNELS[c]).join(" and ")} do).`;
+    } else out.commentPosted = f;
+  }
+  if (Object.keys(errors).length) throw new ValidationError(errors);
+  return out;
+}
+
+/** Record what happened on one channel (see the header). */
+export async function setChannelResult(actorUserId, date, channel, input, { now = new Date() } = {}) {
+  checkDate(date);
+  const v = validateResultInput(channel, input);
+  return audited(actorUserId, date, "social_post_channels", async (client) => {
+    const { rows: [row] } = await client.query(
+      `select c.status, c.post_url, c.notes, c.verified_at, c.comment_posted_at
+         from public.social_post_channels c
+         join public.social_posts p on p.event_date = c.event_date
+        where c.event_date = $1::date and c.channel = $2
+          for update of c`, [date, channel]);
+    if (!row) throw new NotFoundError({ date: `There is no social post for ${date}.` });
+    const label = CHANNELS[channel];
+    const status = v.status ?? row.status;
+    if (!canTransition(row.status, status)) {
+      throw new ConflictError({
+        status: `${label} is ${row.status}; it can't go back to ${status}. From ${row.status} it can become ${TRANSITIONS[row.status].join(", ")}.`,
+      });
+    }
+    const after = {
+      status,
+      post_url: "postUrl" in v ? v.postUrl : row.post_url,
+      notes: "notes" in v ? v.notes : row.notes,
+      verified_at: row.verified_at,
+      comment_posted_at: row.comment_posted_at,
+    };
+    if (status === "live" && !after.post_url) throw new ValidationError({ postUrl: `A live post needs its ${label} post URL.` });
+    if (status === "failed" && row.status !== "failed" && !after.notes) {
+      throw new ValidationError({ notes: `Say in the notes why ${label} failed.` });
+    }
+    if (status === "live" && (row.status !== "live" || v.verified)) after.verified_at = now;
+    else if (status !== "live") {
+      if (v.verified) throw new ValidationError({ verified: `Only a live post can be marked verified; ${label} is ${status}.` });
+      after.verified_at = null;
+    }
+    if (v.commentPosted === true) {
+      if (status !== "live") throw new ValidationError({ commentPosted: `Mark ${label} live before its first comment.` });
+      if (!row.comment_posted_at) after.comment_posted_at = now;
+    } else if (v.commentPosted === false) after.comment_posted_at = null;
+
+    const d = diff(row, after);
+    if (d.changed.length === 0) throw NOOP;
+    if (status === "scheduled" && row.status !== "scheduled") {
+      const order = await getWorkOrder(client, date);
+      if (!order.actionable) {
+        const why = order.ready ? order.problems.map((p) => p.message).join(" ") : "The post isn't marked ready.";
+        throw new ConflictError({ status: `Can't schedule ${label} yet: ${why}` });
+      }
+    }
+    await client.query(
+      `update public.social_post_channels
+          set status = $3, post_url = $4, notes = $5, verified_at = $6, comment_posted_at = $7
+        where event_date = $1::date and channel = $2`,
+      [date, channel, after.status, after.post_url, after.notes, after.verified_at, after.comment_posted_at]);
+    return { action: "social_post_channel.result", details: { channel, before: d.before, after: d.after } };
+  });
+}
+
+// ── The social role's picks ──────────────────────────────────────────────────
+
+/** The next post for the Wednesday task (see the header). */
+export async function findNext(db, { now = new Date(), today = todayEastern(now) } = {}) {
+  const { rows } = await db.query(
+    `select p.event_date::text as date, p.ready, p.publish_at as "publishAt",
+            (select count(*)::int from public.social_post_channels c
+              where c.event_date = p.event_date and c.status = 'pending') as pending
+       from public.social_posts p
+      where p.event_date >= $1::date and p.publish_at > $2
+      order by p.event_date
+      limit 10`, [today, now]);
+  for (const r of rows) {
+    if (!r.ready || r.pending === 0) continue;
+    const order = await getWorkOrder(db, r.date);
+    if (order.actionable) return { state: "ready", order };
+  }
+  const upcoming = rows.map((r) => ({ date: r.date, ready: r.ready, pendingChannels: r.pending }));
+  const first = rows[0];
+  if (!first) {
+    const { rows: [ev] } = await db.query(
+      `select event_date::text as date from public.events
+        where event_date >= $1::date and status <> 'cancelled' order by event_date limit 1`, [today]);
+    const date = ev?.date ?? nextTuesday(today);
+    return {
+      state: "nothing", reason: "no_post", date, problems: [], upcoming,
+      message: `No social post is set up for ${date} (or any later event) yet.`,
+    };
+  }
+  const order = await getWorkOrder(db, first.date);
+  const base = { state: "nothing", date: first.date, problems: order.problems, upcoming };
+  if (!order.ready) return { ...base, reason: "not_ready", message: `The social post for ${first.date} isn't marked ready yet.` };
+  if (order.problems.length) return { ...base, reason: "problems", message: `The social post for ${first.date} is marked ready, but something needs fixing first.` };
+  return { ...base, reason: "all_done", message: `Every channel for ${first.date} is already done (none is pending).` };
+}
+
+/** What the Monday task still has to do on each channel of `order`. */
+export function verifyTodo(order) {
+  const todo = [];
+  for (const c of order.channels) {
+    if (c.status === "scheduled") todo.push({ channel: c.channel, task: "verify", message: `Open the ${c.label} post and mark it live or failed.` });
+    else if (c.status === "pending" || c.status === null) todo.push({ channel: c.channel, task: "never_scheduled", message: `${c.label} was never marked scheduled: check whether it went out, then mark it live (with its URL) or failed.` });
+    else if (c.status === "live" && COMMENT_CHANNELS.includes(c.channel) && !c.commentPostedAt) {
+      todo.push({ channel: c.channel, task: "comment", message: `Post the first comment on ${c.label}, then mark it posted.` });
+    }
+  }
+  return todo;
+}
+
+/** The post for the Monday task (see the header). */
+export async function findVerify(db, { now = new Date(), today = todayEastern(now) } = {}) {
+  const { rows: [r] } = await db.query(
+    `select event_date::text as date from public.social_posts
+      where publish_at <= $2 and event_date >= $1::date
+      order by publish_at desc, event_date desc limit 1`, [today, now]);
+  if (!r) {
+    const { rows: [n] } = await db.query(
+      `select event_date::text as date, publish_at as "publishAt" from public.social_posts
+        where publish_at > $2 and event_date >= $1::date order by publish_at limit 1`, [today, now]);
+    return {
+      state: "nothing",
+      message: "Nothing to verify: no social post's publish time has passed for an event that is still ahead (or today).",
+      nextPublish: n ? { date: n.date, publishAt: n.publishAt } : null,
+    };
+  }
+  const order = await getWorkOrder(db, r.date);
+  const todo = verifyTodo(order);
+  return { state: "verify", order, todo, allDone: todo.length === 0 };
 }

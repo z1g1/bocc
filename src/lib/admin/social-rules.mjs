@@ -301,3 +301,57 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video }) {
     channels,
   };
 }
+
+// ── Channel results (the social role's pages, Phase 5 part B) ────────────────
+
+/**
+ * Status changes setChannelResult() (./social.mjs) accepts. The happy path is
+ * pending -> scheduled (Wednesday) -> live | failed (Monday). Every other change is
+ * there to fix a mistake: back to pending (not scheduled after all), failed -> any
+ * (retried), live -> scheduled (marked live too early), and pending -> live (it went
+ * out but Wednesday's save was missed). Refused: live -> pending (a published post
+ * can't be unscheduled; mark it failed with a note instead). Saving the same status
+ * again is always allowed (to change the URL or notes).
+ */
+export const TRANSITIONS = Object.freeze({
+  pending: Object.freeze(["scheduled", "live", "failed"]),
+  scheduled: Object.freeze(["pending", "live", "failed"]),
+  live: Object.freeze(["scheduled", "failed"]),
+  failed: Object.freeze(["pending", "scheduled", "live"]),
+});
+
+/** @returns {boolean} */
+export const canTransition = (from, to) => from === to || Boolean(TRANSITIONS[from]?.includes(to));
+
+/** Where each channel's posts live: a post URL's host must be one of these or a subdomain. */
+export const POST_URL_DOMAINS = Object.freeze({
+  facebook: Object.freeze(["facebook.com", "fb.com"]),
+  instagram: Object.freeze(["instagram.com"]),
+  threads: Object.freeze(["threads.com", "threads.net"]),
+  tiktok: Object.freeze(["tiktok.com"]),
+  linkedin_page: Object.freeze(["linkedin.com"]),
+});
+
+/**
+ * Why `url` can't be this channel's post URL, or null when it can: https, no spaces,
+ * no user name or port, at most LIMITS.postUrl characters, on the channel's domain.
+ * @param {string} channel
+ * @param {string} url  already trimmed
+ * @returns {string|null}
+ */
+export function postUrlProblem(channel, url) {
+  if (!isChannel(channel)) return "Unknown channel.";
+  const domains = POST_URL_DOMAINS[channel];
+  const where = `an https link on ${domains.join(" or ")}`;
+  if (typeof url !== "string" || url === "") return `Enter the ${CHANNELS[channel]} post URL.`;
+  if ([...url].length > LIMITS.postUrl) return `At most ${LIMITS.postUrl} characters.`;
+  if (/\s/.test(url) || !/^https:\/\//i.test(url)) return `The ${CHANNELS[channel]} post URL must be ${where}.`;
+  let u;
+  try { u = new URL(url); } catch { return `The ${CHANNELS[channel]} post URL must be ${where}.`; }
+  const host = u.hostname.toLowerCase();
+  if (u.protocol !== "https:" || u.username || u.password || u.port
+      || !domains.some((d) => host === d || host.endsWith(`.${d}`))) {
+    return `The ${CHANNELS[channel]} post URL must be ${where}.`;
+  }
+  return null;
+}

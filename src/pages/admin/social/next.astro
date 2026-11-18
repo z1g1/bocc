@@ -1,0 +1,180 @@
+---
+// /admin/social/next/: the Wednesday Claude in Chrome task's work order (ADR 0011
+// decisions 3, 4; plan Phase 5 part B). Admin and social. Built for an agent to read:
+// plain server-rendered HTML, no script, stable ids and labels, one <section
+// id="channel-<key>"> per channel (facebook, instagram, threads, tiktok,
+// linkedin_page) with its exact caption and first comment in a <pre>, and one form per
+// channel with a single "Save <Channel>" button.
+//
+// Which post: the next upcoming one that is actionable (ready, no problems, publish
+// time still ahead) and has a pending channel (findNext, src/lib/admin/social.mjs).
+// Otherwise a "Nothing ready" section (id="nothing", data-reason no_post | not_ready |
+// problems | all_done) that says why.
+//
+// Shows the work order only: never attendees, check-ins, reports or the audit log
+// (ADR 0008; the social role's whole reach is src/lib/admin/roles.mjs SOCIAL_PATHS).
+// POSTs come back here (Origin-checked) and answer 303 to a GET with ?notice=
+// (post/redirect/get); a refused save re-renders with 400/404/409 and the message next
+// to that channel's fields. The same data as JSON: GET /api/admin/social/next.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { checkOrigin } from "../../../lib/admin/csrf.mjs";
+import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "social");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const sp = await import("../../../lib/admin/social-pages.mjs");
+const so = await import("../../../lib/admin/social.mjs");
+const PAGE = "/admin/social/next/";
+
+let errors: Record<string, string> = {};
+let posted: { channel: string; values: Record<string, string> } | null = null;
+if (Astro.request.method === "POST") {
+  const refused = checkOrigin(Astro.request);
+  if (refused) return refused;
+  const r: any = await sp.handleChannelPost(Astro.request, user!.id, PAGE);
+  if (r.response) return r.response;
+  errors = r.errors;
+  posted = r.posted;
+  Astro.response.status = r.status;
+} else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
+}
+
+const pick: any = await sp.loadPick("next");
+const order = pick.order ?? null;
+const video = pick.video ?? null;
+const notice = posted ? null : sp.noticeText(Astro.url.searchParams);
+const STATUS_TEXT: Record<string, string> = {
+  pending: "pending (to do)", scheduled: "scheduled (done)", live: "live (done)", failed: "failed (done)",
+};
+const val = (c: any) => (posted?.channel === c.channel ? posted.values : { status: c.status ?? "pending", postUrl: c.postUrl ?? "", notes: c.notes ?? "" });
+const errFor = (c: string) => (posted?.channel === c ? errors : {});
+const formatBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+const pending = order ? order.channels.filter((c: any) => c.status === "pending") : [];
+---
+<Admin title="Social: next post" user={user} roles={roles}>
+  <h1 id="title">Next social post</h1>
+  {notice && <p class="notice" role="status" id="notice">{notice}</p>}
+  {posted && (errors.date || errors.channel) && <p class="error" role="alert">{errors.date ?? errors.channel}</p>}
+
+  {!order && (
+    <section id="nothing" data-reason={pick.reason} aria-labelledby="h-nothing">
+      <h2 id="h-nothing">Nothing ready</h2>
+      <p id="nothing-reason">{pick.message}</p>
+      {pick.problems?.length > 0 && (
+        <>
+          <h3>What needs fixing (by an admin, on the event page)</h3>
+          <ul id="problems">{pick.problems.map((p: any) => <li data-key={p.key}>{p.message}</li>)}</ul>
+        </>
+      )}
+      {pick.upcoming?.length > 0 && (
+        <>
+          <h3>Upcoming social posts</h3>
+          <ul id="upcoming">
+            {pick.upcoming.map((u: any) => (
+              <li>{u.date} ({longDay(u.date)}): {u.ready ? "ready" : "not ready"}, {u.pendingChannels} channel{u.pendingChannels === 1 ? "" : "s"} pending</li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p>Nothing to schedule. Stop here and report: "{pick.message}"</p>
+    </section>
+  )}
+
+  {order && (
+    <>
+      <section id="summary" aria-labelledby="h-summary">
+        <h2 id="h-summary">Work order</h2>
+        <dl>
+          <dt>Event date</dt><dd id="event-date" data-date={order.date}>{order.date} ({longDay(order.date)})</dd>
+          <dt>Publish at (Eastern)</dt><dd id="publish-at-eastern">{order.publishAtDisplay.et}</dd>
+          <dt>Publish at (UTC)</dt><dd id="publish-at-utc" data-iso={order.publishAtDisplay.iso}>{order.publishAtDisplay.utc}</dd>
+          <dt>Luma link</dt><dd id="luma-url">{order.lumaUrl}</dd>
+        </dl>
+        <p>Schedule every pending channel below for the publish time above, then save each one with its post URL (if the platform gives one before publishing) and status <strong>scheduled</strong>. If a channel can't be scheduled, save it as <strong>failed</strong> with a note.</p>
+      </section>
+
+      <section id="video" aria-labelledby="h-video">
+        <h2 id="h-video">Video</h2>
+        {video?.downloadUrl
+          ? (
+            <p><a id="video-download" href={video.downloadUrl} download={video.fileName}>Download the video</a>
+              <span class="muted"> ({video.fileName}, {formatBytes(video.sizeBytes)}; the link works until {easternDateTime(video.expiresAt)} Eastern; reload the page for a new one)</span></p>
+          )
+          : <p id="video-download-unavailable" class="error">{video?.unavailable ?? "No video is attached."}</p>}
+        <h3>Cover note</h3>
+        {order.coverNote
+          ? <pre id="cover-note">{order.coverNote}</pre>
+          : <p id="cover-note" class="muted">No cover note: keep the platform's default cover frame.</p>}
+      </section>
+
+      <section id="channels" aria-labelledby="h-channels">
+        <h2 id="h-channels">Channels</h2>
+        <p id="pending-count">{pending.length} of {order.channels.length} channels pending.</p>
+        <ul id="channel-list">
+          {order.channels.map((c: any) => (
+            <li data-channel={c.channel} data-status={c.status}><a href={`#channel-${c.channel}`}>{c.label}</a>: {STATUS_TEXT[c.status] ?? c.status}</li>
+          ))}
+        </ul>
+      </section>
+
+      {order.channels.map((c: any) => {
+        const v = val(c);
+        const e = errFor(c.channel);
+        const done = c.status !== "pending";
+        return (
+          <section id={`channel-${c.channel}`} class="channel" data-status={c.status} aria-labelledby={`h-channel-${c.channel}`}>
+            <h2 id={`h-channel-${c.channel}`}>{c.label}: {STATUS_TEXT[c.status] ?? c.status}</h2>
+            {done && <p class="done">Already done ({c.status}). Leave it unless it needs fixing.</p>}
+            <h3>Caption for {c.label}</h3>
+            <pre id={`caption-${c.channel}`}>{c.caption}</pre>
+            <h3>First comment for {c.label}</h3>
+            {c.firstComment
+              ? <>
+                  <pre id={`first-comment-${c.channel}`}>{c.firstComment}</pre>
+                  <p class="muted">Don't post it now: the Monday verify run adds it once the post is live.</p>
+                </>
+              : <p id={`first-comment-${c.channel}`} class="muted">None: {c.label} has no first comment.</p>}
+            {c.postUrl && <p>Saved post URL: <a href={c.postUrl} rel="noopener noreferrer" target="_blank">{c.postUrl}</a></p>}
+            {c.notes && <p>Notes: <span class="pre-line">{c.notes}</span></p>}
+            <form method="post" action={PAGE} id={`form-${c.channel}`}>
+              <input type="hidden" name="date" value={order.date}>
+              <input type="hidden" name="channel" value={c.channel}>
+              <label for={`status-${c.channel}`}>{c.label} status</label>
+              <select id={`status-${c.channel}`} name="status" aria-invalid={e.status ? "true" : undefined}>
+                {so.STATUSES.map((s: string) => <option value={s} selected={v.status === s}>{s}</option>)}
+              </select>
+              {e.status && <p class="error" role="alert">{e.status}</p>}
+              <label for={`postUrl-${c.channel}`}>{c.label} post URL <span class="muted">(https, on {so.POST_URL_DOMAINS[c.channel].join(" or ")}; leave blank if there is none yet)</span></label>
+              <input id={`postUrl-${c.channel}`} name="postUrl" type="text" inputmode="url" autocomplete="off" spellcheck="false"
+                maxlength={so.LIMITS.postUrl} value={v.postUrl} aria-invalid={e.postUrl ? "true" : undefined}>
+              {e.postUrl && <p class="error" role="alert">{e.postUrl}</p>}
+              <label for={`notes-${c.channel}`}>{c.label} notes</label>
+              <textarea id={`notes-${c.channel}`} name="notes" rows="2" maxlength={so.LIMITS.notes}
+                aria-invalid={e.notes ? "true" : undefined}>{v.notes}</textarea>
+              {e.notes && <p class="error" role="alert">{e.notes}</p>}
+              {(e.verified || e.commentPosted) && <p class="error" role="alert">{e.verified ?? e.commentPosted}</p>}
+              <button type="submit">Save {c.label}</button>
+            </form>
+          </section>
+        );
+      })}
+    </>
+  )}
+</Admin>
+
+<style>
+  section { margin-top: 2rem; }
+  .channel { border-top: 1px solid var(--line); padding-top: 0.75rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  .pre-line { white-space: pre-line; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+  dt { font-weight: 600; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  select, textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  .done { font-weight: 600; color: var(--accent); }
+</style>

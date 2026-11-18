@@ -437,14 +437,18 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
   test("unknown admin paths get the themed admin 404, behind the guard; unknown API paths a plain 404", async () => {
     const unknown = ["/admin/no-such-page", "/admin/no-such-page/", "/admin/events/foo/bar", `/admin/events/${pastDate()}/extra/`, "/admin/a/b/c/d"];
     for (const p of unknown) {
-      for (const who of [admin, social]) {
-        const res = await req(p, { cookie: who.cookie });
-        assert.equal(res.status, 404, p);
-        assertPrivate(res, p);
-        const html = await themed(res, p, "This page is out of coffee");
-        assert.match(html, /href="\/admin\/"/, `${p}: links to the admin home`);
-        assert.ok(!html.includes('href="/"'), `${p}: not the public 404`);
-      }
+      const res = await req(p, { cookie: admin.cookie });
+      assert.equal(res.status, 404, p);
+      assertPrivate(res, p);
+      const html = await themed(res, p, "This page is out of coffee");
+      assert.match(html, /href="\/admin\/"/, `${p}: links to the admin home`);
+      assert.ok(!html.includes('href="/"'), `${p}: not the public 404`);
+      // The social role is fenced to its allowlist (roles.mjs SOCIAL_PATHS) by the
+      // guard, which can't tell an unknown path from a forbidden one: the themed 403.
+      const socialRes = await req(p, { cookie: social.cookie });
+      assert.equal(socialRes.status, 403, `social ${p}`);
+      assertPrivate(socialRes, p);
+      await themed(socialRes, p, "Not allowed");
       const noRoleRes = await req(p, { cookie: noRole.cookie });
       assert.equal(noRoleRes.status, 403, `no role ${p}`);
       await themed(noRoleRes, p, "Not allowed");
@@ -484,7 +488,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     .map(([, href, cur, label]) => ({ href, label, current: Boolean(cur) }));
 
   test("admin: the full section nav on every page, the current section marked", async () => {
-    const { ADMIN_LINKS } = await import("../../src/lib/admin/nav.mjs");
+    const { ADMIN_LINKS, SOCIAL_LINKS } = await import("../../src/lib/admin/nav.mjs");
     const d = pastDate();
     const cases = [
       ["/admin/", null], ["/admin/account/", null], ["/admin/events/", "/admin/events/"], [`/admin/events/${d}/`, "/admin/events/"],
@@ -497,8 +501,9 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
       assert.ok(nav, `${p}: has the section nav`);
       assert.match(nav, /aria-label="Admin sections"/);
       const items = navItems(nav);
-      assert.deepEqual(items.map((i) => i.label), ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users"], p);
-      assert.deepEqual(items.map((i) => i.href), ADMIN_LINKS.map((l) => l.href), p);
+      assert.deepEqual(items.map((i) => i.label),
+        ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users", "Social: schedule", "Social: verify"], p);
+      assert.deepEqual(items.map((i) => i.href), [...ADMIN_LINKS, ...SOCIAL_LINKS].map((l) => l.href), p);
       assert.deepEqual(items.filter((i) => i.current).map((i) => i.href), current ? [current] : [], `${p}: current item`);
     }
     // The home page lists the same links (one shared module).
@@ -509,12 +514,12 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     }
     // The themed 404 shows the same nav, with no current item.
     const nf = sectionNav(await (await req("/admin/events/foo/bar", { cookie: admin.cookie })).text());
-    assert.deepEqual(navItems(nf).map((i) => [i.href, i.current]), ADMIN_LINKS.map((l) => [l.href, false]));
+    assert.deepEqual(navItems(nf).map((i) => [i.href, i.current]), [...ADMIN_LINKS, ...SOCIAL_LINKS].map((l) => [l.href, false]));
   });
 
   test("social: only the social links (none of the admin sections); no role: no nav", async () => {
     const { ADMIN_LINKS, SOCIAL_LINKS, sectionNavHtml } = await import("../../src/lib/admin/nav.mjs");
-    for (const [p, status] of [["/admin/", 200], ["/admin/account/", 200], ["/admin/events/", 403], ["/admin/no-such-page", 404]]) {
+    for (const [p, status] of [["/admin/", 200], ["/admin/account/", 200], ["/admin/events/", 403], ["/admin/no-such-page", 403], ["/admin/social/next/", 200], ["/admin/social/verify/", 200]]) {
       const res = await req(p, { cookie: social.cookie });
       assert.equal(res.status, status, p);
       const html = await res.text();

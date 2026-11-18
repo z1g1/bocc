@@ -1,0 +1,10 @@
+---
+// /admin/social/: no page of its own; sends admin and social users to the Wednesday
+// work order (/admin/social/next/). The Monday page is /admin/social/verify/.
+import { requireRole } from "../../../lib/admin/roles.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "social");
+if (denied) return denied;
+return Astro.redirect("/admin/social/next/", 302);
+---

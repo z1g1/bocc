@@ -59,7 +59,7 @@ const statusText = (s: string) => (s === "cancelled" ? "cancelled" : s === "held
     </section>
   )}
 
-  {isSocial && (
+  {(isSocial || isAdmin) && (
     <section>
       <h2>Social</h2>
       {SOCIAL_LINKS.length > 0

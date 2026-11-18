@@ -6,6 +6,7 @@
 
 import { safeNext } from "./next.mjs";
 import { errorPageResponse } from "./error-page.mjs";
+import { mayReach } from "./roles.mjs";
 
 export { safeNext };
 
@@ -47,6 +48,14 @@ export async function guardRequest(url, headers, load) {
     const response = isApi
       ? Response.json({ error: "forbidden" }, { status: 403 })
       : errorPageResponse(403, { user: ctx.user, roles: [] });
+    return { response, setCookies: ctx.setCookies };
+  }
+  if (!mayReach(ctx.roles, url.pathname)) {
+    // The social role outside its allowlist (roles.mjs SOCIAL_PATHS): refused here,
+    // before the route runs, whatever the route's own requireRole() would say.
+    const response = isApi
+      ? Response.json({ error: "forbidden" }, { status: 403 })
+      : errorPageResponse(403, { user: ctx.user, roles: ctx.roles });
     return { response, setCookies: ctx.setCookies };
   }
   return { response: null, user: ctx.user, session: ctx.session, roles: ctx.roles, setCookies: ctx.setCookies };

@@ -9,6 +9,7 @@
 //     secrets) and the user's roles from public.user_roles
 //   - no session:  pages redirect to /login/?next=…, APIs get 401
 //   - no role:     403; pages get the static "Not allowed" page, nothing of the app
+//   - social only: 403 outside its allowlist (src/lib/admin/roles.mjs SOCIAL_PATHS)
 //   - otherwise:   Astro.locals.user / .session / .roles are set. Each route then
 //                  calls requireRole(locals, …) from src/lib/admin/roles.mjs.
 // A page route (not /api/) that answers a GET with a plain-text 403 or 404 (from

@@ -22,7 +22,10 @@ export const ADMIN_LINKS = Object.freeze([
 ]);
 
 /** @type {ReadonlyArray<NavLink>} The social role's pages (admins see them too). */
-export const SOCIAL_LINKS = Object.freeze([]);
+export const SOCIAL_LINKS = Object.freeze([
+  { href: "/admin/social/next/", label: "Social: schedule", note: "the next post's work order (Wednesday)" },
+  { href: "/admin/social/verify/", label: "Social: verify", note: "confirm posts are live, first comments (Monday)" },
+]);
 
 /**
  * The section links a user's roles allow: admin gets every link, social only the
