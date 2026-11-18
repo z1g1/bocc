@@ -32,18 +32,22 @@ personal data: keep them out of the repo.
 4. [x] Imports on `dev`: the Google Form CSV (135 events with reports; a re-run changes
    nothing) and the sign-in photos (45, plus a `held` event for 2024-11-12).
 5. On https://dev--bocc-backend.netlify.app/admin/events/:
-   - [ ] the list shows no "report missing" for past dates; old reports read correctly
+   - [x] the list shows no "report missing" for past dates; old reports read correctly
    - [ ] imported photos: thumbnail, display copy, "Download original" downloads the HEIC;
          2024-11-26 and 2024-11-12 look right (swapped file names)
-   - [ ] a future date: location saves; cancel with a reason, then un-cancel; `held` and a
+No Photos on these events. 
+   - [x ] a future date: location saves; cancel with a reason, then un-cancel; `held` and a
          report are refused
-   - [ ] **iPhone Safari:** upload a sign-in board photo and a social photo, mark the social
+	- [x] **iPhone Safari:** upload a sign-in board photo and a social photo, mark the social
          one publicly usable, delete one (closes the Phase 0 mobile presigned-PUT check)
-   - [ ] **Chrome on a phone:** the same upload. A HEIC picked in desktop Chrome gets the
-         "can't be read in this browser" message
-   - [ ] as the `social` user: `/admin/events/` and the media APIs → 403
-   - [ ] `/checkin/bocc` unchanged; one check-in POST with `debug: "1"` lands on `dev`
-   - [ ] public pages unchanged; `/events/<an expired date>/` still 302s to `/`
+upload worked but the UI is confusing. Create two seperate photo sections. one for signin board. One for social images
+   - ~~[ ] **Chrome on a phone:** the same upload. A HEIC picked in desktop Chrome gets the
+         "can't be read in this browser" message~~
+I don't use Chrome on phone, Firefox is my primary browser. I tested in FF an it worked fine.
+   - [x] as the `social` user: `/admin/events/` and the media APIs → 403
+The 403 is there, but it's a generic white page. Need an intheme experince for 403 Not Allowed, and a 404 "Out of Coffee" style page 
+   - [x] `/checkin/bocc` unchanged; one check-in POST with `debug: "1"` lands on `dev`
+   - [x] public pages unchanged; `/events/<an expired date>/` still 302s to `/`
 
 ## Production
 
