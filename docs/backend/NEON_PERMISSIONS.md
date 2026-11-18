@@ -16,6 +16,7 @@ in Neon Object Storage).
 |---|---|---|---|
 | `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`; `SELECT` on `held_occurrences`, `streaks` | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
+| `site_reader` | public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, rendered on request in the Astro SSR function (ADR 0009 decision 4) | `USAGE` on `public`; `SELECT` on `events`, `event_links` only | Netlify env `SITE_DB_URL` (secret) |
 | `neondb_owner` | operator only: `npm run migrate` | owner of schema objects, creates roles | local `.env.local` from `neon link` (gitignored). **Never in Netlify.** |
 | Storage credential (one per branch) | admin app: presigned media URLs (`src/lib/admin/storage.mjs`); `scripts/storage-cors.mjs` | `storage:read`, `storage:write` on the branch it was made on and its descendants. Not a Postgres role | Netlify env `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY`; see "Storage" |
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
@@ -42,7 +43,8 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
 | `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`) |
-| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the only table it may delete from; the app deletes the objects too) |
+| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too) |
+| `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -54,8 +56,25 @@ statements even for the owner. Roles live only in `user_roles`; the Better Auth 
 The Phase 3 tables (`events`, `event_reports`, `event_media`) have no RLS, like `user_roles` and
 `audit_log`: their rows aren't split between users, so the grants are the whole policy. Nothing
 else is granted on them: `checkin_writer` and `public` get nothing, and Supabase-style `anon` /
-`authenticated` roles are revoked if they exist. `event_links`, `social_posts` and
-`social_post_channels` (Phases 4 and 5) get their grants in their own migrations.
+`authenticated` roles are revoked if they exist. `event_links` (Phase 4) is the same, plus
+`site_reader`'s SELECT. `social_posts` and `social_post_channels` (Phase 5) get their grants in
+their own migration.
+
+### site_reader
+
+Created `NOLOGIN NOINHERIT` by migration `20261121120000_event_links_site_reader.sql`; the
+operator gives it `LOGIN` and a password out of band, like `admin_app` (see "Staging" below).
+Kept apart from `admin_app` so public traffic never holds the admin's credentials. Its grants,
+exactly:
+
+| Object | Privileges |
+|---|---|
+| schema `public` | `USAGE` |
+| `events`, `event_links` | `SELECT` |
+
+Nothing else: no reports, media, attendees, check-ins, `audit_log` or `auth`. Its URL
+(`SITE_DB_URL`) is the **pooled** `site_reader` URL, its own value per Netlify context, marked
+secret.
 
 ## Connection
 
@@ -124,6 +143,13 @@ context ever holds the production `ADMIN_DB_URL` or `BETTER_AUTH_SECRET`.
 Existing login sessions are unaffected (they live in `auth.session`). Rotating
 `BETTER_AUTH_SECRET` is separate: it invalidates every session cookie, so everyone signs in again.
 
+## Rotating the site_reader password
+
+1. As owner, on the branch concerned (`production` or `dev`, never both with one value):
+   `alter role site_reader password '<new hex>';`
+2. Update that context's `SITE_DB_URL` in Netlify, then trigger a redeploy. Until then the event
+   pages answer 503 once their cached copies expire.
+
 ## Staging: the `dev` branch
 
 Staging is a Neon `dev` branch copied from `production`, served to the `dev` Netlify branch
@@ -165,8 +191,16 @@ no non-production deploy should hold the production credential. Never print the 
 Done 2026-11-16 (Neon `dev` branch created, `checkin_writer` rotated there; a debug check-in
 from the `dev` deploy landed on `dev` and not on production).
 
-After any reset of `dev`, check that production's `checkin_writer` **and `admin_app`** passwords
-are refused on `dev` (expect `28P01 password authentication failed`). If either is accepted, run
+**site_reader on `dev`.** The same one-time step once migration
+`20261121120000_event_links_site_reader.sql` has run on `dev` (the role is created `NOLOGIN`),
+with its own `openssl rand -hex 32`; production gets a different password after its migration:
+
+```sql
+alter role site_reader login password '<new hex>';
+```
+
+After any reset of `dev`, check that production's `checkin_writer`, `admin_app` **and
+`site_reader`** passwords are refused on `dev` (expect `28P01 password authentication failed`). If either is accepted, run
 its `alter role` statement again.
 
 **Object Storage.** A storage credential "is scoped to a branch and valid for that branch and
