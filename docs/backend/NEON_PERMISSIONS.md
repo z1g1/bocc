@@ -17,6 +17,7 @@ in Neon Object Storage).
 | `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`; `SELECT` on `held_occurrences`, `streaks` | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
 | `site_reader` | public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, rendered on request in the Astro SSR function (ADR 0009 decision 4) | `USAGE` on `public`; `SELECT` on `events`, `event_links` only | Netlify env `SITE_DB_URL` (secret) |
+| `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_posts`, `social_post_channels`; `SELECT (id, event_date, kind, status)` on `event_media` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
 | `neondb_owner` | operator only: `npm run migrate` | owner of schema objects, creates roles | local `.env.local` from `neon link` (gitignored). **Never in Netlify.** |
 | Storage credential (one per branch) | admin app: presigned media URLs (`src/lib/admin/storage.mjs`); `scripts/storage-cors.mjs` | `storage:read`, `storage:write` on the branch it was made on and its descendants. Not a Postgres role | Netlify env `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY`; see "Storage" |
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
@@ -77,6 +78,28 @@ Nothing else: no reports, media, attendees, check-ins, `audit_log` or `auth`. It
 (`SITE_DB_URL`) is the **pooled** `site_reader` URL, its own value per Netlify context, marked
 secret.
 
+### social_checker
+
+Created `NOLOGIN NOINHERIT` by migration `20261123120000_social_checker.sql`. The operator gives
+it `LOGIN` and a password out of band, like `site_reader` (see "Staging" below).
+
+It is used only by the Thursday social check, which reads the next Tuesday's work order and
+sends an ntfy push (ADR 0011 decision 5, amended 2026-11-18). It is kept apart from
+`admin_app` because the check only reads. A leaked `SOCIAL_CHECK_DB_URL` exposes the work
+order and nothing else, and changes nothing.
+
+Its grants, exactly:
+
+| Object | Privileges |
+|---|---|
+| schema `public` | `USAGE` |
+| `events`, `event_links`, `social_posts`, `social_post_channels` | `SELECT` |
+| `event_media` columns `id`, `event_date`, `kind`, `status` | `SELECT` (enough to tell whether the attached promo video is ready; no object keys, sizes or uploader) |
+
+Nothing else: no attendees, check-ins, reports, `audit_log`, `user_roles` or `auth`, and no
+writes. Its URL (`SOCIAL_CHECK_DB_URL`) is the **pooled** `social_checker` URL. It has its own
+value per Netlify context and is marked secret.
+
 ## Connection
 
 - Use the **pooled** endpoint (`ep-…-pooler.<region>.aws.neon.tech`). Netlify Functions
@@ -107,6 +130,9 @@ is an optional override; a malformed value fails closed.
 | `ADMIN_DB_POOL_MAX` | Netlify (optional) | `admin_app` pool size per function instance, default `3`, minimum `2` (a password reset holds one connection while Better Auth uses another) |
 | `SITE_DB_URL` | Netlify (required for the public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, ADR 0009) | pooled `site_reader` URL. Its own value per context, like `ADMIN_DB_URL`. Without it those pages answer 503 (no-store); the rest of the site is static and unaffected. Read only by `src/lib/site/db.mjs`, at first use |
 | `SITE_DB_POOL_MAX` | Netlify (optional) | `site_reader` pool size per function instance, default `2`, from `1` to `10` |
+| `SOCIAL_CHECK_DB_URL` | Netlify (required for the Thursday social check) | pooled `social_checker` URL, its own value per context, secret. If it is missing, the check logs the problem and pushes a "check failed" alert. Read only by `src/lib/social-alert/run.mjs` |
+| `SOCIAL_ALERT_NTFY_TOPIC` | Netlify (optional; no alerts without it) | the private ntfy topic the Thursday check publishes to. **Secret**: anyone who knows it can read and post to it. Use a long random name (e.g. `bocc-` + `openssl rand -hex 16`), a different one per context. Never logged. Unset: the check logs and stops |
+| `SOCIAL_ALERT_NTFY_SERVER` | Netlify (optional) | ntfy server, default `https://ntfy.sh`; https only. Not secret |
 
 | `STORAGE_ENDPOINT` | Netlify (optional; media is off without it) | the branch's S3 endpoint, see "Storage". Not secret |
 | `STORAGE_BUCKET` | Netlify (optional) | `bocc-media`. Not secret |
@@ -143,6 +169,15 @@ context ever holds the production `ADMIN_DB_URL` or `BETTER_AUTH_SECRET`.
 
 Existing login sessions are unaffected (they live in `auth.session`). Rotating
 `BETTER_AUTH_SECRET` is separate: it invalidates every session cookie, so everyone signs in again.
+
+## Rotating the social_checker password, or the ntfy topic
+
+1. As owner, on the branch concerned: `alter role social_checker password '<new hex>';`
+2. Update that context's `SOCIAL_CHECK_DB_URL` in Netlify, then trigger a redeploy.
+
+A new ntfy topic means a new `SOCIAL_ALERT_NTFY_TOPIC`, a redeploy, and subscribing to the new
+topic in the ntfy app. Unsubscribe from the old one too: ntfy.sh keeps no access list, so a
+leaked topic can only be retired.
 
 ## Rotating the site_reader password
 
@@ -200,8 +235,16 @@ with its own `openssl rand -hex 32`; production gets a different password after 
 alter role site_reader login password '<new hex>';
 ```
 
-After any reset of `dev`, check that production's `checkin_writer`, `admin_app` **and
-`site_reader`** passwords are refused on `dev` (expect `28P01 password authentication failed`). If either is accepted, run
+**social_checker on `dev`.** The same one-time step once migration
+`20261123120000_social_checker.sql` has run on `dev`, with its own `openssl rand -hex 32`
+(production gets a different one):
+
+```sql
+alter role social_checker login password '<new hex>';
+```
+
+After any reset of `dev`, check that production's `checkin_writer`, `admin_app`, `site_reader`
+**and `social_checker`** passwords are refused on `dev` (expect `28P01 password authentication failed`). If either is accepted, run
 its `alter role` statement again.
 
 **Object Storage.** A storage credential "is scoped to a branch and valid for that branch and
@@ -338,6 +381,16 @@ Run as `admin_app` once `20261118120000_events_media.sql` is applied, inside `be
       `delete from event_media where false` → succeeds
 - [ ] `truncate event_media` → permission denied
 - [ ] as `checkin_writer`: `select * from events` → permission denied
+
+Run as `social_checker` once `20261123120000_social_checker.sql` is applied, inside
+`begin; … rollback;`:
+
+- [ ] `select count(*) from social_posts` / `social_post_channels` / `events` / `event_links` →
+      succeeds
+- [ ] `select id, kind, status from event_media limit 1` → succeeds;
+      `select original_key from event_media limit 1` → permission denied
+- [ ] `select 1 from attendees limit 1` / `from event_reports` → permission denied
+- [ ] `update social_post_channels set status = status` → permission denied
 
 `npm run test:db` asserts all of the above against a throwaway Postgres with the real
 migrations (`tests/admin/permissions.test.mjs`); this list is for the real Neon branches.

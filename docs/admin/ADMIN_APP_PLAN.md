@@ -454,10 +454,22 @@ on-device checks and production are open.
 - [ ] A `social` account for Modron, signed in by hand once in its Chrome profile
 - [ ] Chrome scheduled tasks: Wednesday (schedule) and Monday about 7:20 AM ET (verify and post
       the first comment), rehearsed against the staging branch deploy
-- [ ] Thursday check (Netlify scheduled function) that alerts you about channels not yet
-      `scheduled`. Choose how the alert is sent; a transactional email provider is not in the
-      MVP
-- [ ] Update `docs/social/README.md` and supersede `WEEKLY_SOCIAL_POSTING_PLAN.md`
+- [x] Thursday check (Netlify scheduled function) that alerts you about channels not yet
+      `scheduled`. The alert is an **ntfy.sh push** (decided 2026-11-18; ADR 0011 decision 5,
+      amended), not email. Built on `dev` 2026-11-18:
+      - `backend/netlify/functions/social-check.mjs`, Thursdays 14:00 UTC (9 AM EST, 10 AM EDT)
+      - the pure rules and the ntfy call are in `src/lib/social-alert/alert.mjs`; the read is in
+        `run.mjs`
+      - it checks the next Tuesday: no post, post not ready (with its problems), or any channel
+        not `scheduled`/`live`. If all is fine it only logs
+      - it reads as the new read-only `social_checker` role (migration
+        `20261123120000_social_checker.sql`, `SOCIAL_CHECK_DB_URL`)
+      - env: `SOCIAL_ALERT_NTFY_TOPIC` (the only secret; unset = log and skip),
+        `SOCIAL_ALERT_NTFY_SERVER` (optional)
+      - on staging, trigger it with Netlify's **Run now** button
+      ([PHASE5_RELEASE.md](PHASE5_RELEASE.md)). The first staging push is still to do
+- [x] Update `docs/social/README.md` and supersede `WEEKLY_SOCIAL_POSTING_PLAN.md`. The two
+      Chrome task prompts are in [`docs/social/CHROME_TASKS.md`](../social/CHROME_TASKS.md)
 
 ## Later, not in the MVP
 

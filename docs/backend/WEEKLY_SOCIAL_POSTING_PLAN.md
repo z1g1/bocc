@@ -1,9 +1,14 @@
 # Plan: Weekly social posting beyond LinkedIn
 
-Status: **Superseded in part** (2026-11-16). For the weekly promo video, the API approach here is
-replaced by Claude in Chrome tasks working from a work order in the admin app
-([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md)). The LinkedIn event CLI is unchanged.
-Originally proposed 2026-10-27. Nothing here was built.
+> **Superseded by [ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md)** (2026-11-16;
+> confirmed 2026-11-18 when Phase 5 was built). The weekly promo video is no longer posted
+> through the platforms' APIs. Instead, Claude in Chrome tasks work from a work order in the
+> admin app. The current weekly flow is in [`docs/social/README.md`](../social/README.md), and
+> the task prompts are in [`docs/social/CHROME_TASKS.md`](../social/CHROME_TASKS.md). Kept for
+> the API research below, which is the long-term option for one channel at a time. The
+> LinkedIn event CLI (`tools/linkedin-events`) is unchanged.
+
+Status: **Superseded.** Originally proposed 2026-10-27. Nothing here was built.
 
 ## Goal
 

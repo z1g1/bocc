@@ -1,5 +1,30 @@
 
 
+## Weekly promo video
+
+Since Phase 5 ([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md)), the week's
+vertical promo video is one work order in the admin app. It is posted at 7:00 AM ET on the
+Monday before the event to Facebook, Instagram, Threads, TikTok and the LinkedIn page. The app
+never posts anything itself. The old API plan
+([WEEKLY_SOCIAL_POSTING_PLAN.md](../backend/WEEKLY_SOCIAL_POSTING_PLAN.md)) is superseded.
+
+| When | Who | What |
+|---|---|---|
+| By Tuesday night | Zack (admin) | On `/admin/events/<date>/`, "Social post" section: upload the video (MP4/MOV up to 100 MB; an iPhone upload works), write the base caption, and add extra TikTok hashtags or a cover note if wanted. Check that the Luma listing is there (Listings). Then tick **Ready**. The app refuses until the video, caption and Luma link are all there, every caption is within its platform's limit, and the publish time (default Monday 7:00 AM ET) is in the future. Each channel's final text is shown, and can be overridden per channel |
+| Wednesday | Modron's Claude in Chrome task | Opens `/admin/social/next/` as the `social` user. Downloads the video, schedules every `pending` channel for the publish time (Business Suite for Facebook and Instagram, Threads web, TikTok Studio, the LinkedIn page), and saves each channel's status (`scheduled`) and post URL back through its form. If nothing is ready, it stops and reports why |
+| Thursday 9 AM ET (10 AM in summer) | the app | A Netlify scheduled function checks the coming Tuesday. If there is no post, the post isn't ready, or a channel isn't `scheduled`/`live`, Zack gets an **ntfy push** whose link opens `/admin/social/next/`. Otherwise nothing is sent |
+| Monday about 7:20 AM ET | Modron's Claude in Chrome task | Opens `/admin/social/verify/`, opens each post, marks it `live` or `failed`, posts the Luma link as the first comment on Instagram and TikTok, and records that it did |
+
+The prompts for the two Chrome tasks, and what to do when one reports a problem, are in
+[CHROME_TASKS.md](CHROME_TASKS.md). Caption rules, in code (`src/lib/admin/social-rules.mjs`):
+- Facebook, Threads and LinkedIn get the caption plus "RSVP: <Luma link>".
+- Instagram and TikTok get the caption plus "Link in bio", with the Luma link as the first
+  comment.
+- TikTok also gets the default hashtags plus any extras.
+- Luma is the only link ever used.
+
+Zack's personal LinkedIn post is not part of the work order. He still schedules it by hand.
+
 ## Handles and Websites
 
 1. Luma (Primary Event) - 
@@ -13,18 +38,18 @@
 	1. Goal 1 vertical video post each week Monday at 7 AM to drive to the event. Zack has to schedule manually 1/week since Claude will not have access to his personal LinkedIn
 1. Instagram (Secondary Social Network) 
 	1. https://www.instagram.com/716coffeeclub
-	1. Goal 1 vertical video to reels each week Monday at 7 AM to drive to the event. Modron schedules this post using Meta Business center. Needs a caption for the video. Try to keep to 5-8 words to show up on the first line of the video. Sub 20 second video. 
+	1. Goal 1 vertical video to reels each week Monday at 7 AM to drive to the event. Scheduled by the Wednesday Chrome task in Meta Business Suite, from the work order. Needs a caption for the video. Try to keep to 5-8 words to show up on the first line of the video. Sub 20 second video. 
 1. Facebook Page (Secondary Social Network)
 	1.  https://www.facebook.com/716coffeeclub
-	1. Goal 1 vertical video post to the page each week Monday at 7 AM to drive to the event. Modron schedules this post using Meta Business center so it should be the same as the Reel created for Instagram 
+	1. Goal 1 vertical video post to the page each week Monday at 7 AM to drive to the event. Scheduled by the Wednesday Chrome task in Meta Business Suite, the same video as the Instagram reel, with the Facebook caption from the work order
 	1. Goal 1 Facebook Event created once per week on Wednesdays since it notifies all followers of the page. 
 1. TikTok (Secondary Social Network)
 	1. https://www.tiktok.com/@716coffee.club
-	1. Goal 1 vertical video post to the page each week Monday at 7 AM to drive to the event. Modron schedules this post using TikTok Studio via Chrome.  Need caption for the video, as well as hashtags. Try to keep to 5-8 words to show up on the first line of the video. Sub 20 second video
+	1. Goal 1 vertical video post to the page each week Monday at 7 AM to drive to the event. Scheduled by the Wednesday Chrome task in TikTok Studio, from the work order.  Need caption for the video, as well as hashtags. Try to keep to 5-8 words to show up on the first line of the video. Sub 20 second video
 1. Threads (tertiary Social Network)
 	1.  https://www.facebook.com/716coffeeclub
-	1. Goal 1 vertical video post to the profile each week Monday at 7 AM to drive to the event. Modron schedules this post using Meta Business center. so it should be the same as the Reel created for Instagram
-	1. This is something that we get 'for free' with Meta Buseinss Center but no real focus
+	1. Goal 1 vertical video post to the profile each week Monday at 7 AM to drive to the event. Scheduled by the Wednesday Chrome task in the Threads web app, a separate step, because Business Suite doesn't post to Threads and Instagram's "Share to Threads" only works for posts published immediately (ADR 0011)
+	1. Lower priority than the other channels
 
 ## Event URLS
 The Luma, Eventbrite, Facebook and LinkedIn listings for each date live in the admin, on each event page under [/admin/events/](https://716coffee.club/admin/events/) (the source of truth since Phase 4, ADR 0009).

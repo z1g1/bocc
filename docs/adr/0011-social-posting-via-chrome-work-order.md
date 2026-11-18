@@ -66,6 +66,22 @@ accounts at risk under the platforms' terms.
 5. **The app's only scheduler checks that the run happened.** A Netlify scheduled function emails
    you if a channel for the next Tuesday isn't `scheduled` by Thursday. Email here means
    notifying you only, and how to send it is decided in Phase 3.
+   - *Amended 2026-11-18 (Zack): the alert is an **ntfy.sh push**, not email.* ntfy is free and
+     needs no account. The function POSTs to a private topic. The topic name is the only secret:
+     the Netlify env var `SOCIAL_ALERT_NTFY_TOPIC`. `SOCIAL_ALERT_NTFY_SERVER` is optional and
+     defaults to `https://ntfy.sh`. Zack subscribes to the topic in the ntfy iPhone app.
+   - The function is `backend/netlify/functions/social-check.mjs` (logic in
+     `src/lib/social-alert/`). It runs Thursdays at 14:00 UTC, which is 9:00 AM EST or
+     10:00 AM EDT.
+   - It checks the next Tuesday and alerts when any of these is true: there is no post; the post
+     isn't ready, or has problems; or a channel isn't `scheduled` or `live`. A cancelled event
+     never alerts. When everything is fine it only logs. If it can't read the database, it sends
+     a "check failed" push instead.
+   - The Click link opens `/admin/social/next` on that context's site.
+   - It reads as a new read-only role, `social_checker` (`SOCIAL_CHECK_DB_URL`, migration
+     `20261123120000_social_checker.sql`), not `admin_app`.
+   - Netlify runs it on its schedule only on the published production deploy. On staging,
+     trigger it with the Functions page's **Run now** button.
 6. **Modron logs in with a `social` account** (ADR 0008) using a 30-day sliding session. If the
    session expires, the task stops and reports it. It never enters a password.
 

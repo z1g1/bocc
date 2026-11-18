@@ -105,7 +105,10 @@ non-production context a production value.
 ## Production (together with Phase 3)
 
 Phase 3's production steps ([PHASE3_RELEASE.md](PHASE3_RELEASE.md), steps 6 to 10) and these run
-as one release: migrate, set roles and env vars, import, then one merge. Production keeps
+as one release: migrate, set roles and env vars, import, then one merge. **Phase 5 ships in the
+same merge:** its production steps ([PHASE5_RELEASE.md](PHASE5_RELEASE.md), steps 8 to 14) add
+two migrations to step 7, the `social_checker` role and two env vars before step 13, and the
+checks after step 14, including the admin CSP's `media-src`. Production keeps
 serving the old static event pages until the deploy, so nothing breaks in between.
 
 7. [ ] **Migrate Neon `production`** (owner; `.env.local` points there):
