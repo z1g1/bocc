@@ -61,7 +61,6 @@ describe("media with storage not configured", { timeout: 300_000 }, () => {
       ["/api/admin/media/uploads", { eventDate: date, kind: "signin_board", original: { contentType: "image/jpeg", size: 1 }, display: { size: 1 }, thumb: { size: 1 } }],
       [`/api/admin/media/${id}/complete`, {}],
       [`/api/admin/media/${id}/delete`, {}],
-      [`/api/admin/media/${id}/public`, { publiclyUsable: true }],
     ];
     for (const [path, json] of tries) {
       const res = await fetch(`${BASE}${path}`, {

@@ -377,7 +377,9 @@ on-device checks and production are open.
   - the browser makes the 1600px JPEG and 400px thumbnail
   - uploads go straight to the bucket via presigned PUT
   - a gallery shown through short-lived GET URLs
-  - each photo tagged `signin_board` / `social_photo`, with `publicly_usable`
+  - each photo tagged `signin_board` / `social_photo`, with `publicly_usable`. Since
+    2026-11-18 that is not a choice: social photos are always publicly usable (the posted
+    photo waiver), sign-in board photos never (ADR 0010 decision 2, migration `20261120120000`)
   - pending uploads over a day old are listed on the event page for deletion; no storage
     configured shows a message and the APIs answer 503
 - [x] Dashboard: upcoming events, and **"report missing"** for past dates still marked

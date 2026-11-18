@@ -231,3 +231,24 @@ describe("shape checks", () => {
       assert.deepEqual(rows, [{ submitted_by: null, uploaded_by: null }]);
     }));
 });
+
+describe("migration 20261120120000 (social photos publicly usable)", () => {
+  test("backfills social photos to true, leaves sign-in board photos false, and is idempotent", async () => {
+    const { readFileSync } = await import("node:fs");
+    const sql = readFileSync(new URL("../../backend/db/migrations/20261120120000_social_photos_publicly_usable.sql", import.meta.url), "utf8");
+    await inRollback(owner, async () => {
+      const d = testDate();
+      await owner.query("insert into events (event_date) values ($1)", [d]);
+      const social = photo(d, { publicly_usable: false });
+      const board = photo(d, { kind: "signin_board", publicly_usable: false });
+      await insertMedia(owner, social);
+      await insertMedia(owner, board);
+      const first = await owner.query(sql);
+      assert.ok(first.rowCount >= 1);
+      const { rows } = await owner.query("select id, publicly_usable from event_media where event_date = $1", [d]);
+      const pu = Object.fromEntries(rows.map((r) => [r.id, r.publicly_usable]));
+      assert.deepEqual(pu, { [social.id]: true, [board.id]: false });
+      assert.equal((await owner.query(sql)).rowCount, 0, "a re-run changes nothing");
+    });
+  });
+});

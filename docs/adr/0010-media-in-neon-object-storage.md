@@ -31,6 +31,12 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
 2. **`event_media` table:** `event_date`, `kind` (`signin_board` / `social_photo` /
    `promo_video`), object keys, content type, size, `publicly_usable` (social photos), status
    (`pending` → `ready`), and who uploaded it.
+   - *Amended 2026-11-18:* `publicly_usable` is not a per-photo choice. Every social photo is
+     covered by the photo waiver posted at the event, so a `social_photo` is always publicly
+     usable (the server sets it on upload, whatever the client sends) and a `signin_board`
+     never is (the CHECK). The "OK to use publicly" control and its route are gone; the column
+     stays for Phase 5. Migration `20261120120000_social_photos_publicly_usable.sql` backfills
+     the social photos uploaded before the change.
 3. **The browser makes the resized copies before upload.** It uploads:
    - the **untouched original** (the archive)
    - a **1600px JPEG** display copy, which also drops metadata such as GPS location
@@ -74,3 +80,5 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
 - *Amended 2026-11-16:* the HEIC refusal above.
 - *Amended 2026-11-17:* the one-time import of the old sign-in board photos (decision 4),
   keeping the original HEIC files as the archive.
+- *Amended 2026-11-18:* every social photo is publicly usable, under the posted photo waiver
+  (decision 2).

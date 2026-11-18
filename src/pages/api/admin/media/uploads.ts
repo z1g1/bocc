@@ -1,10 +1,12 @@
 // POST /api/admin/media/uploads: start one photo upload (ADR 0010). Admin only,
 // Origin-checked, JSON in and out. The browser has already made the display copy and
 // thumbnail; it declares the three files' types and sizes and gets back three
-// presigned PUTs for them (src/lib/admin/media.mjs startUpload).
+// presigned PUTs for them (src/lib/admin/media.mjs startUpload). The server sets
+// publicly_usable from the kind (social_photo true, signin_board false); a
+// `publiclyUsable` field in the request is ignored.
 //
 //   request  { eventDate: "2026-11-24", kind: "signin_board" | "social_photo",
-//              publiclyUsable: false, original: { contentType: "image/jpeg", size },
+//              original: { contentType: "image/jpeg", size },
 //              display: { size }, thumb: { size } }
 //   201      { id, eventDate, eventCreated, expiresInSeconds,
 //              uploads: { original|display|thumb: { method: "PUT", url, headers } } }

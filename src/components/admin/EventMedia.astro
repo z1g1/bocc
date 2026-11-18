@@ -5,8 +5,9 @@
 //   <EventMedia date="2026-11-24" />
 //
 // - Two sections, "Sign-in board" and "Social photos", each with its own upload form
-//   (kind fixed by a hidden field), status line, gallery and unfinished uploads. Only
-//   social photos carry "OK to use publicly".
+//   (kind fixed by a hidden field), status line, gallery and unfinished uploads. No
+//   "OK to use publicly" control: every social photo is covered by the posted photo
+//   waiver, so the server marks it publicly usable (ADR 0010 decision 2).
 // - Upload forms: /js/admin-media.js makes the 1600px display copy and the 400px
 //   thumbnail in the browser and PUTs all three files straight to the private bucket
 //   (presigned URLs from /api/admin/media/uploads). Hidden until that script runs.
@@ -29,23 +30,21 @@ const { storage } = allowed ? getStorage() : { storage: null };
 const NOTICES: Record<string, string> = {
   deleted: "Photo deleted.",
   "deleted-partial": "Photo deleted. Some of its files couldn't be removed from storage; they are logged for cleanup.",
-  "public-on": "Marked OK to use publicly.",
-  "public-off": "No longer marked OK to use publicly.",
 };
 const notice = NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
 
 // One section per kind, each with its own upload form (the kind is fixed: a hidden
-// `kind` field), status line and gallery. Only social photos can be marked publicly usable.
+// `kind` field), status line and gallery.
 const SECTIONS = [
   {
     kind: "signin_board", slug: "signin", heading: "Sign-in board", label: "Sign-in board",
     intro: "Photos of the paper sign-in board.", empty: "No sign-in board photo yet.",
-    pickLabel: "Sign-in board photos (JPEG or PNG)", button: "Upload sign-in board photos", publicToggle: false,
+    pickLabel: "Sign-in board photos (JPEG or PNG)", button: "Upload sign-in board photos",
   },
   {
     kind: "social_photo", slug: "social", heading: "Social photos", label: "Social photo",
     intro: "Photos from the event for social media.", empty: "No social photos yet.",
-    pickLabel: "Social photos (JPEG or PNG)", button: "Upload social photos", publicToggle: true,
+    pickLabel: "Social photos (JPEG or PNG)", button: "Upload social photos",
   },
 ] as const;
 
@@ -101,9 +100,6 @@ const fmtTime = (d: Date) =>
               <input type="hidden" name="kind" value={s.kind}>
               <label for={s.inputId}>{s.pickLabel}</label>
               <input id={s.inputId} type="file" name="files" accept="image/jpeg,image/png" multiple required>
-              {s.publicToggle && (
-                <label class="check"><input type="checkbox" name="publiclyUsable" value="1"> OK to use publicly</label>
-              )}
               <button type="submit">{s.button}</button>
             </form>
             <p class="media-status" id={s.statusId} role="status" aria-live="polite"></p>
@@ -113,15 +109,8 @@ const fmtTime = (d: Date) =>
                 {s.ready.map((m: any, i: number) => (
                   <li>
                     <a href={m.displayUrl}><img src={m.thumbUrl} alt={`${s.label}${s.ready.length > 1 ? ` ${i + 1} of ${s.ready.length}` : ""}, ${date}`} loading="lazy" decoding="async"></a>
-                    {s.publicToggle && m.publiclyUsable && <p><span class="tag">OK to use publicly</span></p>}
                     <p><a href={m.originalUrl} download>Download original</a></p>
                     <div class="media-actions">
-                      {s.publicToggle && (
-                        <form method="post" action={`/api/admin/media/${m.id}/public`} class="inline">
-                          <input type="hidden" name="publiclyUsable" value={m.publiclyUsable ? "0" : "1"}>
-                          <button type="submit" class="small secondary">{m.publiclyUsable ? "Not public" : "OK to use publicly"}</button>
-                        </form>
-                      )}
                       <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this photo? This can't be undone.">
                         <button type="submit" class="small secondary">Delete</button>
                       </form>

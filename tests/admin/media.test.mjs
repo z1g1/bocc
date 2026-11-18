@@ -3,10 +3,10 @@
 //   1. src/lib/admin/media.mjs as admin_app: validation, the events row made on the
 //      first upload, presign -> real PUTs to MinIO -> complete -> ready, a missing or
 //      wrong object keeps the row pending, delete removes row and objects (audited),
-//      publicly_usable only on social photos, stale pending rows
+//      publicly_usable set from the kind (never the client), stale pending rows
 //   2. the routes over HTTP through a real `astro dev`: roles (none / no role /
 //      social -> refused), Origin and method checks, the full flow, the gallery on
-//      the event page, delete and toggle form posts
+//      the event page, delete form posts, no "OK to use publicly" control
 // Media switched off is covered in media-disabled.test.mjs (its own process and env).
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -54,7 +54,7 @@ async function freshDate() {
   }
 }
 const body = (eventDate, over = {}) => ({
-  eventDate, kind: "signin_board", publiclyUsable: false,
+  eventDate, kind: "signin_board",
   original: { contentType: "image/jpeg", size: JPEG.length }, display: { size: DISPLAY.length }, thumb: { size: THUMB.length },
   ...over,
 });
@@ -122,9 +122,13 @@ describe("upload validation", () => {
     assert.match(errs({ thumb: { size: media.LIMITS.thumb + 1 } }), /thumb.size/);
     assert.match(errs({ thumb: undefined }), /thumb is required/);
   });
-  test("publicly_usable only on social_photo, and only a boolean", () => {
-    assert.match(errs({ kind: "signin_board", publiclyUsable: true }), /only to social_photo/);
-    assert.match(errs({ kind: "social_photo", publiclyUsable: "yes" }), /true or false/);
+  test("publicly_usable comes from the kind, whatever the client sends (ADR 0010 decision 2)", () => {
+    const pu = (over) => { const r = v(over); assert.equal(r.ok, true, JSON.stringify(over)); return r.values.publiclyUsable; };
+    assert.equal(pu({ kind: "social_photo" }), true);
+    assert.equal(pu({ kind: "social_photo", publiclyUsable: false }), true);
+    assert.equal(pu({ kind: "social_photo", publiclyUsable: "no" }), true);
+    assert.equal(pu({ kind: "signin_board" }), false);
+    assert.equal(pu({ kind: "signin_board", publiclyUsable: true }), false);
   });
   test("the browser's limits match the server's", () => {
     assert.equal(lib.MAX_ORIGINAL_BYTES, media.LIMITS.original);
@@ -236,17 +240,15 @@ describe("upload flow against MinIO", { skip }, () => {
     assert.match(logs[0], /still in the bucket: events\/.*original\.jpg/);
   });
 
-  test("publicly_usable toggles on social photos only, audited", async () => {
+  test("a social photo is created publicly usable and a sign-in board photo never, whatever the client sends", async () => {
     const date = await freshDate();
-    const social = await media.startUpload(actor.id, storage(), body(date, { kind: "social_photo" }));
-    const board = await media.startUpload(actor.id, storage(), body(date));
-    assert.deepEqual(await media.setPubliclyUsable(actor.id, social.id, true),
-      { id: social.id, eventDate: date, before: false, publiclyUsable: true });
+    const social = await media.startUpload(actor.id, storage(), body(date, { kind: "social_photo", publiclyUsable: false }));
+    const board = await media.startUpload(actor.id, storage(), body(date, { publiclyUsable: true }));
     assert.equal((await row(social.id)).publicly_usable, true);
-    assert.deepEqual((await audits(social.id)).at(-1).details, { eventDate: date, before: false, after: true });
-    await assert.rejects(media.setPubliclyUsable(actor.id, board.id, true), { status: 400 });
-    await assert.rejects(media.setPubliclyUsable(actor.id, social.id, "1"), { status: 400 });
     assert.equal((await row(board.id)).publicly_usable, false);
+    assert.equal((await audits(social.id))[0].details.publiclyUsable, true);
+    assert.equal((await audits(board.id))[0].details.publiclyUsable, false);
+    assert.equal(media.setPubliclyUsable, undefined, "no toggle");
   });
 
   test("the database allows HEIC/HEIF originals for signin_board only (migration 20261119120000)", async () => {
@@ -318,7 +320,6 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     { path: "/api/admin/media/uploads", json: body(date) },
     { path: `/api/admin/media/${someId}/complete`, json: {} },
     { path: `/api/admin/media/${someId}/delete`, form: {} },
-    { path: `/api/admin/media/${someId}/public`, form: { publiclyUsable: "1" } },
   ];
 
   test("no session -> 401; no role, or the social role -> 403; nothing is written", async () => {
@@ -357,7 +358,6 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
       body("2026-13-01"), body(date, { kind: "promo_video" }),
       body(date, { original: { contentType: "image/heic", size: 10 } }),
       body(date, { original: { contentType: "image/jpeg", size: 26 * 1024 * 1024 } }),
-      body(date, { publiclyUsable: true }),
     ];
     for (const b of bad) {
       const res = await req("/api/admin/media/uploads", { cookie: admin.cookie, json: b });
@@ -374,12 +374,13 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.equal((await owner.query("select 1 from events where event_date = $1", [date])).rowCount, 0);
   });
 
-  test("the full flow: upload, PUT to MinIO, complete, gallery, toggle, delete", async () => {
+  test("the full flow: upload, PUT to MinIO, complete, gallery, delete", async () => {
     const date = await freshDate();
     const start = await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "social_photo" }) });
     assert.equal(start.status, 201);
     const plan = await start.json();
     assert.equal(plan.eventCreated, true);
+    assert.equal((await row(plan.id)).publicly_usable, true, "social photos are always publicly usable");
 
     const early = await req(`/api/admin/media/${plan.id}/complete`, { cookie: admin.cookie, json: {} });
     assert.equal(early.status, 409);
@@ -414,9 +415,9 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(signin, /<input type="hidden" name="kind" value="signin_board"/);
     assert.match(socialSec, /<input type="hidden" name="kind" value="social_photo"/);
     assert.ok(!/<select[^>]*name="kind"/.test(page), "no kind dropdown");
-    assert.match(socialSec, /name="publiclyUsable"/);
-    assert.ok(!signin.includes("publiclyUsable"), "no public checkbox or toggle for the sign-in board");
-    assert.ok(!signin.includes("OK to use publicly"));
+    assert.ok(!page.includes("publiclyUsable"), "no public checkbox or toggle");
+    assert.ok(!page.includes("OK to use publicly") && !page.includes("Not public"), "no public badge or button");
+    assert.ok(!page.includes("/public\""), "no form posts to the removed route");
     for (const sec of [signin, socialSec]) {
       const statusId = sec.match(/data-status="([^"]+)"/)[1];
       assert.match(sec, new RegExp(`id="${statusId}" role="status" aria-live="polite"`));
@@ -433,22 +434,13 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(page, new RegExp(`href="[^"]*/${plan.id}/display\\.jpg\\?`));
     assert.match(page, new RegExp(`href="[^"]*/${plan.id}/original\\.jpg\\?[^"]*" download[^>]*>Download original`));
 
-    const on = await req(`/api/admin/media/${plan.id}/public`, {
-      cookie: admin.cookie, form: { publiclyUsable: "1" } });
-    assert.equal(on.status, 303);
-    assert.equal(on.headers.get("location"), `/admin/events/${date}/?media=public-on#event-media`);
-    assert.equal((await row(plan.id)).publicly_usable, true);
-    const after = await (await req(`/admin/events/${date}/?media=public-on`, { method: "GET", cookie: admin.cookie })).text();
-    assert.match(after, /OK to use publicly<\/span>/);
-    assert.match(after, /Marked OK to use publicly\./);
-
     const evil = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: "https://evil.example/" } });
     assert.equal(evil.status, 303);
     assert.equal(evil.headers.get("location"), `/admin/events/${date}/?media=deleted#event-media`, "the row's own event page");
     assert.equal(await row(plan.id), undefined);
     for (const v of ["original", "display", "thumb"]) assert.equal(await exists(`events/${date}/${plan.id}/${v}.jpg`), false);
     assert.deepEqual((await audits(plan.id)).map((a) => [a.action, a.actor_user_id]),
-      [["media.upload", admin.user.id], ["media.ready", admin.user.id], ["media.publicly_usable", admin.user.id], ["media.delete", admin.user.id]]);
+      [["media.upload", admin.user.id], ["media.ready", admin.user.id], ["media.delete", admin.user.id]]);
   });
 
   test("a JSON delete (the upload script giving up) answers JSON", async () => {
@@ -457,8 +449,10 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     const res = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, json: {} });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { id: plan.id, eventDate: date, leftovers: [] });
+    // The old "OK to use publicly" route is gone: a plain JSON 404 (src/pages/api/admin/[...rest].ts).
     const toggle = await req(`/api/admin/media/${plan.id}/public`, { cookie: admin.cookie, json: { publiclyUsable: true } });
     assert.equal(toggle.status, 404);
+    assert.deepEqual(await toggle.json(), { error: "not found" });
   });
 
   test("an imported sign-in photo (uploaded_by NULL, HEIC original) shows in the sign-in board gallery", async () => {
@@ -516,9 +510,6 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     const probes = ["/admin/..//evil.example/x", "/admin/%2e%2e//evil.example", "//evil.example", "https://evil.example/"];
     for (const ret of probes) {
       const plan = await (await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "social_photo" }) })).json();
-      const toggle = await req(`/api/admin/media/${plan.id}/public`, { cookie: admin.cookie, form: { publiclyUsable: "1", return: ret } });
-      assert.equal(toggle.status, 303);
-      assert.equal(toggle.headers.get("location"), `/admin/events/${date}/?media=public-on#event-media`, ret);
       const del = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: ret } });
       assert.equal(del.status, 303);
       const loc = del.headers.get("location");

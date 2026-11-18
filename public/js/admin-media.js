@@ -38,7 +38,6 @@ for (const form of document.querySelectorAll("form[data-confirm]")) {
 function setUpUpload(form) {
   const input = form.querySelector('input[type="file"]');
   const kind = form.querySelector('input[name="kind"]').value;
-  const pub = form.querySelector('input[name="publiclyUsable"]'); // social photos only
   const status = document.getElementById(form.getAttribute("data-status"));
   const eventDate = form.getAttribute("data-event-date");
 
@@ -55,7 +54,7 @@ function setUpUpload(form) {
     const files = Array.from(input.files || []);
     if (files.length === 0) { say("Choose at least one photo."); return; }
     setBusy(true);
-    const opts = { eventDate, kind, publiclyUsable: Boolean(pub && pub.checked) };
+    const opts = { eventDate, kind }; // the server sets publicly_usable from the kind
     const failed = [];
     let done = 0;
     for (let i = 0; i < files.length; i++) {

@@ -16,9 +16,13 @@
 //       objects. A failed object delete leaves an orphan in the private bucket, which
 //       is logged with its key; the reverse order could leave a row pointing at
 //       nothing, which the gallery would show as broken.
-//   setPubliclyUsable(actor, id, value)  social photos only (the CHECK agrees)
 //   listEventMedia(db, date)             -> { ready, pending } for the gallery
 //   listStalePending(db, { date? })      pending rows older than STALE_PENDING_HOURS
+//
+// publicly_usable is not a choice: every social photo is covered by the photo waiver
+// posted at the event, so a social_photo row is always created true, and a
+// signin_board row always false (the CHECK on event_media agrees), whatever the client
+// sends (ADR 0010 decision 2, amended 2026-11-18). Phase 5 reads the column.
 //
 // What was signed for the display copy and thumbnail (their sizes) is not in
 // event_media, which only describes the original; completeUpload reads it back from
@@ -76,9 +80,8 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
 
   if (!PHOTO_KINDS.includes(b.kind)) errors.push(`kind must be one of ${PHOTO_KINDS.join(", ")}`);
 
-  const publiclyUsable = b.publiclyUsable === undefined ? false : b.publiclyUsable;
-  if (typeof publiclyUsable !== "boolean") errors.push("publiclyUsable must be true or false");
-  else if (publiclyUsable && b.kind !== "social_photo") errors.push("publiclyUsable applies only to social_photo");
+  // Not the client's choice (see the top of this file): any publiclyUsable sent is ignored.
+  const publiclyUsable = b.kind === "social_photo";
 
   const o = b.original;
   if (!o || typeof o !== "object") errors.push("original is required");
@@ -226,28 +229,6 @@ export async function completeUpload(actorUserId, storage, id, { db }) {
     return { id, status: again.status === "ready" ? "ready" : "pending", ...(again.status === "ready" ? {} : { problems: ["state changed, try again"] }) };
   }
   return { id, status: "ready" };
-}
-
-/**
- * Social photos only: "OK to use publicly". Audited with the before/after value.
- * @param {string} actorUserId
- * @param {string} id
- * @param {boolean} value
- */
-export async function setPubliclyUsable(actorUserId, id, value) {
-  if (typeof value !== "boolean") throw new ValidationError(["publiclyUsable must be true or false"]);
-  if (!isUuid(id)) throw new NotFoundError("media not found");
-  return withAudit(actorUserId, async (client) => {
-    const { rows } = await client.query(
-      "select kind, publicly_usable, event_date::text as d from public.event_media where id = $1 for update", [id]);
-    if (!rows.length) throw new NotFoundError("media not found");
-    if (rows[0].kind !== "social_photo") throw new ValidationError(["publiclyUsable applies only to social_photo"]);
-    await client.query("update public.event_media set publicly_usable = $2 where id = $1", [id, value]);
-    return { id, eventDate: rows[0].d, before: rows[0].publicly_usable, publiclyUsable: value };
-  }, (r) => ({
-    action: "media.publicly_usable", targetTable: "event_media", targetId: id,
-    details: { eventDate: r.eventDate, before: r.before, after: r.publiclyUsable },
-  }));
 }
 
 /**

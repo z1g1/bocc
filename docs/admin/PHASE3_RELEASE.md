@@ -14,8 +14,9 @@ personal data: keep them out of the repo.
 - `cd backend && npm test` (152), `npm run test:db` (194, needs Docker) and `npm run build`
   pass on `dev`.
 - Migrations `20261118120000_events_media.sql` and `20261119120000_media_heic_originals.sql`
-  are additive. Production's current code never touches them, so migrating before the deploy
-  is safe.
+  are additive, and `20261120120000_social_photos_publicly_usable.sql` (added 2026-11-18;
+  run it on `dev` too) only sets `publicly_usable = true` on existing social photos.
+  Production's current code never touches them, so migrating before the deploy is safe.
 - Buckets (done 2026-11-17): a private `bocc-media` on `production` and a separate one on
   `dev` (a bucket made on `production` after `dev` existed does not appear on `dev`). Each
   branch has its own `storage:read`/`storage:write` credential. CORS: `dev` allows the
@@ -39,7 +40,9 @@ No Photos on these events.
    - [x ] a future date: location saves; cancel with a reason, then un-cancel; `held` and a
          report are refused
 	- [x] **iPhone Safari:** upload a sign-in board photo and a social photo, mark the social
-         one publicly usable, delete one (closes the Phase 0 mobile presigned-PUT check)
+         one publicly usable, delete one (closes the Phase 0 mobile presigned-PUT check).
+         The "publicly usable" control was removed on 2026-11-18: social photos always are
+         (posted photo waiver; ADR 0010 decision 2)
 upload worked but the UI is confusing. Create two seperate photo sections. one for signin board. One for social images
    - ~~[ ] **Chrome on a phone:** the same upload. A HEIC picked in desktop Chrome gets the
          "can't be read in this browser" message~~
@@ -52,7 +55,7 @@ The 403 is there, but it's a generic white page. Need an intheme experince for 4
 ## Production
 
 6. **Migrate Neon `production`** (owner; `.env.local` points there):
-   `cd backend && npm run migrate:status && npm run migrate`. Expect exactly the two migrations
+   `cd backend && npm run migrate:status && npm run migrate`. Expect exactly the three migrations
    above. Check the grants: `admin_app` has SELECT/INSERT/UPDATE on `events`, `event_reports`,
    `event_media`, plus DELETE on `event_media` only.
 7. **Netlify, Production context:** the same six `STORAGE_*` variables with **production's**
