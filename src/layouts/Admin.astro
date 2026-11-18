@@ -4,9 +4,13 @@
 // noindex. The CSP is also sent as a header by src/middleware.ts; frame-ancestors
 // only works as a header, so the meta copy leaves it out. The CSS lives in
 // src/lib/admin/error-page.mjs, shared with the 403/404 pages the middleware sends.
+// Signed-in pages get the section nav (src/lib/admin/nav.mjs) under the top bar: the
+// links the user's roles allow, the current section marked by path prefix. The same
+// markup as the themed error pages, so it is rendered by the same function.
 import { adminCsp } from "../lib/admin/headers.mjs";
 import { storageOrigin } from "../lib/admin/storage.mjs";
 import { ADMIN_CSS } from "../lib/admin/error-page.mjs";
+import { sectionNavHtml } from "../lib/admin/nav.mjs";
 interface Props {
   title: string;
   /** Pass Astro.locals.user on signed-in pages to show the nav and sign-out button. */
@@ -16,6 +20,7 @@ interface Props {
   wide?: boolean;
 }
 const { title, user, roles = [], wide = false } = Astro.props;
+const sectionNav = user ? sectionNavHtml(roles, Astro.url.pathname) : "";
 const csp = adminCsp({ dev: import.meta.env.DEV, mediaOrigin: storageOrigin() }).replace("frame-ancestors 'none'; ", "");
 ---
 <!DOCTYPE html>
@@ -43,6 +48,7 @@ const csp = adminCsp({ dev: import.meta.env.DEV, mediaOrigin: storageOrigin() })
         </nav>
       )}
     </header>
+    {sectionNav && <Fragment set:html={sectionNav} />}
     <main class:list={{ wide }}>
       <slot />
     </main>

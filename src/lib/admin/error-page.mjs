@@ -1,12 +1,16 @@
 // The admin app's stylesheet and its two error pages (403 "Not allowed", 404 "Out of
 // Coffee"), shared by src/layouts/Admin.astro and by code that answers without Astro
 // rendering a page: the middleware's guard (src/lib/admin/guard.mjs) and its error
-// theming (src/middleware.ts). No database, no session lookups, no imports: an error
-// page must render even when everything else is failing.
+// theming (src/middleware.ts). No database, no session lookups, and no imports but
+// the import-free section nav (./nav.mjs): an error page must render even when
+// everything else is failing.
 //
 // CSP (src/lib/admin/headers.mjs): no script at all; the CSS is an inline <style>,
 // which style-src 'self' 'unsafe-inline' allows (the admin layout's own styles are
-// inlined the same way). The pages say nothing about the URL that was asked for.
+// inlined the same way). The pages say nothing about the URL that was asked for (so
+// the section nav marks no current item).
+
+import { sectionNavHtml } from "./nav.mjs";
 
 /** The admin layout's global CSS (Admin.astro inlines it in <head>). */
 export const ADMIN_CSS = `  :root { color-scheme: light dark; --fg: #161616; --bg: #fafaf7; --muted: #5c5c5c; --accent: #8a4b14; --line: #d9d6cf; --err: #b00020; }
@@ -17,6 +21,11 @@ export const ADMIN_CSS = `  :root { color-scheme: light dark; --fg: #161616; --b
   .brand { font-weight: 700; color: var(--fg); text-decoration: none; }
   nav { display: flex; gap: 1rem; align-items: center; }
   nav form { margin: 0; }
+  nav.sections { display: block; border-bottom: 1px solid var(--line); }
+  nav.sections ul { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin: 0; padding: 0.4rem 1rem; list-style: none; }
+  nav.sections a { display: inline-block; padding: 0.3rem 0; text-decoration: none; }
+  nav.sections a:hover { text-decoration: underline; }
+  nav.sections a[aria-current="page"] { color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px var(--accent); }
   main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
   footer { max-width: 40rem; margin: 0 auto; padding: 0 1rem 2rem; color: var(--muted); font-size: 0.875rem; }
   a { color: var(--accent); }
@@ -101,7 +110,8 @@ const PAGES = {
  * @param {403|404} status
  * @param {{ user?: { email?: string } | null, roles?: string[] }} [who]
  *   the signed-in user and their roles, if known. With at least one role the page links
- *   to /admin/ and shows the nav; without, only "Sign out".
+ *   to /admin/ and shows the nav and the section links those roles allow (the same as
+ *   every admin page's); without, only "Sign out".
  * @returns {string}
  */
 export function errorPageHtml(status, { user = null, roles = [] } = {}) {
@@ -131,6 +141,7 @@ export function errorPageHtml(status, { user = null, roles = [] } = {}) {
   </head>
   <body>
     <header class="bar">${brand}${nav}</header>
+    ${admin ? sectionNavHtml(roles) : ""}
     <main>
       <section class="oops">
         ${page.icon}

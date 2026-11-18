@@ -2,12 +2,12 @@
 // /admin/: landing page for both roles. The middleware has already refused anyone
 // without a session or a role; this page still names the roles it admits.
 //
-// Data views (Phase 2) add their link to ADMIN_LINKS. The social role must never be
-// shown a link to attendee, check-in, streak, email-list or audit data (ADR 0008);
-// its work order pages (Phase 5) go in SOCIAL_LINKS.
+// The links (ADMIN_LINKS, SOCIAL_LINKS) live in src/lib/admin/nav.mjs, shared with
+// the section nav on every admin page.
 import Admin from "../../layouts/Admin.astro";
 import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
 import { longDay } from "../../lib/admin/format.mjs";
+import { ADMIN_LINKS, SOCIAL_LINKS } from "../../lib/admin/nav.mjs";
 export const prerender = false;
 
 const denied = requireRole(Astro.locals, "admin", "social");
@@ -16,16 +16,6 @@ if (denied) return denied;
 const { user, roles = [] } = Astro.locals;
 const isAdmin = hasRole(Astro.locals, "admin");
 const isSocial = hasRole(Astro.locals, "social");
-
-const ADMIN_LINKS: Array<{ href: string; label: string; note?: string }> = [
-  { href: "/admin/events/", label: "Events", note: "reports, cancellations, photos" },
-  { href: "/admin/checkins/", label: "Check-ins", note: "the latest event by default" },
-  { href: "/admin/streaks/", label: "Active streaks" },
-  { href: "/admin/email-list/", label: "Email list", note: "CSV export and opt-out" },
-  { href: "/admin/attendees/", label: "Attendees", note: "find and correct name, business, phone" },
-  { href: "/admin/users/", label: "Users", note: "create logins, reset passwords, roles" },
-];
-const SOCIAL_LINKS: Array<{ href: string; label: string; note?: string }> = [];
 
 // Admin-only events block (plan Phase 3): the next events and the "report missing"
 // count, with "today" the Eastern calendar day.

@@ -478,6 +478,55 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.deepEqual((await me.json()).roles, ["admin"]);
   });
 
+  // The section nav (src/lib/admin/nav.mjs) on every admin page.
+  const sectionNav = (html) => html.match(/<nav class="sections"[\s\S]*?<\/nav>/)?.[0] ?? null;
+  const navItems = (nav) => [...nav.matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)<\/a>/g)]
+    .map(([, href, cur, label]) => ({ href, label, current: Boolean(cur) }));
+
+  test("admin: the full section nav on every page, the current section marked", async () => {
+    const { ADMIN_LINKS } = await import("../../src/lib/admin/nav.mjs");
+    const d = pastDate();
+    const cases = [
+      ["/admin/", null], ["/admin/account/", null], ["/admin/events/", "/admin/events/"], [`/admin/events/${d}/`, "/admin/events/"],
+      ["/admin/checkins/", "/admin/checkins/"], ["/admin/streaks/", "/admin/streaks/"], ["/admin/email-list/", "/admin/email-list/"],
+      ["/admin/attendees/", "/admin/attendees/"], ["/admin/users/", "/admin/users/"],
+    ];
+    for (const [p, current] of cases) {
+      const html = await (await req(p, { cookie: admin.cookie })).text();
+      const nav = sectionNav(html);
+      assert.ok(nav, `${p}: has the section nav`);
+      assert.match(nav, /aria-label="Admin sections"/);
+      const items = navItems(nav);
+      assert.deepEqual(items.map((i) => i.label), ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users"], p);
+      assert.deepEqual(items.map((i) => i.href), ADMIN_LINKS.map((l) => l.href), p);
+      assert.deepEqual(items.filter((i) => i.current).map((i) => i.href), current ? [current] : [], `${p}: current item`);
+    }
+    // The home page lists the same links (one shared module).
+    const home = await (await req("/admin/", { cookie: admin.cookie })).text();
+    for (const l of ADMIN_LINKS) {
+      assert.equal(home.split(`href="${l.href}"`).length - 1, 2, `home: ${l.label} in the nav and the list`);
+      if (l.note) assert.ok(home.includes(l.note), `home lists ${l.label} with its note`);
+    }
+    // The themed 404 shows the same nav, with no current item.
+    const nf = sectionNav(await (await req("/admin/events/foo/bar", { cookie: admin.cookie })).text());
+    assert.deepEqual(navItems(nf).map((i) => [i.href, i.current]), ADMIN_LINKS.map((l) => [l.href, false]));
+  });
+
+  test("social: only the social links (none of the admin sections); no role: no nav", async () => {
+    const { ADMIN_LINKS, SOCIAL_LINKS, sectionNavHtml } = await import("../../src/lib/admin/nav.mjs");
+    for (const [p, status] of [["/admin/", 200], ["/admin/account/", 200], ["/admin/events/", 403], ["/admin/no-such-page", 404]]) {
+      const res = await req(p, { cookie: social.cookie });
+      assert.equal(res.status, status, p);
+      const html = await res.text();
+      const nav = sectionNav(html);
+      assert.deepEqual(nav ? navItems(nav).map((i) => i.href) : [], SOCIAL_LINKS.map((l) => l.href), p);
+      if (SOCIAL_LINKS.length === 0) assert.equal(sectionNavHtml(["social"]), "");
+      for (const l of ADMIN_LINKS) assert.ok(!html.includes(`href="${l.href}"`), `${p}: no ${l.label} link for social`);
+    }
+    const html = await (await req("/admin/", { cookie: noRole.cookie })).text();
+    assert.equal(sectionNav(html), null);
+  });
+
   test("POST without or with a foreign Origin is 403; other methods 405", async () => {
     const d = pastDate();
     for (const origin of [null, "https://evil.example"]) {
