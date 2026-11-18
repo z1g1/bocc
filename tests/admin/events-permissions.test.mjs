@@ -71,6 +71,7 @@ describe("migration", () => {
       "event_reports:admin_app:INSERT", "event_reports:admin_app:SELECT", "event_reports:admin_app:UPDATE",
       "events:admin_app:INSERT", "events:admin_app:SELECT", "events:admin_app:UPDATE",
       "events:site_reader:SELECT", // migration 20261121120000 (public event pages)
+      "events:social_checker:SELECT", // migration 20261123120000 (the Thursday social check)
     ]);
   });
 });

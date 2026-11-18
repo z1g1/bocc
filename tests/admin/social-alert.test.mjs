@@ -1,0 +1,167 @@
+// The Thursday social check against the throwaway database (npm run test:db):
+//   1. migration 20261123120000_social_checker.sql: social_checker may SELECT events,
+//      event_links, social_posts, social_post_channels and four columns of event_media,
+//      and nothing else; it can't write anything
+//   2. readWorkOrder() as social_checker, on rows seeded by the owner, and
+//      runSocialCheck() end to end with SOCIAL_CHECK_DB_URL and a fake ntfy
+// The pure rules are in social-alert-unit.test.mjs.
+import { after, before, describe, test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { OWNER_URL, assertAllowed, assertRefused, connect } from "./helpers.mjs";
+import { readWorkOrder, runSocialCheck } from "../../src/lib/social-alert/run.mjs";
+import { socialAlert } from "../../src/lib/social-alert/alert.mjs";
+
+const CHECK_URL = process.env.TEST_SOCIAL_CHECK_URL;
+if (!CHECK_URL) throw new Error("TEST_SOCIAL_CHECK_URL is not set: run these tests with npm run test:db");
+
+const CHANNELS = ["facebook", "instagram", "threads", "tiktok", "linkedin_page"];
+let owner, checker;
+
+// Tuesdays in 2085, one per test, so nothing collides with the other suites.
+let n = 0;
+const tuesday = () => new Date(Date.UTC(2085, 0, 2 + 7 * n++)).toISOString().slice(0, 10); // 2085-01-02 is a Tuesday
+
+/** Seed an event, optionally its Luma link, a ready video and a post with channel statuses. */
+async function seed(date, { status = "scheduled", luma = true, post = true, ready = true, statuses = {} } = {}) {
+  await owner.query(`insert into events (event_date, status, cancel_reason) values ($1, $2, $3)`,
+    [date, status, status === "cancelled" ? "weather" : null]);
+  if (luma) await owner.query(`insert into event_links (event_date, platform, url) values ($1, 'luma', 'https://luma.com/bocc-test')`, [date]);
+  if (!post) return;
+  const vid = randomUUID();
+  await owner.query(
+    `insert into event_media (id, event_date, kind, original_key, content_type, size_bytes, status)
+     values ($1, $2, 'promo_video', $3, 'video/mp4', 4800000, 'ready')`, [vid, date, `events/${date}/${vid}/original.mp4`]);
+  await owner.query(
+    `insert into social_posts (event_date, video_media_id, base_caption, publish_at, ready)
+     values ($1, $2, 'Coffee on Tuesday', ($1::date - 1) + time '12:00' at time zone 'UTC', $3)`, [date, vid, ready]);
+  for (const c of CHANNELS) {
+    await owner.query(`insert into social_post_channels (event_date, channel, status) values ($1, $2, $3)`, [date, c, statuses[c] ?? "scheduled"]);
+  }
+}
+
+before(async () => {
+  owner = await connect(OWNER_URL);
+  checker = await connect(CHECK_URL);
+});
+after(async () => {
+  await checker?.end();
+  await owner?.end();
+});
+
+describe("social_checker permissions", () => {
+  before(async () => { await checker.query("begin"); });
+  after(async () => { await checker.query("rollback").catch(() => {}); });
+
+  test("may read the work-order tables", async () => {
+    await assertAllowed(checker, "select event_date, status from events limit 1");
+    await assertAllowed(checker, "select event_date, platform, url from event_links limit 1");
+    await assertAllowed(checker, "select * from social_posts limit 1");
+    await assertAllowed(checker, "select * from social_post_channels limit 1");
+    await assertAllowed(checker, "select id, event_date, kind, status from event_media limit 1");
+  });
+
+  test("may not read the rest of event_media", async () => {
+    await assertRefused(checker, "select * from event_media limit 1");
+    await assertRefused(checker, "select original_key from event_media limit 1");
+    await assertRefused(checker, "select uploaded_by from event_media limit 1");
+  });
+
+  for (const table of ["event_reports", "attendees", "checkins", "audit_log", "user_roles", "streaks", "held_occurrences", 'auth."user"', "auth.session"]) {
+    test(`may not read ${table}`, async () => {
+      await assertRefused(checker, `select * from ${table} limit 1`);
+    });
+  }
+
+  test("may not write anything", async () => {
+    await assertRefused(checker, "insert into events (event_date) values ('2031-01-07')");
+    await assertRefused(checker, "update social_posts set ready = false");
+    await assertRefused(checker, "update social_post_channels set status = 'scheduled'");
+    await assertRefused(checker, "delete from event_links");
+    await assertRefused(checker, "update event_media set status = 'ready'");
+  });
+
+  test("is not a superuser and can't create objects in public", async () => {
+    const { rows: [r] } = await checker.query("select rolsuper, rolcreaterole, rolcreatedb from pg_roles where rolname = current_user");
+    assert.deepEqual(r, { rolsuper: false, rolcreaterole: false, rolcreatedb: false });
+    await assertRefused(checker, "create table public.social_checker_probe (x int)");
+  });
+});
+
+describe("readWorkOrder as social_checker", () => {
+  test("no events row: null", async () => {
+    assert.equal(await readWorkOrder(checker, tuesday()), null);
+  });
+
+  test("an event with no post", async () => {
+    const d = tuesday();
+    await seed(d, { post: false });
+    const o = await readWorkOrder(checker, d);
+    assert.equal(o.exists, false);
+    assert.equal(o.eventStatus, "scheduled");
+    assert.equal(socialAlert({ order: o, date: d }).title.includes("no post"), true);
+  });
+
+  test("a ready post with every channel scheduled: actionable, no alert", async () => {
+    const d = tuesday();
+    await seed(d, { statuses: { tiktok: "live" } });
+    const o = await readWorkOrder(checker, d);
+    assert.equal(o.exists, true);
+    assert.equal(o.actionable, true, JSON.stringify(o.problems));
+    assert.equal(o.video.status, "ready");
+    assert.equal(o.lumaUrl, "https://luma.com/bocc-test");
+    assert.equal(socialAlert({ order: o, date: d }), null);
+  });
+
+  test("pending and failed channels are reported", async () => {
+    const d = tuesday();
+    await seed(d, { statuses: { facebook: "pending", threads: "failed" } });
+    const a = socialAlert({ order: await readWorkOrder(checker, d), date: d });
+    assert.match(a.message, /- Facebook: pending\n- Threads: failed/);
+  });
+
+  test("a ready post that lost its Luma listing is not ready", async () => {
+    const d = tuesday();
+    await seed(d, { luma: false });
+    const o = await readWorkOrder(checker, d);
+    assert.deepEqual(o.problems.map((p) => p.key), ["luma"]);
+    assert.match(socialAlert({ order: o, date: d }).title, /post not ready/);
+  });
+
+  test("a cancelled event: no alert", async () => {
+    const d = tuesday();
+    await seed(d, { status: "cancelled", ready: false, statuses: { facebook: "pending" } });
+    const o = await readWorkOrder(checker, d);
+    assert.equal(o.eventStatus, "cancelled");
+    assert.equal(socialAlert({ order: o, date: d }), null);
+  });
+});
+
+describe("runSocialCheck end to end", () => {
+  test("reads next Tuesday through SOCIAL_CHECK_DB_URL and pushes the alert", async () => {
+    const d = tuesday();
+    await seed(d, { statuses: { instagram: "pending" } });
+    const thursday = new Date(Date.parse(`${d}T14:00:00Z`) - 5 * 86400_000);
+    const calls = [];
+    const fetch = async (url, init) => { calls.push({ url, init }); return new Response("{}"); };
+    const lines = [];
+    const { log, error } = console;
+    console.log = (...a) => lines.push(a.join(" "));
+    console.error = (...a) => lines.push(a.join(" "));
+    let result;
+    try {
+      result = await runSocialCheck({
+        env: { SOCIAL_CHECK_DB_URL: CHECK_URL, SOCIAL_ALERT_NTFY_TOPIC: "bocc-test-topic", URL: "https://716coffee.club" },
+        context: { deploy: { context: "production" }, site: { url: "https://716coffee.club" } },
+        now: thursday,
+        fetch,
+      });
+    } finally { console.log = log; console.error = error; }
+    assert.equal(result.outcome, "sent", lines.join("\n"));
+    assert.equal(result.date, d);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://ntfy.sh/bocc-test-topic");
+    assert.match(calls[0].init.body, /- Instagram: pending/);
+    assert.doesNotMatch(lines.join("\n"), /bocc-test-topic|social_checker:/);
+  });
+});

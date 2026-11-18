@@ -100,7 +100,7 @@ after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 describe("migration 20261122120000_social_posts.sql", () => {
-  test("grants: admin_app SELECT, INSERT, UPDATE on both tables, and nobody else anything", async () => {
+  test("grants: admin_app SELECT, INSERT, UPDATE on both tables, social_checker SELECT, and nobody else anything", async () => {
     const { rows } = await owner.query(
       `select g.table_name || ':' || g.grantee || ':' || g.privilege_type as g
          from information_schema.role_table_grants g
@@ -110,7 +110,9 @@ describe("migration 20261122120000_social_posts.sql", () => {
         order by 1`);
     assert.deepEqual(rows.map((r) => r.g), [
       "social_post_channels:admin_app:INSERT", "social_post_channels:admin_app:SELECT", "social_post_channels:admin_app:UPDATE",
+      "social_post_channels:social_checker:SELECT", // migration 20261123120000 (the Thursday check, social-alert.test.mjs)
       "social_posts:admin_app:INSERT", "social_posts:admin_app:SELECT", "social_posts:admin_app:UPDATE",
+      "social_posts:social_checker:SELECT",
     ]);
   });
 

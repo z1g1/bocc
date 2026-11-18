@@ -12,13 +12,14 @@
 #      insists on verify-full TLS, so the test cert is passed through DB_CA_CERT (the
 #      same optional override production supports). Then runs it again to prove a
 #      re-run applies nothing.
-#   3. Gives the NOLOGIN app roles (admin_app, checkin_writer, site_reader) LOGIN and a random
+#   3. Gives the NOLOGIN app roles (admin_app, checkin_writer, site_reader, social_checker) LOGIN and a random
 #      test password, as the operator does out of band on Neon.
 #   4. Starts a throwaway MinIO (S3-compatible, standing in for Neon Object Storage,
 #      ADR 0010) with one bucket, on a random 127.0.0.1 port, path-style, with a random
 #      root credential. If the image can't be pulled or MinIO doesn't come up, it
 #      carries on without it and the storage integration tests skip.
-#   5. Writes TEST_OWNER_URL / TEST_ADMIN_URL / TEST_CHECKIN_URL (+ DB_CA_CERT_FILE)
+#   5. Writes TEST_OWNER_URL / TEST_ADMIN_URL / TEST_CHECKIN_URL / TEST_SITE_URL /
+#      TEST_SOCIAL_CHECK_URL (+ DB_CA_CERT_FILE)
 #      and, when MinIO is up, STORAGE_* to $STATE/test-db.env for the tests.
 #
 # Env: PG_IMAGE (default postgres:17-alpine), MINIO_IMAGE (default pinned below; "none"
@@ -94,11 +95,12 @@ up() {
     -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
     -keyout "$STATE/server.key" -out "$STATE/server.crt" >/dev/null 2>&1
 
-  local owner_pw admin_pw writer_pw site_pw
+  local owner_pw admin_pw writer_pw site_pw checker_pw
   owner_pw="$(openssl rand -hex 16)"
   admin_pw="$(openssl rand -hex 16)"
   writer_pw="$(openssl rand -hex 16)"
   site_pw="$(openssl rand -hex 16)"
+  checker_pw="$(openssl rand -hex 16)"
 
   # The key must belong to the server user with mode 0600, so copy it in at start.
   docker run -d --name "$NAME" -p 127.0.0.1::5432 \
@@ -138,6 +140,7 @@ up() {
 alter role admin_app      login password '${admin_pw}';
 alter role checkin_writer login password '${writer_pw}';
 alter role site_reader    login password '${site_pw}';
+alter role social_checker login password '${checker_pw}';
 SQL
 
   minio_up
@@ -147,6 +150,7 @@ TEST_OWNER_URL=${owner_url}
 TEST_ADMIN_URL=postgresql://admin_app:${admin_pw}@localhost:${port}/neondb
 TEST_CHECKIN_URL=postgresql://checkin_writer:${writer_pw}@localhost:${port}/neondb
 TEST_SITE_URL=postgresql://site_reader:${site_pw}@localhost:${port}/neondb
+TEST_SOCIAL_CHECK_URL=postgresql://social_checker:${checker_pw}@localhost:${port}/neondb
 DB_CA_CERT_FILE=$STATE/server.crt
 EOF
   if [ -f "$STATE/storage.env" ]; then cat "$STATE/storage.env" >>"$ENV_FILE"; fi
