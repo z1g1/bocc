@@ -1,7 +1,7 @@
 ---
-// Domain structured data (port of _includes/event-jsonld.html). Each event page
-// emits one schema.org/Event, since Google wants one event per URL. Every page
-// emits Organization.
+// Domain structured data (port of _includes/event-jsonld.html). Each upcoming or
+// cancelled event page emits one schema.org/Event, since Google wants one event per
+// URL. Every page emits Organization.
 import { site } from "../lib/data";
 import type { EventPage } from "../lib/events";
 interface Props { event?: EventPage; path: string }
@@ -21,7 +21,7 @@ const eventLd = event && {
   url: s.url + path,
   startDate: event.start_date,
   endDate: event.end_date,
-  eventStatus: "https://schema.org/EventScheduled",
+  eventStatus: event.status === "cancelled" ? "https://schema.org/EventCancelled" : "https://schema.org/EventScheduled",
   eventAttendanceMode: "https://schema.org/OfflineEventAttendanceMode",
   eventSchedule: { "@type": "Schedule", repeatFrequency: "P1W", byDay: "https://schema.org/Tuesday", startTime: "07:30:00", endTime: "09:00:00", scheduleTimezone: "America/New_York" },
   location: { "@type": "Place", name: e.venue, address },
@@ -29,6 +29,9 @@ const eventLd = event && {
   ...(e.performer ? { performer: { "@type": "Person", name: e.performer.name, url: e.performer.url } } : {}),
   isAccessibleForFree: true,
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD", availability: "https://schema.org/InStock", url: event.luma_url || e.registration_url, validFrom: e.offer_valid_from },
+  // The other listings (Eventbrite, Facebook, LinkedIn): discovery only, never shown
+  // on the page. Luma is the only call to action (ADR 0009 decision 4).
+  ...(event.same_as?.length ? { sameAs: event.same_as } : {}),
 };
 const orgLd = {
   "@context": "https://schema.org",

@@ -9,8 +9,10 @@ import { site } from "../lib/data";
 import type { EventPage } from "../lib/events";
 // `analytics: false` keeps Google Analytics (script and CSP origins) off a page.
 // The check-in page uses it: no tracking where attendees enter personal details.
-interface Props { title: string; description?: string; path: string; kind?: "home" | "page" | "event"; event?: EventPage; analytics?: boolean }
-const { title, description, path, kind = "page", event, analytics = true } = Astro.props;
+// `noindex` adds <meta name="robots" content="noindex">, for past event pages.
+// `time` sets the page's published/modified time (default: the build time).
+interface Props { title: string; description?: string; path: string; kind?: "home" | "page" | "event"; event?: EventPage; analytics?: boolean; noindex?: boolean; time?: Date }
+const { title, description, path, kind = "page", event, analytics = true, noindex = false, time } = Astro.props;
 const s = site();
 const ga = analytics ? s.google_analytics_id : undefined;
 // Content Security Policy. Self-hosted fonts; Luma is allowed for the RSVP embeds;
@@ -34,7 +36,8 @@ const csp = [
     <script is:inline>document.documentElement.className = document.documentElement.className.replace('no-js','js');</script>
     <meta http-equiv="Content-Security-Policy" content={csp}>
     <link rel="preconnect" href="https://luma.com">
-    <Seo title={title} description={description} path={path} kind={kind} />
+    {noindex && <meta name="robots" content="noindex">}
+    <Seo title={title} description={description} path={path} kind={kind} time={time} />
     <link rel="preload" href="/assets/fonts/bricolage-grotesque-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/assets/fonts/hanken-grotesk-var.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/assets/css/main.css">

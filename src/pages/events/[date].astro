@@ -1,58 +1,173 @@
 ---
-// One page per upcoming Tuesday, built at build time (port of _layouts/event.html
-// and scripts/generate_event_pages.rb). Not linked from site navigation.
-// Shared copy lives in src/data/event_page.yml. Phase 4 renders these from Neon.
+// /events/YYYY-MM-DD/, rendered from Neon on request and cached at Netlify's CDN
+// (ADR 0009 decision 4). An admin save purges the page by its tag
+// (src/lib/site/purge.mjs); the headers are in src/lib/site/http.mjs. Not linked from
+// site navigation. Shared copy lives in src/data/event_page.yml.
+//
+//   not a real date                 404 "Out of Coffee", no-store (never queries Neon)
+//   no events row                   404 "Out of Coffee", CDN 5 min, tagged (a new event's
+//                                   first save purges it)
+//   scheduled, today or later       the RSVP page: Luma embed from the luma link's
+//                                   external_id, RSVP button to its URL (no luma link:
+//                                   the Luma calendar). Other listings only as JSON-LD sameAs
+//   cancelled                       "this Tuesday is cancelled", next event link, 200,
+//                                   JSON-LD EventCancelled (noindex once past)
+//   past (held, or scheduled but    "this one has passed", next event link, 200, noindex,
+//   past)                           no Event JSON-LD
+//   Neon down / SITE_DB_URL unset   503, no-store, a friendly message, error only logged
+export const prerender = false;
+
 import Default from "../../layouts/Default.astro";
 import PageHero from "../../components/PageHero.astro";
 import Icon from "../../components/Icon.astro";
 import Prose from "../../components/blocks/Prose.astro";
 import Cta from "../../components/blocks/Cta.astro";
 import Schedule from "../../components/home/Schedule.astro";
+import OutOfCoffee from "../../components/OutOfCoffee.astro";
 import { data, site } from "../../lib/data";
-import { upcomingEvents } from "../../lib/events";
+import { eventPage, longDate, parseIsoDate, todayIso } from "../../lib/events";
+import { getSiteEvent } from "../../lib/site/db.mjs";
+import { eventTag, logSiteFailure, setPublicHeaders } from "../../lib/site/http.mjs";
 
-export function getStaticPaths() {
-  return upcomingEvents().map((event) => ({ params: { date: event.date }, props: { event } }));
-}
-const { event } = Astro.props;
 const ep = data("event_page");
 const e = site().event;
-const path = `/events/${event.date}/`;
+const date = Astro.params.date ?? "";
+const path = `/events/${date}/`;
+const headers = Astro.response.headers;
+
+let view: "bad-date" | "not-found" | "unavailable" | "upcoming" | "cancelled" | "past";
+let ev: Awaited<ReturnType<typeof getSiteEvent>> = null;
+const today = todayIso();
+
+if (!parseIsoDate(date)) {
+  view = "bad-date";
+} else {
+  try {
+    ev = await getSiteEvent(date, today);
+    view = !ev ? "not-found" : ev.status === "cancelled" ? "cancelled" : date < today ? "past" : "upcoming";
+  } catch (err) {
+    logSiteFailure(`events/${date}`, err);
+    view = "unavailable";
+  }
+}
+
+if (view === "bad-date") {
+  Astro.response.status = 404;
+  setPublicHeaders(headers, "no-store");
+} else if (view === "not-found") {
+  Astro.response.status = 404;
+  setPublicHeaders(headers, "unknown-date", { tag: eventTag(date) });
+} else if (view === "unavailable") {
+  Astro.response.status = 503;
+  headers.set("Retry-After", "60");
+  setPublicHeaders(headers, "no-store");
+} else {
+  setPublicHeaders(headers, "cached", { tag: eventTag(date) });
+}
+
+const luma = ev?.links.luma;
+const sameAs = ev ? (["eventbrite", "facebook_event", "linkedin_event"] as const).flatMap((p) => (ev!.links[p] ? [ev!.links[p]!.url] : [])) : [];
+const event = ev
+  ? eventPage(date, {
+      luma_url: luma?.url,
+      luma_event_id: luma?.externalId ?? undefined,
+      status: ev.status,
+      same_as: sameAs,
+    })
+  : null;
+const past = date < today;
+const next = ev?.nextDate ? { href: `/events/${ev.nextDate}/`, label: longDate(ev.nextDate) } : null;
+
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+// The glance card's value is HTML (it holds "7:30&ndash;9"), so free text is escaped.
+const where =
+  ev?.location === "food_hall" ? "Food hall" : ev?.location === "other" && ev.locationOther ? escapeHtml(ev.locationOther) : "Lobby";
 ---
-<Default kind="event" path={path} title={event.title} description={event.description} event={event}>
-  <PageHero
-    eyebrow={event.long_date}
-    heading={event.heading}
-    summary={ep.summary}
-    glance={[
-      { value: "7:30&ndash;9", label: "AM Eastern" },
-      { value: "Free", label: "always, for everyone" },
-      { value: "Lobby", label: e.venue },
-    ]}
+{view === "bad-date" || view === "not-found" ? (
+  <Default title="Out of coffee" path="/404.html">
+    <OutOfCoffee />
+  </Default>
+) : view === "unavailable" ? (
+  <Default title="Back in a minute" path={path} noindex>
+    <section class="hero sun-rays">
+      <div class="container hero__inner">
+        <span class="hero__badge">
+          <Icon name="coffee" size="16" />
+          <span class="stamp">Brewing</span>
+        </span>
+        <h1>This page is still brewing.</h1>
+        <p class="hero__lead">We couldn't load this event just now. Please try again in a minute, or see every upcoming Tuesday on Luma.</p>
+        <div class="hero__cta">
+          <a class="btn btn--primary btn--lg" href={e.registration_url}>See upcoming dates<Icon name="arrow" size="18" /></a>
+        </div>
+      </div>
+    </section>
+  </Default>
+) : view === "upcoming" && event ? (
+  <Default kind="event" path={path} title={event.title} description={event.description} event={event} time={ev!.updatedAt}>
+    <PageHero
+      eyebrow={event.long_date}
+      heading={event.heading}
+      summary={ep.summary}
+      glance={[
+        { value: "7:30&ndash;9", label: "AM Eastern" },
+        { value: "Free", label: "always, for everyone" },
+        { value: where, label: e.venue },
+      ]}
+    >
+      <div class="page-hero__cta" slot="cta">
+        <a class="btn btn--primary btn--lg" href={event.luma_url || e.registration_url}>RSVP free<Icon name="arrow" size="18" /></a>
+        <a class="btn btn--ghost-gold btn--lg" href={ep.directions_url}>Get directions</a>
+      </div>
+    </PageHero>
+
+    <Prose block={ep.about} />
+
+    <section class="rsvp-band" id="rsvp" aria-labelledby="rsvp-heading">
+      <div class="container rsvp-band__inner">
+        <span class="section-label">RSVP</span>
+        <h2 id="rsvp-heading">Save your spot for {event.long_date}.</h2>
+        {event.luma_event_id ? (
+          <Fragment>
+            <iframe class="luma-embed luma-embed--event" src={`https://luma.com/embed/event/${event.luma_event_id}/simple`} title={`RSVP on Luma for ${event.long_date}`} loading="lazy" allowfullscreen></iframe>
+            <p class="luma-embed__fallback">Trouble with the form? <a href={event.luma_url}>RSVP on Luma</a>.</p>
+          </Fragment>
+        ) : (
+          <p class="luma-embed__fallback"><a href={e.registration_url}>See upcoming dates on Luma</a>.</p>
+        )}
+      </div>
+    </section>
+
+    <Schedule />
+    <Cta block={ep.cta} />
+  </Default>
+) : event ? (
+  <Default
+    kind="event"
+    path={path}
+    title={view === "cancelled" ? `Cancelled: ${event.title}` : event.title}
+    description={view === "cancelled"
+      ? `Buffalo Open Coffee Club ${past ? "was" : "is"} cancelled on ${event.long_date}.`
+      : `Buffalo Open Coffee Club met on ${event.long_date}. There's a fresh pot every Tuesday.`}
+    event={view === "cancelled" ? event : undefined}
+    noindex={past}
+    time={ev!.updatedAt}
   >
-    <div class="page-hero__cta" slot="cta">
-      <a class="btn btn--primary btn--lg" href={event.luma_url || e.registration_url}>RSVP free<Icon name="arrow" size="18" /></a>
-      <a class="btn btn--ghost-gold btn--lg" href={ep.directions_url}>Get directions</a>
-    </div>
-  </PageHero>
-
-  <Prose block={ep.about} />
-
-  <section class="rsvp-band" id="rsvp" aria-labelledby="rsvp-heading">
-    <div class="container rsvp-band__inner">
-      <span class="section-label">RSVP</span>
-      <h2 id="rsvp-heading">Save your spot for {event.long_date}.</h2>
-      {event.luma_event_id ? (
-        <Fragment>
-          <iframe class="luma-embed luma-embed--event" src={`https://luma.com/embed/event/${event.luma_event_id}/simple`} title={`RSVP on Luma for ${event.long_date}`} loading="lazy" allowfullscreen></iframe>
-          <p class="luma-embed__fallback">Trouble with the form? <a href={event.luma_url}>RSVP on Luma</a>.</p>
-        </Fragment>
-      ) : (
-        <p class="luma-embed__fallback"><a href={e.registration_url}>See upcoming dates on Luma</a>.</p>
-      )}
-    </div>
-  </section>
-
-  <Schedule />
-  <Cta block={ep.cta} />
-</Default>
+    <PageHero
+      eyebrow={event.long_date}
+      heading={view === "cancelled" ? `This Tuesday ${past ? "was" : "is"} cancelled` : "This one has passed"}
+      summary={view === "cancelled"
+        ? `There ${past ? "was" : "is"} no Buffalo Open Coffee Club on ${event.long_date}.${next ? " We'll see you at the next one." : ""}`
+        : `Buffalo Open Coffee Club met on ${event.long_date}.${next ? " Come to the next one." : ""}`}
+    >
+      <div class="page-hero__cta" slot="cta">
+        {next ? (
+          <a class="btn btn--primary btn--lg" href={next.href}>Next: {next.label}<Icon name="arrow" size="18" /></a>
+        ) : (
+          <a class="btn btn--primary btn--lg" href={e.registration_url}>See upcoming dates<Icon name="arrow" size="18" /></a>
+        )}
+        <a class="btn btn--ghost-gold btn--lg" href="/about/">About BOCC</a>
+      </div>
+    </PageHero>
+  </Default>
+) : null}

@@ -1,5 +1,7 @@
 # Unified Netlify configuration for the BOCC monorepo.
-# A single Netlify site serves BOTH the Astro website (static) and the
+# A single Netlify site serves BOTH the Astro website (static, plus the
+# on-demand routes in the adapter's SSR function: the admin app, /events/* and
+# /sitemap.xml, rendered from Neon and cached at the CDN, ADR 0009) and the
 # backend Netlify Functions (API), so the API is same-origin with the site
 # (https://716coffee.club/.netlify/functions/...) and no CORS is required.
 
@@ -28,14 +30,9 @@
   to = "https://716coffee.club/:splat"
   status = 301
 
-# Expired event pages. Current ones exist as files, so this rule skips them.
-# Phase 4 replaces this with event pages rendered from Neon and a real 404 (ADR 0009).
-[[redirects]]
-  from = "/events/*"
-  to = "/"
-  status = 302
-
-# Security headers for all static assets and pages.
+# Security headers for all static assets and pages. Function responses don't get
+# these: the on-demand public pages (/events/*, /sitemap.xml) set them themselves
+# (src/lib/site/http.mjs), the admin routes in src/middleware.ts.
 [[headers]]
   for = "/*"
   [headers.values]

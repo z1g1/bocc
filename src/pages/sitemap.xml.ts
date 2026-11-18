@@ -1,16 +1,33 @@
-// /sitemap.xml in the same shape jekyll-sitemap produced: event pages (with
-// lastmod = build time) first, then the content pages. Not listed: 404, check-in.
+// /sitemap.xml in the same shape jekyll-sitemap produced: event pages first, then the
+// content pages. Not listed: 404, check-in, past or cancelled events.
+//
+// Rendered on request (ADR 0009): the upcoming scheduled events come from Neon as
+// site_reader (src/lib/site/db.mjs), each with lastmod = its last change. Cached at the
+// CDN with the tag `event-list`, which every event purge includes
+// (src/lib/site/purge.mjs). If Neon can't be reached: 503, no-store, so crawlers retry
+// rather than see a sitemap without its events.
 import type { APIRoute } from "astro";
 import { contentPages, site } from "../lib/data";
-import { upcomingEvents } from "../lib/events";
+import { todayIso } from "../lib/events";
+import { listUpcomingScheduled } from "../lib/site/db.mjs";
+import { LIST_TAG, logSiteFailure, setPublicHeaders } from "../lib/site/http.mjs";
 import { isoUtc } from "../lib/time";
 
-export const GET: APIRoute = () => {
+export const prerender = false;
+
+export const GET: APIRoute = async () => {
   const base = site().url;
-  const lastmod = isoUtc();
+  let events;
+  try {
+    events = await listUpcomingScheduled(todayIso());
+  } catch (err) {
+    logSiteFailure("sitemap.xml", err);
+    const headers = setPublicHeaders(new Headers({ "Content-Type": "text/plain; charset=utf-8", "Retry-After": "60" }), "no-store");
+    return new Response("Sitemap temporarily unavailable.\n", { status: 503, headers });
+  }
   const urls: string[] = [];
-  for (const e of upcomingEvents()) {
-    urls.push(`<url>\n<loc>${base}/events/${e.date}/</loc>\n<lastmod>${lastmod}</lastmod>\n</url>`);
+  for (const e of events) {
+    urls.push(`<url>\n<loc>${base}/events/${e.date}/</loc>\n<lastmod>${isoUtc(e.updatedAt)}</lastmod>\n</url>`);
   }
   // Content pages in Jekyll's order: sorted by source file name (index.md is the home
   // page), then the brand page, which lived under assets/.
@@ -26,5 +43,6 @@ export const GET: APIRoute = () => {
     '<urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
     urls.join("\n") +
     "\n</urlset>\n";
-  return new Response(xml, { headers: { "Content-Type": "application/xml" } });
+  const headers = setPublicHeaders(new Headers({ "Content-Type": "application/xml" }), "cached", { tag: LIST_TAG });
+  return new Response(xml, { headers });
 };

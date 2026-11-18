@@ -1,19 +1,21 @@
 ---
 // <title>, description, canonical, Open Graph, Twitter and page JSON-LD.
 // Reproduces what jekyll-seo-tag emitted, so the port changes no metadata
-// (except the generator tag). `kind`: "home" | "page" | "event".
+// (except the generator tag). `kind`: "home" | "page" | "event". `time`: the
+// published/modified time; the build time unless given (event pages pass the
+// event's last change, since they render on request).
 import { site } from "../lib/data";
 import { smartify } from "../lib/markdown";
 import { isoUtc } from "../lib/time";
-interface Props { title: string; description?: string; path: string; kind: "home" | "page" | "event" }
-const { title, description, path, kind } = Astro.props;
+interface Props { title: string; description?: string; path: string; kind: "home" | "page" | "event"; time?: Date }
+const { title, description, path, kind, time } = Astro.props;
 const s = site();
 const t = smartify(title);
 const desc = smartify(description || s.description);
 const url = s.url + path;
 const image = s.url + s.og_image;
 const author = { "@type": "Person", name: s.author };
-const published = isoUtc();
+const published = isoUtc(time);
 
 // jekyll-seo-tag gives the home page *and* /about/ the WebSite type.
 const ld =

@@ -1,8 +1,10 @@
 // Astro config (ADR 0007). Static output: every page is prerendered at build time,
-// except the few routes that opt out with `export const prerender = false` (the admin
-// app, ADR 0008: /admin/*, /api/auth/*, /login/, /logout). @astrojs/netlify serves
-// those from one SSR function next to backend/netlify/functions. Never name one of
-// our own functions `ssr`.
+// except the routes that opt out with `export const prerender = false`: the admin
+// app (ADR 0008: /admin/*, /api/auth/*, /login/, /logout) and the public pages read
+// from Neon (ADR 0009: /events/, /events/YYYY-MM-DD/, /sitemap.xml). @astrojs/netlify
+// serves those from one SSR function next to backend/netlify/functions. Never name
+// one of our own functions `ssr`. The function has `preferStatic`, so a file in dist
+// at one of those paths would shadow it: none must be prerendered.
 import { defineConfig } from "astro/config";
 import netlify from "@astrojs/netlify";
 import { rename, rmdir } from "node:fs/promises";
@@ -35,6 +37,9 @@ export default defineConfig({
   build: { format: "directory" },
   // Defaults matter here: cacheOnDemandPages stays off (it would cache /admin/* at the
   // CDN for a year) and middleware runs in the SSR function, not at the edge.
-  adapter: netlify(),
+  // devFeatures.edgeFunctions off: the site has no edge functions, and `astro dev`'s
+  // local Edge Functions server (Deno) sometimes fails to start ("unexpected argument
+  // '--allow-scripts'"), which failed the HTTP tests that run astro dev. Dev only.
+  adapter: netlify({ devFeatures: { edgeFunctions: false } }),
   integrations: [flatPages],
 });
