@@ -426,15 +426,26 @@ on-device checks and production are open.
 - [x] Readiness checklist on the admin event page: four links, the public page, and the social
       channels (once Phase 5 lands). Built 2026-11-18: the Listings forms and the checklist on
       `/admin/events/YYYY-MM-DD/` (`src/lib/admin/event-links.mjs`), "n/4 listings" on the
-      events list and home. The social channels line is a greyed placeholder until Phase 5
+      events list and home. The social lines (post ready, then each channel's status) came with
+      Phase 5 part A
 
 ## Phase 5: social work order (ADR 0011)
 
-- [ ] Migration: `social_posts`, `social_post_channels`
-- [ ] Promo video upload (`promo_video` media), base caption, `publish_at` defaulting to Monday
-      7:00 AM ET (shown in both ET and UTC), and a `ready` toggle
-- [ ] Caption and first-comment defaults in code, with TikTok's default hashtags plus
-      `extra_hashtags`
+- [x] Migration: `social_posts`, `social_post_channels`: `20261122120000_social_posts.sql`
+      (admin_app SELECT/INSERT/UPDATE, no DELETE; the video FK is on (event_date, id), so it is
+      always the same event's media)
+- [x] Promo video upload (`promo_video` media), base caption, `publish_at` defaulting to Monday
+      7:00 AM ET (shown in both ET and UTC), and a `ready` toggle. Built on `dev` 2026-11-18: the
+      "Social post" section on `/admin/events/YYYY-MM-DD/` (`src/components/admin/SocialPost.astro`,
+      `src/lib/admin/social.mjs`, `/js/admin-video.js`). One MP4/MOV file up to 100 MB through the
+      same presigned-PUT flow as photos; deleting the attached video un-readies the post. Ready is
+      refused without a ready video, a base caption, the Luma listing, every caption within its
+      platform's limit, and a future publish time. Per-channel caption and first-comment
+      overrides, with the default and the final text shown
+- [x] Caption and first-comment defaults in code, with TikTok's default hashtags plus
+      `extra_hashtags`: `src/lib/admin/social-rules.mjs` (Facebook, Threads, LinkedIn: caption +
+      "RSVP: <Luma>"; Instagram, TikTok: "Link in bio", Luma as the first comment;
+      `TIKTOK_HASHTAGS`). The `getWorkOrder()` read is what `/admin/social/*` builds on
 - [ ] `/admin/social/next` and `/admin/social/verify`:
   - server-rendered pages that are easy for an agent to read
   - forms for each channel's status and post URL

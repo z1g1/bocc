@@ -45,6 +45,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`) |
 | `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
+| `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -57,8 +58,8 @@ The Phase 3 tables (`events`, `event_reports`, `event_media`) have no RLS, like 
 `audit_log`: their rows aren't split between users, so the grants are the whole policy. Nothing
 else is granted on them: `checkin_writer` and `public` get nothing, and Supabase-style `anon` /
 `authenticated` roles are revoked if they exist. `event_links` (Phase 4) is the same, plus
-`site_reader`'s SELECT. `social_posts` and `social_post_channels` (Phase 5) get their grants in
-their own migration.
+`site_reader`'s SELECT. `social_posts` and `social_post_channels` (Phase 5) are the same, with
+no `site_reader` grant.
 
 ### site_reader
 
@@ -276,7 +277,7 @@ origin allowed and from another origin refused with 403; a PUT with the wrong co
 size refused with 403; GET, HEAD and DELETE worked; nothing left in the bucket). Production's
 bucket still has Neon's default rule until its release.
 
-The admin CSP adds the endpoint's origin to `img-src` and `connect-src` only when storage is
+The admin CSP adds the endpoint's origin to `img-src`, `media-src` (the promo video player) and `connect-src` only when storage is
 configured (`src/lib/admin/headers.mjs`).
 
 **Media (operations).** Photo uploads (`src/lib/admin/media.mjs`) presign their PUTs for
