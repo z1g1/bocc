@@ -27,23 +27,7 @@
 	1. This is something that we get 'for free' with Meta Buseinss Center but no real focus
 
 ## Event URLS
-Events are created up through Feb to be posted on website for Google SEO 
-
-| Date | Luma URL | LinkedIn | Facebook | EventBrite |
-|------|----------|----------|----------|------------|
-| Tue, Nov 10, 2026 | https://luma.com/3yzz6fi4 | https://www.linkedin.com/events/7525276081495592960 | https://www.facebook.com/share/18XDvMTve9/ | https://www.eventbrite.com/e/2004529462583 |
-| Tue, Nov 17, 2026 | https://luma.com/7wykqlqr | | | https://www.eventbrite.com/e/2004529483646 |
-| Tue, Nov 24, 2026 | https://luma.com/g49vio1o | | | https://www.eventbrite.com/e/2004529517748 |
-| Tue, Dec 1, 2026 | https://luma.com/q9bbjbhh | | | https://www.eventbrite.com/e/2004529547838 |
-| Tue, Dec 8, 2026 | https://luma.com/0ag33cwm | | | https://www.eventbrite.com/e/2004529605009 |
-| Tue, Dec 15, 2026 | https://luma.com/8depoc0o | | | https://www.eventbrite.com/e/2004529639111 |
-| Tue, Jan 5, 2027 | https://luma.com/647n5s06 | | | https://www.eventbrite.com/e/2004529649141 |
-| Tue, Jan 12, 2027 | https://luma.com/af4d2sb8 | | | https://www.eventbrite.com/e/2004529662180 |
-| Tue, Jan 19, 2027 | https://luma.com/1znmn46r | | | https://www.eventbrite.com/e/2004529670204 |
-| Tue, Jan 26, 2027 | https://luma.com/dsrwn5a7 | | | https://www.eventbrite.com/e/2004529680234 |
-| Tue, Feb 2, 2027 | https://luma.com/ungk0aub | | | https://www.eventbrite.com/e/2004529689261 |
-| Tue, Feb 9, 2027 | https://luma.com/68izqn4e | | | https://www.eventbrite.com/e/2004529703303 |
-| Tue, Feb 16, 2027 | https://luma.com/zbsuog4r | | | https://www.eventbrite.com/e/2004529830684 |
+The Luma, Eventbrite, Facebook and LinkedIn listings for each date live in the admin, on each event page under [/admin/events/](https://716coffee.club/admin/events/) (the source of truth since Phase 4, ADR 0009).
 
 ## SEO / Discovery
 1. Google Webmaster console setup via Zack's Google Account. Modon added as an admin for access via Chrome
