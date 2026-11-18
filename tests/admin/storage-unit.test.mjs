@@ -138,11 +138,12 @@ describe("media keys", () => {
 });
 
 describe("admin CSP with media", () => {
-  test("adds only the bucket origin to img-src and connect-src", () => {
+  test("adds only the bucket origin to img-src, media-src and connect-src", () => {
     const csp = adminCsp({ mediaOrigin: neonEnv.STORAGE_ENDPOINT });
     const o = neonEnv.STORAGE_ENDPOINT;
     assert.match(csp, new RegExp(`img-src 'self' data: blob: ${o.replace(/\./g, "\\.")};`));
     assert.match(csp, new RegExp(`connect-src 'self' ${o.replace(/\./g, "\\.")};`));
+    assert.match(csp, new RegExp(`media-src 'self' ${o.replace(/\./g, "\\.")};`));
     assert.match(csp, /default-src 'self';/);
     assert.equal(adminCsp({ mediaOrigin: null }), adminCsp(), "media off: unchanged");
   });

@@ -9,7 +9,8 @@
 // The one exception is the media bucket (ADR 0010): when storage is configured, its
 // origin (src/lib/admin/storage.mjs storageOrigin) is added to img-src (gallery images
 // through presigned GETs) and connect-src (presigned PUTs from fetch), plus blob: in
-// img-src for previews of the browser-resized copies.
+// img-src for previews of the browser-resized copies, and media-src for the promo
+// video player (Phase 5; the same presigned GETs).
 
 /**
  * @param {{ dev?: boolean, mediaOrigin?: string|null }} [opts]
@@ -24,6 +25,7 @@ export function adminCsp({ dev = false, mediaOrigin = null } = {}) {
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data:${media ? ` blob:${media}` : ""}`,
     "font-src 'self'",
+    `media-src 'self'${media}`,
     `connect-src 'self'${media}`,
     "form-action 'self'",
     "frame-ancestors 'none'",

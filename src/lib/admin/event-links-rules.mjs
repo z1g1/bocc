@@ -129,11 +129,16 @@ export const publicPath = (date) => `/events/${date}/`;
  * Readiness checklist, calculated and never stored.
  * @param {{ date: string, status: string, exists?: boolean }} event
  * @param {Record<string, { url: string, externalId: string|null } | null | undefined>} links  by platform
+ * @param {null | { exists: boolean, ready: boolean, actionable: boolean, problems: Array<{ message: string }>,
+ *          channels: Array<{ channel: string, label: string, status: string|null }> }} [social]
+ *   the social work order (src/lib/admin/social.mjs getWorkOrder); null/omitted = none yet
  * @returns {{ listings: number, total: number, lumaId: boolean, publicPage: boolean, ready: boolean,
+ *             social: { exists: boolean, ready: boolean, scheduled: number, total: number },
  *             items: Array<{ key: string, label: string, ok: boolean|null, note?: string, href?: string }> }}
- *   ok null = not checked yet (a later phase); href (the public page) only when it exists
+ *   ok null = not checked; href (the public page) only when it exists. `ready` is the
+ *   listings only (as the lists' "n/4 listings" tag); the social lines are extra items.
  */
-export function readiness(event, links = {}) {
+export function readiness(event, links = {}, social = null) {
   const items = PLATFORM_KEYS.map((p) => ({ key: p, label: `${PLATFORMS[p]} listing`, ok: Boolean(links[p]?.url) }));
   const listings = items.filter((i) => i.ok).length;
   const lumaId = Boolean(links.luma?.externalId);
@@ -148,6 +153,26 @@ export function readiness(event, links = {}) {
     note: !publicPageExists(event) ? "a 404 until the event is saved (any save creates it)"
       : event.status === "cancelled" ? "shows a cancelled notice, no RSVP" : undefined,
   });
-  items.push({ key: "social", label: "social channels (Phase 5)", ok: null });
-  return { listings, total: PLATFORM_KEYS.length, lumaId, publicPage, ready: listings === PLATFORM_KEYS.length && lumaId, items };
+  const channels = social?.exists ? social.channels ?? [] : [];
+  const scheduled = channels.filter((c) => c.status === "scheduled" || c.status === "live").length;
+  if (!social?.exists) {
+    items.push({ key: "social", label: "social post", ok: false, note: "not set up yet (Social post, below)" });
+  } else {
+    items.push({
+      key: "social", label: "social post ready", ok: social.actionable,
+      note: !social.ready ? "not marked ready" : social.problems.length ? social.problems.map((p) => p.message).join(" ") : undefined,
+    });
+    for (const c of channels) {
+      items.push({
+        key: `social_${c.channel}`, label: `${c.label}: ${c.status}`,
+        ok: c.status === "scheduled" || c.status === "live",
+      });
+    }
+  }
+  return {
+    listings, total: PLATFORM_KEYS.length, lumaId, publicPage,
+    ready: listings === PLATFORM_KEYS.length && lumaId,
+    social: { exists: Boolean(social?.exists), ready: Boolean(social?.actionable), scheduled, total: channels.length },
+    items,
+  };
 }

@@ -114,7 +114,7 @@ export function readStorageEnv(env = process.env) {
 }
 
 /**
- * The origin browsers talk to for media (for CSP img-src / connect-src), or null when
+ * The origin browsers talk to for media (for CSP img-src / media-src / connect-src), or null when
  * storage is disabled. Accepts a config, or reads the env.
  * @param {StorageConfig | Record<string, string|undefined>} [configOrEnv]
  */

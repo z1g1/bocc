@@ -14,6 +14,10 @@ export const MAX_ORIGINAL_BYTES = 25 * 1024 * 1024;
 export const MAX_DISPLAY_BYTES = 5 * 1024 * 1024;
 export const MAX_THUMB_BYTES = 1024 * 1024;
 
+// The weekly promo video (kind promo_video): one file, uploaded as is.
+export const VIDEO_TYPES = Object.freeze(["video/mp4", "video/quicktime"]);
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+
 export const UNREADABLE_MESSAGE =
   "This photo can't be read in this browser. Upload from your iPhone, or export the photo as JPEG.";
 
@@ -45,6 +49,29 @@ export function checkFile(file) {
     return { ok: false, message: `${name}the photo is ${formatBytes(size)}; the limit is ${formatBytes(MAX_ORIGINAL_BYTES)}.` };
   }
   return { ok: true, contentType: type };
+}
+
+/**
+ * Can this picked file be uploaded as the promo video? MP4 or QuickTime (.mov, what an
+ * iPhone records), decided by its MIME type.
+ * @param {{ type?: string, size?: number, name?: string }} file
+ * @returns {{ ok: true, contentType: string } | { ok: false, message: string }}
+ */
+export function checkVideoFile(file) {
+  const name = file && file.name ? `${file.name}: ` : "";
+  const type = normalizeType(file && file.type);
+  if (!VIDEO_TYPES.includes(type)) return { ok: false, message: `${name}only MP4 or MOV videos can be uploaded.` };
+  const size = file.size;
+  if (!Number.isSafeInteger(size) || size <= 0) return { ok: false, message: `${name}the file is empty.` };
+  if (size > MAX_VIDEO_BYTES) {
+    return { ok: false, message: `${name}the video is ${formatBytes(size)}; the limit is ${formatBytes(MAX_VIDEO_BYTES)}.` };
+  }
+  return { ok: true, contentType: type };
+}
+
+/** The JSON body for POST /api/admin/media/uploads, for the promo video. */
+export function videoUploadRequestBody({ eventDate, original }) {
+  return { eventDate, kind: "promo_video", original: { contentType: original.contentType, size: original.size } };
 }
 
 /**

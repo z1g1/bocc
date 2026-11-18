@@ -64,11 +64,13 @@ export async function readJson(request) {
  * @param {string} eventDate  YYYY-MM-DD, from the database row
  * @param {string} notice
  * @param {Record<string, unknown>} body
+ * @param {"event-media"|"social"} [anchor]  the section to land on (social: the promo video)
  */
-export function formOrJson(form, eventDate, notice, body) {
+export function formOrJson(form, eventDate, notice, body, anchor = "event-media") {
   if (!form) return json(200, body);
   if (!isIsoDate(eventDate)) throw new Error("formOrJson: eventDate must be YYYY-MM-DD");
-  const location = `/admin/events/${eventDate}/?media=${encodeURIComponent(notice)}#event-media`;
+  if (anchor !== "event-media" && anchor !== "social") throw new Error("formOrJson: unknown anchor");
+  const location = `/admin/events/${eventDate}/?media=${encodeURIComponent(notice)}#${anchor}`;
   return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
 

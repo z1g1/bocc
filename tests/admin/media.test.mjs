@@ -105,8 +105,20 @@ describe("upload validation", () => {
       assert.match(errs({ eventDate }), /eventDate/, String(eventDate));
     }
   });
-  test("bad kind (promo videos are not photo uploads)", () => {
-    for (const kind of ["promo_video", "SIGNIN_BOARD", undefined]) assert.match(errs({ kind }), /kind/);
+  test("bad kind", () => {
+    for (const kind of ["photo", "SIGNIN_BOARD", "PROMO_VIDEO", undefined]) assert.match(errs({ kind }), /kind/);
+  });
+  test("promo video (Phase 5): one MP4 or MOV original, no copies, up to its own cap", () => {
+    const vid = (over = {}) => ({ eventDate: "2026-11-24", kind: "promo_video", original: { contentType: "video/mp4", size: 5_000_000 }, ...over });
+    const ok = media.validateUploadRequest(vid(), { today: new Date("2026-11-17T12:00:00Z") });
+    assert.deepEqual(ok, { ok: true, values: { eventDate: "2026-11-24", kind: "promo_video", publiclyUsable: false, original: { contentType: "video/mp4", size: 5_000_000 } } });
+    const verrs = (over) => { const r = media.validateUploadRequest(vid(over), { today: new Date("2026-11-17T12:00:00Z") }); assert.equal(r.ok, false); return r.errors.join("; "); };
+    assert.equal(media.validateUploadRequest(vid({ original: { contentType: "video/quicktime", size: media.LIMITS.video } }), { today: new Date("2026-11-17T12:00:00Z") }).ok, true);
+    assert.match(verrs({ original: { contentType: "video/mp4", size: media.LIMITS.video + 1 } }), /original.size/);
+    for (const contentType of ["image/jpeg", "video/webm", "video/mp4; codecs=avc1"]) assert.match(verrs({ original: { contentType, size: 10 } }), /original.contentType/);
+    assert.match(verrs({ display: { size: 10 } }), /display is not used/);
+    // A photo kind never takes a video.
+    assert.match(errs({ original: { contentType: "video/mp4", size: 10 } }), /original.contentType/);
   });
   test("bad types", () => {
     for (const contentType of ["image/heic", "image/gif", "image/jpeg; charset=x", "text/html"]) {
@@ -135,6 +147,8 @@ describe("upload validation", () => {
     assert.equal(lib.MAX_DISPLAY_BYTES, media.LIMITS.display);
     assert.equal(lib.MAX_THUMB_BYTES, media.LIMITS.thumb);
     assert.deepEqual(lib.ACCEPTED_TYPES, [...media.ORIGINAL_TYPES]);
+    assert.equal(lib.MAX_VIDEO_BYTES, media.LIMITS.video);
+    assert.deepEqual(lib.VIDEO_TYPES, [...media.VIDEO_TYPES]);
   });
   test("startUpload refuses invalid input before touching anything", async () => {
     await assert.rejects(media.startUpload(actor.id, storage() ?? {}, body("2026-02-30")), { status: 400 });
@@ -220,7 +234,7 @@ describe("upload flow against MinIO", { skip }, () => {
     for (const k of keys) assert.ok(await exists(k));
 
     const res = await media.deleteMedia(actor.id, storage(), r.id);
-    assert.deepEqual(res, { id: r.id, eventDate: date, leftovers: [] });
+    assert.deepEqual(res, { id: r.id, eventDate: date, kind: "signin_board", leftovers: [] });
     assert.equal(await row(r.id), undefined);
     for (const k of keys) assert.equal(await exists(k), false, k);
     const a = (await audits(r.id)).at(-1);
@@ -448,7 +462,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     const plan = await (await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date) })).json();
     const res = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, json: {} });
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { id: plan.id, eventDate: date, leftovers: [] });
+    assert.deepEqual(await res.json(), { id: plan.id, eventDate: date, kind: "signin_board", leftovers: [] });
     // The old "OK to use publicly" route is gone: a plain JSON 404 (src/pages/api/admin/[...rest].ts).
     const toggle = await req(`/api/admin/media/${plan.id}/public`, { cookie: admin.cookie, json: { publiclyUsable: true } });
     assert.equal(toggle.status, 404);

@@ -1,0 +1,277 @@
+---
+// The "Social post" section of /admin/events/YYYY-MM-DD (ADR 0011; plan Phase 5).
+// Admin only: anyone else gets nothing rendered (the social role reads the work
+// order on its own pages). The page handles the POSTs (actions social_post,
+// social_video, social_channel; src/lib/admin/social.mjs) and passes back what was
+// posted and the errors on a refused save:
+//   <SocialPost date="2026-11-24" order={workOrder} posted={posted} errors={errors} />
+//
+// - Promo video: the attached one (player through a presigned GET, and a download
+//   link), the event's other ready videos with "Use this video", unfinished uploads,
+//   and the upload form. /js/admin-video.js PUTs the file to the private bucket and
+//   then submits the hidden "attach" form. Delete buttons POST to
+//   /api/admin/media/{id}/delete (it also clears the video from the post).
+// - The post form: base caption, TikTok's extra hashtags, cover note, publish time
+//   (an Eastern datetime-local; shown in Eastern and UTC), and the ready toggle.
+// - One form per channel: its status (set by the social role's pages), the caption and
+//   first-comment overrides with the code default shown, and the final text.
+import { hasRole } from "../../lib/admin/roles.mjs";
+import { getStorage } from "../../lib/admin/storage.mjs";
+import { STORAGE_OFF_MESSAGE } from "../../lib/admin/media-http.mjs";
+import * as rules from "../../lib/admin/social-rules.mjs";
+
+interface Props {
+  date: string;
+  order: any;
+  posted?: { action: string; values: Record<string, string> } | null;
+  errors?: Record<string, string>;
+}
+const { date, order, posted = null, errors = {} } = Astro.props;
+const allowed = hasRole(Astro.locals, "admin");
+const { storage } = allowed ? getStorage() : { storage: null };
+
+let videos: { ready: any[]; pending: any[] } = { ready: [], pending: [] };
+let current: any = null;
+if (allowed && storage) {
+  const { listPromoVideos } = await import("../../lib/admin/media.mjs");
+  const { pool } = await import("../../lib/admin/db.mjs");
+  videos = await listPromoVideos(pool, date);
+  const name = (m: any) => `bocc-${date}-promo-${String(m.id).slice(0, 8)}.${m.originalKey.split(".").pop()}`;
+  videos.ready = videos.ready.map((m: any) => ({
+    ...m,
+    playUrl: storage.presignGet({ key: m.originalKey }).url,
+    downloadUrl: storage.presignGet({ key: m.originalKey, downloadName: name(m) }).url,
+  }));
+  current = videos.ready.find((m: any) => m.id === order.video?.id) ?? null;
+}
+const others = videos.ready.filter((m: any) => m.id !== current?.id);
+const stale = videos.pending.filter((m: any) => m.stale);
+
+const from = (action: string) => (posted?.action === action ? posted.values : null);
+const errFor = (action: string) => (posted?.action === action ? errors : {});
+const pv = from("social_post") ?? {
+  baseCaption: order.baseCaption ?? "",
+  extraHashtags: order.extraHashtags.join(" "),
+  coverNote: order.coverNote ?? "",
+  publishAt: order.publishAtDisplay.local,
+  ready: order.ready ? "on" : "",
+};
+const pe = errFor("social_post");
+const videoErr = errFor("social_video");
+const chPosted = (c: string) => (posted?.action === "social_channel" && posted.values.channel === c ? posted : null);
+const chVal = (c: any) => chPosted(c.channel)?.values ?? {
+  caption: c.captionOverridden ? c.caption : "",
+  firstComment: c.firstCommentOverridden ? c.firstComment : "",
+};
+const chErr = (c: string) => (chPosted(c) ? errors : {});
+const started = order.channels.filter((c: any) => c.status && c.status !== "pending");
+const def = rules.defaultPublishAt(date);
+const defDisplay = rules.formatPublishAt(def);
+const STATUS_LABEL: Record<string, string> = { pending: "pending", scheduled: "scheduled", live: "live", failed: "failed" };
+const formatBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+const MEDIA_NOTICES: Record<string, string> = {
+  "video-deleted": "Video deleted.",
+  "video-deleted-partial": "Video deleted. Its file couldn't be removed from storage; it is logged for cleanup.",
+};
+const mediaNotice = MEDIA_NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+const fmtTime = (d: Date) =>
+  new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
+---
+{allowed && (
+  <section aria-labelledby="h-social" id="social" class="social">
+    <h2 id="h-social">Social post</h2>
+    <p class="muted">
+      The weekly promo video, posted on {Object.values(rules.CHANNELS).join(", ")} by the Chrome tasks
+      from the work order (ADR 0011). The app never posts. Luma is the only link the posts use.
+    </p>
+    <p class="social-state">
+      {!order.exists
+        ? <span class="muted">Not set up yet: the first save below creates it.</span>
+        : order.actionable
+          ? <strong class="ok">Ready: in the work order.</strong>
+          : order.ready
+            ? <strong class="todo">Marked ready, but not in the work order until this is fixed:</strong>
+            : <span>Not marked ready.</span>}
+    </p>
+    {order.problems.length > 0 && (order.ready || order.exists) && (
+      <ul class="problems">{order.problems.map((p: any) => <li>{p.message}</li>)}</ul>
+    )}
+    {started.length > 0 && (
+      <p class="notice">
+        {started.length} channel{started.length === 1 ? " is" : "s are"} past pending
+        ({started.map((c: any) => `${c.label}: ${c.status}`).join(", ")}). Changes here don't change posts already scheduled on the platforms.
+      </p>
+    )}
+
+    <h3 id="h-social-video">Promo video</h3>
+    {mediaNotice && <p class="notice" role="status">{mediaNotice}</p>}
+    {videoErr.video && <p class="error" role="alert">{videoErr.video}</p>}
+    {!storage ? <p class="muted" data-media-off>{STORAGE_OFF_MESSAGE}</p> : (
+      <>
+        {current ? (
+          <div class="video-current">
+            <video controls preload="metadata" playsinline src={current.playUrl} width="180"></video>
+            <p>
+              Attached: {current.contentType === "video/quicktime" ? "MOV" : "MP4"}, {formatBytes(current.sizeBytes)},
+              uploaded {fmtTime(current.createdAt)} · <a href={current.downloadUrl} download>Download</a>
+            </p>
+            <form method="post" action={`/api/admin/media/${current.id}/delete`} class="inline" data-confirm="Delete the attached promo video? The post is un-readied. This can't be undone.">
+              <button type="submit" class="small secondary">Delete video</button>
+            </form>
+          </div>
+        ) : <p class="muted">{order.video ? "The attached video isn't available." : "No video attached yet."}</p>}
+
+        {others.length > 0 && (
+          <div>
+            <p>Other uploaded videos for this event:</p>
+            <ul class="plain video-list">
+              {others.map((m: any) => (
+                <li>
+                  <a href={m.downloadUrl} download>{m.contentType === "video/quicktime" ? "MOV" : "MP4"}, {formatBytes(m.sizeBytes)}, {fmtTime(m.createdAt)}</a>
+                  <form method="post" class="inline">
+                    <input type="hidden" name="action" value="social_video">
+                    <input type="hidden" name="videoMediaId" value={m.id}>
+                    <button type="submit" class="small">Use this video</button>
+                  </form>
+                  <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this video? This can't be undone.">
+                    <button type="submit" class="small secondary">Delete</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {stale.length > 0 && (
+          <div class="media-stale">
+            <p class="muted">Unfinished video uploads (started over a day ago):</p>
+            <ul class="plain">
+              {stale.map((m: any) => (
+                <li>
+                  <span>Video, started {fmtTime(m.createdAt)}</span>
+                  <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this unfinished upload?">
+                    <button type="submit" class="small secondary">Delete</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <p class="muted" data-video-nojs>Uploading the video needs JavaScript.</p>
+        <form class="video-upload" data-video-upload data-event-date={date} data-status={`video-status-${date}`} hidden>
+          <label for={`video-file-${date}`}>{current ? "Replace with a new video" : "Promo video"} <span class="muted">(MP4 or MOV, vertical 1080×1920)</span></label>
+          <input id={`video-file-${date}`} type="file" name="file" accept="video/mp4,video/quicktime" required>
+          <button type="submit">Upload video</button>
+        </form>
+        <p class="media-status" id={`video-status-${date}`} role="status" aria-live="polite"></p>
+        <form method="post" data-video-attach hidden>
+          <input type="hidden" name="action" value="social_video">
+          <input type="hidden" name="videoMediaId" value="">
+        </form>
+        <script is:inline type="module" src="/js/admin-video.js"></script>
+      </>
+    )}
+
+    <h3 id="h-social-post">Post</h3>
+    <form method="post" class="narrow" id="social-post-form">
+      <input type="hidden" name="action" value="social_post">
+      <label for="baseCaption">Base caption <span class="muted">(every channel starts from this; the link lines are added per channel)</span></label>
+      <textarea id="baseCaption" name="baseCaption" rows="5" maxlength={rules.LIMITS.baseCaption}
+        aria-invalid={pe.baseCaption ? "true" : undefined}>{pv.baseCaption}</textarea>
+      {pe.baseCaption && <p class="error" role="alert">{pe.baseCaption}</p>}
+
+      <label for="extraHashtags">Extra TikTok hashtags <span class="muted">(added after {rules.TIKTOK_HASHTAGS.join(" ")})</span></label>
+      <input id="extraHashtags" name="extraHashtags" autocomplete="off" spellcheck="false" value={pv.extraHashtags}
+        placeholder="#SmallBusiness #Founders" aria-invalid={pe.extraHashtags ? "true" : undefined}>
+      {pe.extraHashtags && <p class="error" role="alert">{pe.extraHashtags}</p>}
+
+      <label for="coverNote">Cover note <span class="muted">(which frame or text to use as the cover)</span></label>
+      <textarea id="coverNote" name="coverNote" rows="2" maxlength={rules.LIMITS.coverNote}
+        aria-invalid={pe.coverNote ? "true" : undefined}>{pv.coverNote}</textarea>
+      {pe.coverNote && <p class="error" role="alert">{pe.coverNote}</p>}
+
+      <label for="publishAt">Publish at, Eastern time <span class="muted">(blank = {defDisplay.et})</span></label>
+      <input id="publishAt" name="publishAt" type="datetime-local" step="60" value={pv.publishAt}
+        aria-invalid={pe.publishAt ? "true" : undefined} aria-describedby="publishAt-now">
+      <p id="publishAt-now" class="muted">
+        Saved: {order.publishAtDisplay.et} = {order.publishAtDisplay.utc}{order.publishAtIsDefault && " (the default)"}
+      </p>
+      {pe.publishAt && <p class="error" role="alert">{pe.publishAt}</p>}
+
+      <label class="check"><input type="checkbox" name="ready" value="on" checked={pv.ready === "on"}> Ready: put it in the work order</label>
+      {pe.ready && <p class="error" role="alert">{pe.ready}</p>}
+      <button type="submit">Save social post</button>
+    </form>
+
+    <h3 id="h-social-channels">Channels</h3>
+    <p class="muted">Leave an override blank to use the default. An override replaces the whole text for that channel.</p>
+    {order.channels.map((c: any) => {
+      const v = chVal(c);
+      const e = chErr(c.channel);
+      return (
+        <form method="post" class="channel-row" id={`channel-${c.channel}`}>
+          <input type="hidden" name="action" value="social_channel">
+          <input type="hidden" name="channel" value={c.channel}>
+          <h4>{c.label} <span class={`badge ${c.status ?? "none"}`}>{c.status ? STATUS_LABEL[c.status] : "not created"}</span></h4>
+          {c.postUrl && <p class="current">Post: <a href={c.postUrl} target="_blank" rel="noopener">{c.postUrl}</a></p>}
+          {c.verifiedAt && <p class="muted">Verified {fmtTime(c.verifiedAt)}{c.commentPostedAt && <>, first comment posted {fmtTime(c.commentPostedAt)}</>}</p>}
+          {c.notes && <p class="muted">Notes: {c.notes}</p>}
+
+          <p class="label">Final caption <span class={c.overLimit ? "error" : "muted"}>({c.captionLength}/{c.captionLimit}{c.captionOverridden ? ", override" : ", default"})</span></p>
+          {c.caption === null
+            ? <p class="muted">Write the base caption first.</p>
+            : <pre class="preview" data-channel-caption={c.channel}>{c.caption}</pre>}
+          {c.firstComment !== null && (
+            <>
+              <p class="label">First comment <span class="muted">({c.firstCommentOverridden ? "override" : "default"})</span></p>
+              <pre class="preview" data-channel-comment={c.channel}>{c.firstComment}</pre>
+            </>
+          )}
+
+          <details open={Boolean(v.caption || v.firstComment || e.caption || e.firstComment) || undefined}>
+            <summary>Override for {c.label}</summary>
+            {c.captionOverridden && c.defaultCaption !== null && (
+              <>
+                <p class="label">Default caption</p>
+                <pre class="preview muted">{c.defaultCaption}</pre>
+              </>
+            )}
+            <label for={`caption-${c.channel}`}>Caption override</label>
+            <textarea id={`caption-${c.channel}`} name="caption" rows="4" maxlength={rules.LIMITS.caption}
+              aria-invalid={e.caption ? "true" : undefined}>{v.caption}</textarea>
+            {e.caption && <p class="error" role="alert">{e.caption}</p>}
+            {c.firstCommentOverridden && c.defaultFirstComment !== null && (
+              <p class="muted">Default first comment: {c.defaultFirstComment}</p>
+            )}
+            <label for={`firstComment-${c.channel}`}>First comment override <span class="muted">({c.defaultFirstComment === null ? "none by default" : `default: ${c.defaultFirstComment}`})</span></label>
+            <textarea id={`firstComment-${c.channel}`} name="firstComment" rows="2" maxlength={rules.LIMITS.firstComment}
+              aria-invalid={e.firstComment ? "true" : undefined}>{v.firstComment}</textarea>
+            {e.firstComment && <p class="error" role="alert">{e.firstComment}</p>}
+            <button type="submit">Save {c.label}</button>
+          </details>
+        </form>
+      );
+    })}
+  </section>
+)}
+
+<style>
+  .social h3 { margin-top: 1.5rem; }
+  .social h4 { margin: 0 0 0.25rem; }
+  .social .ok { color: var(--accent); }
+  .social .todo { color: var(--err); }
+  .problems { margin: 0.25rem 0 0.5rem; color: var(--err); }
+  .video-current video { display: block; max-width: 100%; border: 1px solid var(--line); border-radius: 4px; background: #000; }
+  .video-list li { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .media-status { min-height: 1.5em; }
+  .channel-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
+  .channel-row textarea, .social textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+  .channel-row .current { margin: 0.1rem 0; overflow-wrap: anywhere; }
+  .channel-row .label { margin: 0.5rem 0 0.1rem; font-weight: 600; }
+  .preview { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; padding: 0.5rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+  .badge { display: inline-block; padding: 0 0.4rem; border: 1px solid var(--line); border-radius: 4px; font-size: 0.85em; font-weight: 600; }
+  .badge.scheduled, .badge.live { color: var(--accent); border-color: var(--accent); }
+  .badge.failed { color: var(--err); border-color: var(--err); }
+  .social input#extraHashtags { width: 100%; }
+  details { margin-top: 0.5rem; }
+</style>

@@ -69,15 +69,16 @@ describe("URL rules", () => {
     }
   });
 
-  test("readiness: four listings, the embed id, the public page, social later", () => {
+  test("readiness: four listings, the embed id, the public page, the social post", () => {
     const empty = rules.readiness({ date: "2081-03-04", status: "scheduled" }, {});
     assert.deepEqual([empty.listings, empty.total, empty.lumaId, empty.ready], [0, 4, false, false]);
     assert.deepEqual(empty.items.map((i) => [i.key, i.ok]), [
       ["luma", false], ["eventbrite", false], ["facebook_event", false], ["linkedin_event", false],
-      ["luma_id", false], ["public_page", true], ["social", null],
+      ["luma_id", false], ["public_page", true], ["social", false],
     ]);
     assert.equal(empty.items.find((i) => i.key === "public_page").href, "/events/2081-03-04/");
-    assert.equal(empty.items.find((i) => i.key === "social").label, "social channels (Phase 5)");
+    // Per-channel lines once a post exists: social-unit.test.mjs.
+    assert.equal(empty.items.find((i) => i.key === "social").label, "social post");
 
     const link = (url, externalId = null) => ({ url, externalId });
     const noId = rules.readiness({ date: "2081-03-04", status: "scheduled" }, {

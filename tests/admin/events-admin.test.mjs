@@ -618,7 +618,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(page.includes('id="h-ready"') && page.includes("0/4 listings"), "readiness near the top");
     assert.ok(page.indexOf('id="h-ready"') < page.indexOf('id="h-details"'));
     assert.ok(page.includes("public page") && page.includes("404 until the event is saved") && !page.includes(`href="/events/${d}/"`));
-    assert.ok(page.includes("social channels (Phase 5)"));
+    assert.ok(page.includes("social post") && page.includes("not set up yet") && !page.includes("Phase 5"));
     for (const p of ["luma", "eventbrite", "facebook_event", "linkedin_event"]) assert.ok(page.includes(`id="link-${p}"`), p);
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",

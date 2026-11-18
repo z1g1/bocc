@@ -1,5 +1,5 @@
-// Event photos (ADR 0010): the data side of phone uploads, the gallery and deletes.
-// Admin only; the CALLER checks requireRole(locals, "admin") and checkOrigin, and
+// Event photos and the weekly promo video (ADR 0010): the data side of phone uploads,
+// the gallery and deletes. Admin only; the CALLER checks requireRole(locals, "admin") and checkOrigin, and
 // that storage is configured (getStorage()). Parameterized SQL only.
 //
 // Upload flow (the browser makes the 1600px display copy and the 400px thumbnail):
@@ -24,6 +24,13 @@
 // signin_board row always false (the CHECK on event_media agrees), whatever the client
 // sends (ADR 0010 decision 2, amended 2026-11-18). Phase 5 reads the column.
 //
+// Promo videos (kind promo_video, plan Phase 5) use the same flow with ONE file: the
+// browser declares only `original` (video/mp4 or video/quicktime, up to LIMITS.video),
+// gets one presigned PUT, and completeUpload checks only that object. Nothing is made
+// in the browser (no copies, no thumbnail). The social post picks one ready video
+// (src/lib/admin/social.mjs setVideo); deleteMedia of that video clears it from the
+// post and un-readies the post, in the same transaction as the delete.
+//
 // What was signed for the display copy and thumbnail (their sizes) is not in
 // event_media, which only describes the original; completeUpload reads it back from
 // the `media.upload` audit row written in the same transaction as the row.
@@ -36,18 +43,24 @@ import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
 export { NotFoundError, ValidationError };
 
 export const PHOTO_KINDS = Object.freeze(["signin_board", "social_photo"]);
+export const VIDEO_KIND = "promo_video";
+export const UPLOAD_KINDS = Object.freeze([...PHOTO_KINDS, VIDEO_KIND]);
 export const ORIGINAL_TYPES = Object.freeze(["image/jpeg", "image/png"]);
+export const VIDEO_TYPES = Object.freeze(["video/mp4", "video/quicktime"]);
 export const COPY_TYPE = "image/jpeg";
 
 // Caps on the declared sizes. The original is the phone's own file: a 48 MP iPhone
 // photo converted to JPEG on pick is about 8–15 MB, a big PNG screenshot a few MB.
 // 25 MB leaves room without letting one upload eat the 5 GB free tier. The copies are
-// browser-made 1600px / 400px JPEGs (typically ~0.5 MB / ~40 KB).
+// browser-made 1600px / 400px JPEGs (typically ~0.5 MB / ~40 KB). The weekly promo
+// video is an edited 1080x1920 export of about 4–5 MB (ADR 0010); 100 MB allows a raw
+// phone clip of a minute or so without letting one upload eat the free tier.
 // Keep in step with public/js/admin-media-lib.js (a test checks they agree).
 export const LIMITS = Object.freeze({
   original: 25 * 1024 * 1024,
   display: 5 * 1024 * 1024,
   thumb: 1024 * 1024,
+  video: 100 * 1024 * 1024,
 });
 
 // Presigned PUTs last 15 minutes, not the storage default of 5: the three files go up
@@ -58,6 +71,8 @@ export const STALE_PENDING_HOURS = 24;
 export const EARLIEST_DATE = "2024-01-01";
 
 const VARIANTS = /** @type {const} */ (["original", "display", "thumb"]);
+/** The objects a row of this kind has. */
+const variantsFor = (kind) => (kind === VIDEO_KIND ? /** @type {const} */ (["original"]) : VARIANTS);
 
 const isSize = (n, max) => Number.isSafeInteger(n) && n > 0 && n <= max;
 const plusDays = (d, days) => new Date(d.getTime() + days * 86400000).toISOString().slice(0, 10);
@@ -67,8 +82,8 @@ const plusDays = (d, days) => new Date(d.getTime() + days * 86400000).toISOStrin
  * @param {unknown} input
  * @param {{ today?: Date }} [opts]
  * @returns {{ ok: true, values: { eventDate: string, kind: string, publiclyUsable: boolean,
- *   original: { contentType: string, size: number }, display: { size: number }, thumb: { size: number } } }
- *   | { ok: false, errors: string[] }}
+ *   original: { contentType: string, size: number }, display?: { size: number }, thumb?: { size: number } } }
+ *   | { ok: false, errors: string[] }}  display/thumb only for photos
  */
 export function validateUploadRequest(input, { today = new Date() } = {}) {
   const errors = [];
@@ -78,23 +93,30 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
   if (!isIsoDate(b.eventDate)) errors.push("eventDate must be a date, YYYY-MM-DD");
   else if (b.eventDate < EARLIEST_DATE || b.eventDate > plusDays(today, 366)) errors.push("eventDate is out of range");
 
-  if (!PHOTO_KINDS.includes(b.kind)) errors.push(`kind must be one of ${PHOTO_KINDS.join(", ")}`);
+  if (!UPLOAD_KINDS.includes(b.kind)) errors.push(`kind must be one of ${UPLOAD_KINDS.join(", ")}`);
+  const video = b.kind === VIDEO_KIND;
 
   // Not the client's choice (see the top of this file): any publiclyUsable sent is ignored.
   const publiclyUsable = b.kind === "social_photo";
 
   const o = b.original;
+  const types = video ? VIDEO_TYPES : ORIGINAL_TYPES;
+  const max = video ? LIMITS.video : LIMITS.original;
   if (!o || typeof o !== "object") errors.push("original is required");
   else {
-    if (!ORIGINAL_TYPES.includes(o.contentType)) errors.push(`original.contentType must be ${ORIGINAL_TYPES.join(" or ")}`);
-    if (!isSize(o.size, LIMITS.original)) errors.push(`original.size must be 1 to ${LIMITS.original} bytes`);
+    if (!types.includes(o.contentType)) errors.push(`original.contentType must be ${types.join(" or ")}`);
+    if (!isSize(o.size, max)) errors.push(`original.size must be 1 to ${max} bytes`);
   }
-  for (const v of /** @type {const} */ (["display", "thumb"])) {
-    const c = b[v];
-    if (!c || typeof c !== "object") errors.push(`${v} is required`);
-    else {
-      if (c.contentType !== undefined && c.contentType !== COPY_TYPE) errors.push(`${v}.contentType must be ${COPY_TYPE}`);
-      if (!isSize(c.size, LIMITS[v])) errors.push(`${v}.size must be 1 to ${LIMITS[v]} bytes`);
+  if (video) {
+    for (const v of ["display", "thumb"]) if (b[v] !== undefined) errors.push(`${v} is not used for a video`);
+  } else {
+    for (const v of /** @type {const} */ (["display", "thumb"])) {
+      const c = b[v];
+      if (!c || typeof c !== "object") errors.push(`${v} is required`);
+      else {
+        if (c.contentType !== undefined && c.contentType !== COPY_TYPE) errors.push(`${v}.contentType must be ${COPY_TYPE}`);
+        if (!isSize(c.size, LIMITS[v])) errors.push(`${v}.size must be 1 to ${LIMITS[v]} bytes`);
+      }
     }
   }
   if (errors.length) return { ok: false, errors };
@@ -105,17 +127,18 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
       kind: b.kind,
       publiclyUsable,
       original: { contentType: o.contentType, size: o.size },
-      display: { size: b.display.size },
-      thumb: { size: b.thumb.size },
+      ...(video ? {} : { display: { size: b.display.size }, thumb: { size: b.thumb.size } }),
     },
   };
 }
 
-/** The three keys for a row; the user's filename never reaches them. */
-export function keysFor(eventDate, id, originalType) {
-  const ext = /** @type {"jpg"|"png"} */ (extForContentType(originalType));
+/** The keys for a row (a video has only its original); the user's filename never reaches them. */
+export function keysFor(eventDate, id, originalType, kind = "signin_board") {
+  const ext = /** @type {"jpg"|"png"|"mp4"|"mov"} */ (extForContentType(originalType));
+  const original = mediaKey(eventDate, id, "original", ext);
+  if (kind === VIDEO_KIND) return { original, display: null, thumb: null };
   return {
-    original: mediaKey(eventDate, id, "original", ext),
+    original,
     display: mediaKey(eventDate, id, "display", "jpg"),
     thumb: mediaKey(eventDate, id, "thumb", "jpg"),
   };
@@ -131,14 +154,16 @@ export async function startUpload(actorUserId, storage, input, { today = new Dat
   if (!v.ok) throw new ValidationError(v.errors);
   const { eventDate, kind, publiclyUsable, original, display, thumb } = v.values;
   const id = randomUUID();
-  const keys = keysFor(eventDate, id, original.contentType);
-  const signed = {
-    original: { contentType: original.contentType, size: original.size },
-    display: { contentType: COPY_TYPE, size: display.size },
-    thumb: { contentType: COPY_TYPE, size: thumb.size },
-  };
+  const keys = keysFor(eventDate, id, original.contentType, kind);
+  const signed = kind === VIDEO_KIND
+    ? { original: { contentType: original.contentType, size: original.size } }
+    : {
+      original: { contentType: original.contentType, size: original.size },
+      display: { contentType: COPY_TYPE, size: display.size },
+      thumb: { contentType: COPY_TYPE, size: thumb.size },
+    };
   // Sign first (no I/O): a signing error then leaves nothing behind.
-  const uploads = Object.fromEntries(VARIANTS.map((variant) => {
+  const uploads = Object.fromEntries(variantsFor(kind).map((variant) => {
     const p = storage.presignPut({
       key: keys[variant], contentType: signed[variant].contentType, contentLength: signed[variant].size, expiresIn: PUT_EXPIRES,
     });
@@ -205,14 +230,15 @@ export async function completeUpload(actorUserId, storage, id, { db }) {
   };
   const keys = { original: row.originalKey, display: row.displayKey, thumb: row.thumbKey };
 
-  const heads = await Promise.all(VARIANTS.map((v) => storage.headObject({ key: keys[v] })));
+  const variants = variantsFor(row.kind);
+  const heads = await Promise.all(variants.map((v) => storage.headObject({ key: keys[v] })));
   const problems = [];
-  VARIANTS.forEach((v, i) => {
+  variants.forEach((v, i) => {
     const h = heads[i];
     if (!h) return problems.push(`${v}: not uploaded`);
     const type = (h.contentType ?? "").split(";")[0].trim().toLowerCase();
     if (type !== expected[v].contentType) problems.push(`${v}: content type ${type || "missing"}, expected ${expected[v].contentType}`);
-    const max = LIMITS[v];
+    const max = row.kind === VIDEO_KIND ? LIMITS.video : LIMITS[v];
     const sizeOk = expected[v].size === undefined ? h.contentLength > 0 && h.contentLength <= max : h.contentLength === expected[v].size;
     if (!sizeOk) problems.push(`${v}: ${h.contentLength} bytes, expected ${expected[v].size ?? `1 to ${max}`}`);
   });
@@ -242,14 +268,23 @@ export async function completeUpload(actorUserId, storage, id, { db }) {
 export async function deleteMedia(actorUserId, storage, id, { log = (m) => console.error(m) } = {}) {
   if (!isUuid(id)) throw new NotFoundError("media not found");
   const row = await withAudit(actorUserId, async (client) => {
+    // A promo video may be a social post's video: clear it there first (the FK would
+    // refuse the delete), and un-ready the post, which needs a video (its CHECK).
+    const { rows: detached } = await client.query(
+      `update public.social_posts set video_media_id = null, ready = false
+        where video_media_id = $1
+        returning event_date::text as "eventDate"`, [id]);
     const { rows } = await client.query(
       `delete from public.event_media where id = $1
        returning event_date::text as "eventDate", kind, status, original_key, display_key, thumb_key`, [id]);
     if (!rows.length) throw new NotFoundError("media not found");
-    return rows[0];
+    return { ...rows[0], detachedFromSocialPost: detached.length > 0 };
   }, (r) => ({
     action: "media.delete", targetTable: "event_media", targetId: id,
-    details: { eventDate: r.eventDate, kind: r.kind, status: r.status, keys: [r.original_key, r.display_key, r.thumb_key].filter(Boolean) },
+    details: {
+      eventDate: r.eventDate, kind: r.kind, status: r.status, keys: [r.original_key, r.display_key, r.thumb_key].filter(Boolean),
+      ...(r.detachedFromSocialPost ? { detachedFromSocialPost: true } : {}),
+    },
   }));
 
   const keys = [row.original_key, row.display_key, row.thumb_key].filter(Boolean);
@@ -258,7 +293,7 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
   if (leftovers.length) {
     log(`[admin] media delete ${id}: row deleted, but these objects are still in the bucket: ${leftovers.join(", ")}`);
   }
-  return { id, eventDate: row.eventDate, leftovers };
+  return { id, eventDate: row.eventDate, kind: row.kind, leftovers };
 }
 
 /**
@@ -275,6 +310,24 @@ export async function listEventMedia(db, date) {
        from public.event_media
       where event_date = $1 and kind in ('signin_board', 'social_photo')
       order by created_at, id`, [date, STALE_PENDING_HOURS]);
+  const all = rows.map((r) => ({ ...r, sizeBytes: Number(r.sizeBytes) }));
+  return { ready: all.filter((r) => r.status === "ready"), pending: all.filter((r) => r.status === "pending") };
+}
+
+/**
+ * The promo videos for one date (the social post section): ready ones, newest first,
+ * and pending ones (in progress or abandoned; `stale` past STALE_PENDING_HOURS).
+ * @param {{ query: Function }} db
+ * @param {string} date
+ */
+export async function listPromoVideos(db, date) {
+  if (!isIsoDate(date)) throw new ValidationError(["date must be YYYY-MM-DD"]);
+  const { rows } = await db.query(
+    `select ${MEDIA_COLUMNS},
+            created_at < now() - make_interval(hours => $2) as stale
+       from public.event_media
+      where event_date = $1 and kind = 'promo_video'
+      order by created_at desc, id`, [date, STALE_PENDING_HOURS]);
   const all = rows.map((r) => ({ ...r, sizeBytes: Number(r.sizeBytes) }));
   return { ready: all.filter((r) => r.status === "ready"), pending: all.filter((r) => r.status === "pending") };
 }

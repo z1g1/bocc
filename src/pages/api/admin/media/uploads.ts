@@ -1,4 +1,4 @@
-// POST /api/admin/media/uploads: start one photo upload (ADR 0010). Admin only,
+// POST /api/admin/media/uploads: start one photo or promo video upload (ADR 0010). Admin only,
 // Origin-checked, JSON in and out. The browser has already made the display copy and
 // thumbnail; it declares the three files' types and sizes and gets back three
 // presigned PUTs for them (src/lib/admin/media.mjs startUpload). The server sets
@@ -8,6 +8,9 @@
 //   request  { eventDate: "2026-11-24", kind: "signin_board" | "social_photo",
 //              original: { contentType: "image/jpeg", size },
 //              display: { size }, thumb: { size } }
+//            or, for the promo video (Phase 5; one file, no copies):
+//            { eventDate, kind: "promo_video", original: { contentType: "video/mp4" | "video/quicktime", size } }
+//            -> uploads has `original` only
 //   201      { id, eventDate, eventCreated, expiresInSeconds,
 //              uploads: { original|display|thumb: { method: "PUT", url, headers } } }
 //   400 { error, errors[] } · 401/403 · 405 · 503 { error } when storage is off
