@@ -110,6 +110,33 @@ describe("Better Auth configuration", () => {
     }));
     assert.equal(direct.status, 403);
   });
+
+  test("a social user has no Better Auth admin role, can't give itself one, and can't reach /api/auth/admin/*", async () => {
+    const user = await makeUser(["social"]);
+    const role = async () => (await owner.query(`select role from auth."user" where id = $1`, [user.id])).rows[0].role;
+    assert.equal(await role(), "user", "createUser leaves the plugin's default role");
+    const { cookie } = await signIn(user.email);
+    // The plugin's role column is input: false, so update-user can't set it.
+    const upd = await authRequest("/update-user", { role: "admin", name: "Still Social" }, { cookie });
+    assert.ok(upd.status === 400 || upd.status === 200, `update-user: ${upd.status}`);
+    assert.equal(await role(), "user");
+    for (const p of ["/admin/set-role", "/admin/list-users", "/admin/create-user", "/admin/impersonate-user", "/admin"]) {
+      assert.equal((await authRequest(p, { userId: user.id, role: "admin" }, { cookie })).status, 404, p);
+    }
+    // Spellings that dodge the block don't route to the plugin either; and the plugin
+    // itself refuses a user whose plugin role isn't admin.
+    for (const p of ["/Admin/set-role", "/%61dmin/set-role", "//admin/set-role"]) {
+      const r = await authRequest(p, { userId: user.id, role: "admin" }, { cookie });
+      assert.equal(r.status, 404, p);
+    }
+    const direct = await auth.handler(new Request(`${BASE_URL}/api/auth/admin/set-role`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: BASE_URL, cookie, "x-nf-client-connection-ip": nextIp() },
+      body: JSON.stringify({ userId: user.id, role: "admin" }),
+    }));
+    assert.equal(direct.status, 403);
+    assert.equal(await role(), "user");
+  });
 });
 
 describe("guard and roles", () => {

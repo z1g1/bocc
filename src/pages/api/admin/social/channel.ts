@@ -4,7 +4,9 @@
 //   request  { date: "2026-11-24", channel: "facebook" | "instagram" | "threads" | "tiktok" | "linkedin_page",
 //              status?: "pending" | "scheduled" | "live" | "failed", postUrl?: string, notes?: string,
 //              verified?: boolean, commentPosted?: boolean }
-//            an absent field keeps what is stored; "" clears postUrl / notes
+//            an absent field keeps what is stored; "" or null clears postUrl / notes;
+//            any other non-string status / postUrl / notes (123, {}, []) is a 400 on that
+//            field. The post URL is stored as parsed (lower-case scheme and host).
 //   200 { changed, channel: { channel, label, status, postUrl, verifiedAt, commentPostedAt, notes, … } }
 //   400 / 404 / 409 { error, errors: { field: message } } · 401 / 403 · 405
 import type { APIRoute } from "astro";

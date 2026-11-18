@@ -4,7 +4,7 @@
 //      allowlist (roles.mjs mayReach, guard.mjs), the nav links
 //   2. src/lib/admin/social.mjs as admin_app: setChannelResult (audited, transitions,
 //      URL checks, verified_at / comment_posted_at, no-ops), findNext's states (no
-//      post, not ready, problems, all done, ready) and findVerify's, with an injected
+//      post, not ready, problems, ready; never skipping a stuck week; cancelled weeks) and findVerify's, with an injected
 //      clock in far-future years (2091-2095) so other tests' posts don't interfere
 //   3. over HTTP (astro dev, the real clock): /admin/social/next/ and /verify/ and
 //      /api/admin/social/*: roles (social reaches only these), Origin, PRG, refused
@@ -142,6 +142,24 @@ describe("rules", () => {
     assert.throws(() => so.validateResultInput("facebook", { status: "posted" }), (e) => Boolean(e.errors.status));
   });
 
+  test("result input: non-string postUrl / notes / status are refused, null and \"\" clear", () => {
+    for (const bad of [123, {}, [], true]) {
+      assert.throws(() => so.validateResultInput("facebook", { postUrl: bad }), (e) => /must be a string/.test(e.errors.postUrl), `postUrl ${JSON.stringify(bad)}`);
+      assert.throws(() => so.validateResultInput("facebook", { notes: bad }), (e) => /must be a string/.test(e.errors.notes), `notes ${JSON.stringify(bad)}`);
+      assert.throws(() => so.validateResultInput("facebook", { status: bad }), (e) => Boolean(e.errors.status), `status ${JSON.stringify(bad)}`);
+    }
+    assert.throws(() => so.validateResultInput("facebook", { status: null }), (e) => Boolean(e.errors.status));
+    assert.throws(() => so.validateResultInput("tiktok", { verified: 1 }), (e) => Boolean(e.errors.verified));
+    assert.throws(() => so.validateResultInput("tiktok", { commentPosted: {} }), (e) => Boolean(e.errors.commentPosted));
+    assert.deepEqual(so.validateResultInput("facebook", { postUrl: null, notes: null }), { verified: false, postUrl: null, notes: null });
+    assert.deepEqual(so.validateResultInput("facebook", { postUrl: "", notes: " " }), { verified: false, postUrl: null, notes: null });
+  });
+
+  test("post URLs are stored as parsed: an upper-case scheme or host is fine", () => {
+    assert.equal(so.validateResultInput("facebook", { postUrl: "HTTPS://WWW.FaceBook.COM/reel/AbC" }).postUrl, "https://www.facebook.com/reel/AbC");
+    assert.equal(so.validateResultInput("tiktok", { postUrl: "https://tiktok.com" }).postUrl, "https://tiktok.com/");
+  });
+
   test("the social role reaches only its allowlist; admin everything; no role nothing", () => {
     const allowed = ["/admin", "/admin/", "/admin/account/", "/admin/social", "/admin/social/", "/admin/social/next/",
       "/admin/social/verify", "/api/admin/social/next", "/api/admin/social/channel", "/api/admin/me"];
@@ -236,6 +254,33 @@ describe("setChannelResult (admin_app)", () => {
     assert.equal((await channelRow(D, "facebook")).post_url, GOOD_URLS.facebook);
   });
 
+  test("an upper-case post URL is saved (normalised; the column CHECK is case-sensitive); null clears", async () => {
+    await so.setChannelResult(actor.id, D, "facebook", { postUrl: "HTTPS://WWW.FACEBOOK.COM/reel/123456" }, { now });
+    assert.equal((await channelRow(D, "facebook")).post_url, "https://www.facebook.com/reel/123456");
+    await so.setChannelResult(actor.id, D, "facebook", { notes: null }, { now });
+    assert.equal((await channelRow(D, "facebook")).notes, null);
+    await so.setChannelResult(actor.id, D, "facebook", { postUrl: GOOD_URLS.facebook, notes: "kept the URL" }, { now });
+  });
+
+  test("a channel result waits for an admin's lock on the post row (and goes on after it)", async () => {
+    const other = await connect(OWNER_URL);
+    try {
+      await other.query("begin");
+      await other.query(`select 1 from social_posts where event_date = $1 for update`, [D]);
+      let done = false;
+      const p = so.setChannelResult(actor.id, D, "facebook", { notes: "after the lock" }, { now }).then((r) => { done = true; return r; });
+      await new Promise((r) => setTimeout(r, 400));
+      assert.equal(done, false, "blocked while the post row is locked FOR UPDATE");
+      await other.query("rollback");
+      assert.equal((await p).changed, true);
+      assert.equal((await channelRow(D, "facebook")).notes, "after the lock");
+    } finally {
+      await other.query("rollback").catch(() => {});
+      await other.end();
+    }
+    await so.setChannelResult(actor.id, D, "facebook", { notes: "kept the URL" }, { now });
+  });
+
   test("live needs a URL and stamps verified_at; first comment only when live, only IG/TikTok", async () => {
     const later = at("2091-01-15", 0, 13);
     await so.setChannelResult(actor.id, D, "instagram", { status: "scheduled" }, { now });
@@ -286,22 +331,29 @@ describe("setChannelResult (admin_app)", () => {
 });
 
 describe("findNext and findVerify (admin_app, injected clock)", () => {
-  test("next: no post, not ready, problems, ready, all done, and skipping to a later post", async () => {
-    const now = at("2092-01-02");
-    await owner.query(`insert into events (event_date) values ('2092-01-08') on conflict do nothing`);
+  test("next: no post, not ready, problems, ready; the earliest week with work, never a later one", async () => {
+    const now = at("2092-01-02"); // a Wednesday
+    const D = "2092-01-08", D2 = "2092-01-15", D3 = "2092-01-22";
     let r = await so.findNext(pool, { now });
     assert.equal(r.state, "nothing");
     assert.equal(r.reason, "no_post");
-    assert.equal(r.date, "2092-01-08");
-    assert.match(r.message, /No social post is set up for 2092-01-08/);
+    assert.equal(r.date, D, "next Tuesday counts even without an events row");
+    assert.match(r.message, /No social post is set up for 2092-01-08 yet/);
 
-    const D = "2092-01-08";
+    // A later week that is ready doesn't jump the queue while D has no post.
+    await readyPost(D2);
+    r = await so.findNext(pool, { now });
+    assert.equal(r.state, "nothing");
+    assert.equal(r.reason, "no_post");
+    assert.equal(r.date, D);
+    assert.match(r.message, /Later weeks wait/);
+
     await so.savePost(actor.id, D, { baseCaption: "Coffee" });
     r = await so.findNext(pool, { now });
     assert.equal(r.reason, "not_ready");
     assert.equal(r.date, D);
     assert.deepEqual(r.problems.map((p) => p.key), ["video", "luma"]);
-    assert.deepEqual(r.upcoming, [{ date: D, ready: false, pendingChannels: 5 }]);
+    assert.deepEqual(r.upcoming.slice(0, 2), [{ date: D, ready: false, pendingChannels: 5 }, { date: D2, ready: true, pendingChannels: 5 }]);
 
     await readyPost(D);
     r = await so.findNext(pool, { now });
@@ -312,22 +364,42 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     await el.clearLink(actor.id, D, "luma");
     r = await so.findNext(pool, { now });
     assert.equal(r.reason, "problems");
+    assert.equal(r.date, D, "still D, not the ready D2");
     assert.deepEqual(r.problems.map((p) => p.key), ["luma"]);
     await el.setLink(actor.id, D, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
 
-    for (const c of CHANNELS) await so.setChannelResult(actor.id, D, c, { status: "scheduled" }, { now });
-    r = await so.findNext(pool, { now });
-    assert.equal(r.reason, "all_done");
-    assert.match(r.message, /Every channel for 2092-01-08 is already done/);
-
-    await readyPost("2092-01-15");
+    // Part done: still D.
+    for (const c of CHANNELS.slice(0, 4)) await so.setChannelResult(actor.id, D, c, { status: "scheduled" }, { now });
+    assert.equal((await so.findNext(pool, { now })).order?.date, D, "a channel still pending");
+    await so.setChannelResult(actor.id, D, "linkedin_page", { status: "failed", notes: "LinkedIn was down" }, { now });
     r = await so.findNext(pool, { now });
     assert.equal(r.state, "ready");
-    assert.equal(r.order.date, "2092-01-15", "the first post is done, so the next one");
+    assert.equal(r.order.date, D2, "every channel of D is done, so the next week");
 
-    const afterPublish = at("2092-01-14", 0, 15); // Monday 10 AM ET: 2092-01-15's publish time has passed
+    // A cancelled week is skipped.
+    await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [D2]);
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "no_post");
+    assert.equal(r.date, D3, "D2 is cancelled");
+    await owner.query(`update events set status = 'scheduled', cancel_reason = null where event_date = $1`, [D2]);
+
+    // A week whose publish time has passed is the Monday task's, not this one's.
+    const afterPublish = at("2092-01-14", 0, 15); // Monday 10 AM ET: D2's publish time has passed
     r = await so.findNext(pool, { now: afterPublish });
-    assert.notEqual(r.order?.date, "2092-01-15", "a post whose publish time passed is not offered for scheduling");
+    assert.equal(r.date, D3);
+    assert.notEqual(r.order?.date, D2, "a post whose publish time passed is not offered for scheduling");
+  });
+
+  test("verify skips a cancelled event", async () => {
+    const D = "2095-03-08"; // Tuesday
+    await readyPost(D);
+    const monday = at("2095-03-07", 0, 13);
+    assert.equal((await so.findVerify(pool, { now: monday })).order?.date, D);
+    await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [D]);
+    const r = await so.findVerify(pool, { now: monday });
+    assert.equal(r.state, "nothing");
+    assert.notEqual(r.nextPublish?.date, D);
+    await owner.query(`update events set status = 'scheduled', cancel_reason = null where event_date = $1`, [D]);
   });
 
   test("verify: from the publish time through the event day; to-do and all done", async () => {
@@ -387,8 +459,9 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
   let server, admin, social, norole;
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const today = todayEastern();
-  // An upcoming Tuesday a few months out (the earliest actionable post in this database).
-  const NEXT = (() => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 70 + ((2 - d.getUTCDay() + 7) % 7)); return d.toISOString().slice(0, 10); })();
+  // The week /admin/social/next/ is about right now (the real clock): the earliest
+  // upcoming event with work left, whatever other test files left behind. Set in before().
+  let NEXT;
   // An event later this week whose publish time we put in the past: the post to verify.
   const VERIFY = (() => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); })();
   const PII = { name: `Zelda ${unique("Pii")}`, email: `${unique("pii")}@example.com`, business: `Acme ${unique("Biz")}`, phone: "716-555-0199" };
@@ -399,6 +472,8 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     admin = await signedIn(["admin"]);
     social = await signedIn(["social"]);
     norole = await signedIn([]);
+    const pick = await so.findNext(pool);
+    NEXT = pick.order?.date ?? pick.date;
     const { rows: [a] } = await owner.query(
       `insert into attendees (email, name, phone, business_name, ok_to_email) values ($1, $2, $3, $4, true) returning id`,
       [PII.email, PII.name, PII.phone, PII.business]);
@@ -567,6 +642,9 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     const cases = [
       [{ date: NEXT, channel: "tiktok", postUrl: "https://www.instagram.com/x" }, 400, "postUrl"],
       [{ date: NEXT, channel: "facebook", commentPosted: true }, 400, "commentPosted"],
+      [{ date: NEXT, channel: "tiktok", postUrl: 123 }, 400, "postUrl"],
+      [{ date: NEXT, channel: "tiktok", notes: { x: 1 } }, 400, "notes"],
+      [{ date: NEXT, channel: "tiktok", status: ["scheduled"] }, 400, "status"],
       [{ date: "2026-02-30", channel: "facebook" }, 400, "date"],
       [{ date: "2089-06-05", channel: "facebook", status: "scheduled" }, 404, "date"],
       [{ date: NEXT, channel: "nope" }, 400, "channel"],
@@ -594,6 +672,7 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     for (const c of ["instagram", "threads"]) await so.setChannelResult(actor.id, NEXT, c, { status: "scheduled" });
     const html = await (await req("/admin/social/next/", { cookie: social.cookie })).text();
     assert.ok(!html.includes(`data-date="${NEXT}"`), "no longer offered");
+    assert.ok(html.includes('<section id="nothing"'), "the following week has no post yet");
   });
 
   test("verify: links to open, live/failed forms, the first comment, PRG", async () => {

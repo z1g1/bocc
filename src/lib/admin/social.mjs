@@ -41,12 +41,14 @@
 //       What the Chrome tasks write back (the social role's /admin/social/* pages and
 //       POST /api/admin/social/channel). Never creates a post (404 without one).
 //       input: status (pending|scheduled|live|failed; absent = keep), postUrl and notes
-//       (absent = keep, blank = clear), verified (true: stamp verified_at again on a
-//       live post), commentPosted (true: stamp comment_posted_at, false: clear it).
+//       (absent = keep; "" or null = clear; any other non-string is a 400), verified
+//       (true: stamp verified_at again on a live post), commentPosted (true: stamp comment_posted_at, false: clear it).
 //       Rules: the changes in TRANSITIONS (social-rules.mjs; only live -> pending is
 //       refused, 409); moving INTO scheduled needs an actionable post (ready, no
 //       problems; 409); live needs a post URL; failed needs a note; a post URL must
-//       be https on the channel's domain (postUrlProblem). Becoming live stamps
+//       be https on the channel's domain (postUrlProblem) and is stored as parsed
+//       (new URL().href: "HTTPS://WWW.Facebook.com/x" -> "https://www.facebook.com/x").
+//       The post row is held FOR SHARE for the whole change. Becoming live stamps
 //       verified_at; leaving live clears it. The first comment exists only on
 //       Instagram and TikTok (COMMENT_CHANNELS) and can be marked posted only while
 //       the channel is live.
@@ -54,13 +56,17 @@
 // events row was created (nothing here shows on the public page).
 //
 // The social role's pages pick their post with:
-//   findNext(db, { now, today })    the next upcoming post (event_date >= today Eastern,
-//       publish_at still ahead) that is actionable and has a pending channel:
-//       { state: "ready", order } or { state: "nothing", reason, message, date,
-//       problems, upcoming } with reason no_post | not_ready | problems | all_done.
-//   findVerify(db, { now, today })  the post whose publish_at passed most recently,
-//       up to and including its event day: { state: "verify", order, todo, allDone }
-//       or { state: "nothing", message, nextPublish }.
+//   findNext(db, { now, today })    the EARLIEST upcoming event (event_date >= today
+//       Eastern; every Tuesday counts, with or without an events row; cancelled ones
+//       don't) whose publish time (the default one without a post) is still ahead and
+//       that still has work: no post, not ready, or a channel pending. It never skips
+//       a stuck week for a later one; a week moves on once none of its channels is
+//       pending. { state: "ready", order } when that post is actionable, otherwise
+//       { state: "nothing", reason, message, date, problems, upcoming } with reason
+//       no_post | not_ready | problems, about that same week.
+//   findVerify(db, { now, today })  the post (of an event that isn't cancelled) whose
+//       publish_at passed most recently, up to and including its event day:
+//       { state: "verify", order, todo, allDone } or { state: "nothing", message, nextPublish }.
 //
 // Errors: ValidationError (400; .errors is { field: message }), ConflictError (409)
 // from ./events.mjs, NotFoundError (404) from here.
@@ -345,8 +351,11 @@ export async function saveChannel(actorUserId, date, channel, input) {
 // ── Channel results ──────────────────────────────────────────────────────────
 
 const has = (o, k) => o != null && Object.hasOwn(o, k) && o[k] !== undefined;
+/** A text field that may be null (= clear) or a string; anything else (123, {}, []) is refused. */
+const textOrNull = (v) => v === null || typeof v === "string";
 const flag = (v) => {
   if (typeof v === "boolean") return v;
+  if (v !== null && typeof v !== "string") return null;
   const t = str(v).trim().toLowerCase();
   if (["on", "true", "1", "yes"].includes(t)) return true;
   if (["off", "false", "0", "no", ""].includes(t)) return false;
@@ -362,22 +371,31 @@ export function validateResultInput(channel, input) {
   const errors = {};
   const out = { verified: false };
   if (has(input, "status")) {
-    const st = str(input.status).trim();
+    const st = typeof input.status === "string" ? input.status.trim() : null;
     if (!STATUSES.includes(st)) errors.status = `Status must be one of ${STATUSES.join(", ")}.`;
     else out.status = st;
   }
   if (has(input, "postUrl")) {
-    const u = text(input.postUrl);
-    if (u !== null) {
-      const p = postUrlProblem(channel, u);
-      if (p) errors.postUrl = p;
+    if (!textOrNull(input.postUrl)) errors.postUrl = "postUrl must be a string (or null / \"\" to clear it).";
+    else {
+      let u = text(input.postUrl);
+      if (u !== null) {
+        let p = postUrlProblem(channel, u);
+        // Store the parsed form (lower-case scheme and host, spaces encoded): the
+        // column's CHECK is a case-sensitive '^https://'. Checked again as stored.
+        if (!p) { u = new URL(u).href; p = postUrlProblem(channel, u); }
+        if (p) errors.postUrl = p;
+      }
+      out.postUrl = u;
     }
-    out.postUrl = u;
   }
   if (has(input, "notes")) {
-    const n = text(input.notes);
-    if (n !== null && len(n) > LIMITS.notes) errors.notes = `At most ${LIMITS.notes} characters.`;
-    out.notes = n;
+    if (!textOrNull(input.notes)) errors.notes = "notes must be a string (or null / \"\" to clear them).";
+    else {
+      const n = text(input.notes);
+      if (n !== null && len(n) > LIMITS.notes) errors.notes = `At most ${LIMITS.notes} characters.`;
+      out.notes = n;
+    }
   }
   if (has(input, "verified")) {
     const f = flag(input.verified);
@@ -400,12 +418,18 @@ export async function setChannelResult(actorUserId, date, channel, input, { now 
   checkDate(date);
   const v = validateResultInput(channel, input);
   return audited(actorUserId, date, "social_post_channels", async (client) => {
+    // The post first, then the channel: the same order as lockPost() (the admin's
+    // writes, which hold the post FOR UPDATE), so the two can't deadlock. FOR SHARE
+    // keeps the post (ready, caption, video, publish time) from changing under the
+    // `actionable` check below until this commits; channel saves don't block each other.
+    const { rowCount: hasPost } = await client.query(
+      `select 1 from public.social_posts where event_date = $1::date for share`, [date]);
+    if (!hasPost) throw new NotFoundError({ date: `There is no social post for ${date}.` });
     const { rows: [row] } = await client.query(
-      `select c.status, c.post_url, c.notes, c.verified_at, c.comment_posted_at
-         from public.social_post_channels c
-         join public.social_posts p on p.event_date = c.event_date
-        where c.event_date = $1::date and c.channel = $2
-          for update of c`, [date, channel]);
+      `select status, post_url, notes, verified_at, comment_posted_at
+         from public.social_post_channels
+        where event_date = $1::date and channel = $2
+          for update`, [date, channel]);
     if (!row) throw new NotFoundError({ date: `There is no social post for ${date}.` });
     const label = CHANNELS[channel];
     const status = v.status ?? row.status;
@@ -455,38 +479,65 @@ export async function setChannelResult(actorUserId, date, channel, input, { now 
 
 // ── The social role's picks ──────────────────────────────────────────────────
 
-/** The next post for the Wednesday task (see the header). */
+const addDays = (date, n) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** The post for the Wednesday task (see the header). */
 export async function findNext(db, { now = new Date(), today = todayEastern(now) } = {}) {
+  // Every upcoming events row with its post (a post always has its events row:
+  // lockPost creates it). Rows are made on demand, so a Tuesday without one is still
+  // an event (scheduled, no post yet).
   const { rows } = await db.query(
-    `select p.event_date::text as date, p.ready, p.publish_at as "publishAt",
+    `select e.event_date::text as date, e.status, p.event_date is not null as "hasPost", p.ready,
+            p.publish_at as "publishAt",
             (select count(*)::int from public.social_post_channels c
-              where c.event_date = p.event_date and c.status = 'pending') as pending
-       from public.social_posts p
-      where p.event_date >= $1::date and p.publish_at > $2
-      order by p.event_date
-      limit 10`, [today, now]);
-  for (const r of rows) {
-    if (!r.ready || r.pending === 0) continue;
-    const order = await getWorkOrder(db, r.date);
-    if (order.actionable) return { state: "ready", order };
+              where c.event_date = e.event_date and c.status = 'pending') as pending
+       from public.events e
+       left join public.social_posts p on p.event_date = e.event_date
+      where e.event_date >= $1::date
+      order by e.event_date`, [today]);
+  const byDate = new Map(rows.map((r) => [r.date, r]));
+  const first = nextTuesday(today);
+  const last = rows.length && rows.at(-1).date > first ? rows.at(-1).date : first;
+  const dates = new Set(rows.map((r) => r.date));
+  for (let d = first; d <= last; d = addDays(d, 7)) dates.add(d);
+  const events = [...dates].sort().map((d) => byDate.get(d) ?? { date: d, status: "scheduled", hasPost: false })
+    .filter((r) => r.status !== "cancelled");
+
+  // Still open for scheduling: its publish time (the default one without a post) ahead.
+  const open = (r) => (r.hasPost ? new Date(r.publishAt) : defaultPublishAt(r.date)).getTime() > now.getTime();
+  const upcoming = events.filter((r) => r.hasPost && open(r)).slice(0, 10)
+    .map((r) => ({ date: r.date, ready: r.ready, pendingChannels: r.pending }));
+  // The EARLIEST open event with work left (no post, not ready, or a channel still
+  // pending). A later week is never handed out while this one is stuck; once every
+  // channel of it is done (scheduled, live or failed), the next week's turn comes.
+  let target = events.find((r) => open(r) && (!r.hasPost || !r.ready || r.pending > 0));
+  if (!target) {
+    // Every listed week is done or past its publish time: the first Tuesday after them.
+    let d = nextTuesday(addDays(last, 1));
+    while (defaultPublishAt(d).getTime() <= now.getTime()) d = addDays(d, 7);
+    target = { date: d, hasPost: false };
   }
-  const upcoming = rows.map((r) => ({ date: r.date, ready: r.ready, pendingChannels: r.pending }));
-  const first = rows[0];
-  if (!first) {
-    const { rows: [ev] } = await db.query(
-      `select event_date::text as date from public.events
-        where event_date >= $1::date and status <> 'cancelled' order by event_date limit 1`, [today]);
-    const date = ev?.date ?? nextTuesday(today);
+  const wait = "Later weeks wait until this one is scheduled.";
+  const base = { state: "nothing", date: target.date, upcoming };
+  if (!target.hasPost) {
     return {
-      state: "nothing", reason: "no_post", date, problems: [], upcoming,
-      message: `No social post is set up for ${date} (or any later event) yet.`,
+      ...base, reason: "no_post", problems: [],
+      message: `No social post is set up for ${target.date} yet. ${wait}`,
     };
   }
-  const order = await getWorkOrder(db, first.date);
-  const base = { state: "nothing", date: first.date, problems: order.problems, upcoming };
-  if (!order.ready) return { ...base, reason: "not_ready", message: `The social post for ${first.date} isn't marked ready yet.` };
-  if (order.problems.length) return { ...base, reason: "problems", message: `The social post for ${first.date} is marked ready, but something needs fixing first.` };
-  return { ...base, reason: "all_done", message: `Every channel for ${first.date} is already done (none is pending).` };
+  const order = await getWorkOrder(db, target.date);
+  if (order.actionable) return { state: "ready", order };
+  if (!order.ready) {
+    return { ...base, reason: "not_ready", problems: order.problems, message: `The social post for ${target.date} isn't marked ready yet. ${wait}` };
+  }
+  return {
+    ...base, reason: "problems", problems: order.problems,
+    message: `The social post for ${target.date} is marked ready, but something needs fixing first. ${wait}`,
+  };
 }
 
 /** What the Monday task still has to do on each channel of `order`. */
@@ -505,13 +556,16 @@ export function verifyTodo(order) {
 /** The post for the Monday task (see the header). */
 export async function findVerify(db, { now = new Date(), today = todayEastern(now) } = {}) {
   const { rows: [r] } = await db.query(
-    `select event_date::text as date from public.social_posts
-      where publish_at <= $2 and event_date >= $1::date
-      order by publish_at desc, event_date desc limit 1`, [today, now]);
+    `select p.event_date::text as date from public.social_posts p
+       join public.events e on e.event_date = p.event_date
+      where p.publish_at <= $2 and p.event_date >= $1::date and e.status <> 'cancelled'
+      order by p.publish_at desc, p.event_date desc limit 1`, [today, now]);
   if (!r) {
     const { rows: [n] } = await db.query(
-      `select event_date::text as date, publish_at as "publishAt" from public.social_posts
-        where publish_at > $2 and event_date >= $1::date order by publish_at limit 1`, [today, now]);
+      `select p.event_date::text as date, p.publish_at as "publishAt" from public.social_posts p
+         join public.events e on e.event_date = p.event_date
+        where p.publish_at > $2 and p.event_date >= $1::date and e.status <> 'cancelled'
+        order by p.publish_at limit 1`, [today, now]);
     return {
       state: "nothing",
       message: "Nothing to verify: no social post's publish time has passed for an event that is still ahead (or today).",

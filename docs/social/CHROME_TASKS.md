@@ -160,7 +160,9 @@ Steps:
 
 - **Signed out:** Modron signs in by hand once in that Chrome profile, then re-runs the task.
 - **Nothing ready:** fix what it lists on `/admin/events/<date>/` and mark the post ready.
-  Then run the Wednesday task again by hand (any day before Monday morning).
+  Then run the Wednesday task again by hand (any day before Monday morning). The page is
+  always about the earliest upcoming week that still has work: a later week's post that is
+  ready waits until that week is done (or its Monday publish time passes, or it is cancelled).
 - **A channel failed:** the notes say why. Schedule that channel by hand, then set its status on
   `/admin/social/next/`.
 - **The Thursday ntfy push** fires if a channel isn't `scheduled` or `live` by Thursday morning.

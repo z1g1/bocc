@@ -6,10 +6,12 @@
 // linkedin_page) with its exact caption and first comment in a <pre>, and one form per
 // channel with a single "Save <Channel>" button.
 //
-// Which post: the next upcoming one that is actionable (ready, no problems, publish
-// time still ahead) and has a pending channel (findNext, src/lib/admin/social.mjs).
-// Otherwise a "Nothing ready" section (id="nothing", data-reason no_post | not_ready |
-// problems | all_done) that says why.
+// Which post: the EARLIEST upcoming, not cancelled event whose publish time is still
+// ahead and that still has work (no post, not ready, or a channel pending; findNext,
+// src/lib/admin/social.mjs). If that week's post is actionable (ready, no problems),
+// its work order; otherwise a "Nothing ready" section (id="nothing", data-date,
+// data-reason no_post | not_ready | problems) that says why and lists what needs
+// fixing. A later week is never offered while an earlier one is stuck.
 //
 // Shows the work order only: never attendees, check-ins, reports or the audit log
 // (ADR 0008; the social role's whole reach is src/lib/admin/roles.mjs SOCIAL_PATHS).
@@ -62,7 +64,7 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
   {posted && (errors.date || errors.channel) && <p class="error" role="alert">{errors.date ?? errors.channel}</p>}
 
   {!order && (
-    <section id="nothing" data-reason={pick.reason} aria-labelledby="h-nothing">
+    <section id="nothing" data-reason={pick.reason} data-date={pick.date} aria-labelledby="h-nothing">
       <h2 id="h-nothing">Nothing ready</h2>
       <p id="nothing-reason">{pick.message}</p>
       {pick.problems?.length > 0 && (
