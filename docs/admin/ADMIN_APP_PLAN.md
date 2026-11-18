@@ -446,11 +446,22 @@ on-device checks and production are open.
       `extra_hashtags`: `src/lib/admin/social-rules.mjs` (Facebook, Threads, LinkedIn: caption +
       "RSVP: <Luma>"; Instagram, TikTok: "Link in bio", Luma as the first comment;
       `TIKTOK_HASHTAGS`). The `getWorkOrder()` read is what `/admin/social/*` builds on
-- [ ] `/admin/social/next` and `/admin/social/verify`:
+- [x] `/admin/social/next` and `/admin/social/verify`:
   - server-rendered pages that are easy for an agent to read
   - forms for each channel's status and post URL
   - the `social` role allowed
   - JSON API underneath
+
+  Built on `dev` 2026-11-18 (part B): `src/pages/admin/social/{next,verify}.astro`,
+  `src/lib/admin/social-pages.mjs`, `setChannelResult()` / `findNext()` / `findVerify()` in
+  `social.mjs`, and `GET /api/admin/social/next`, `GET /api/admin/social/verify`,
+  `POST /api/admin/social/channel`. No script; one `<section id="channel-<key>">` per channel,
+  the exact texts in `<pre>`, "Save <Channel>" / "Mark <Channel> live|failed" / "First comment
+  posted on <Channel>" buttons, PRG. Statuses: any change except live -> pending; scheduling
+  needs an actionable post, live a post URL on the channel's domain, failed a note. The
+  `social` role is fenced by the guard to `/admin/`, `/admin/account/`, `/admin/social/*`,
+  `/api/admin/social/*` and `/api/admin/me` (`roles.mjs` `SOCIAL_PATHS`); everything else is
+  403, unknown paths included
 - [ ] A `social` account for Modron, signed in by hand once in its Chrome profile
 - [ ] Chrome scheduled tasks: Wednesday (schedule) and Monday about 7:20 AM ET (verify and post
       the first comment), rehearsed against the staging branch deploy
