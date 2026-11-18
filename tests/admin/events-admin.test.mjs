@@ -434,6 +434,50 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(!(await csv.text()).includes("<html"));
   });
 
+  test("unknown admin paths get the themed admin 404, behind the guard; unknown API paths a plain 404", async () => {
+    const unknown = ["/admin/no-such-page", "/admin/no-such-page/", "/admin/events/foo/bar", `/admin/events/${pastDate()}/extra/`, "/admin/a/b/c/d"];
+    for (const p of unknown) {
+      for (const who of [admin, social]) {
+        const res = await req(p, { cookie: who.cookie });
+        assert.equal(res.status, 404, p);
+        assertPrivate(res, p);
+        const html = await themed(res, p, "This page is out of coffee");
+        assert.match(html, /href="\/admin\/"/, `${p}: links to the admin home`);
+        assert.ok(!html.includes('href="/"'), `${p}: not the public 404`);
+      }
+      const noRoleRes = await req(p, { cookie: noRole.cookie });
+      assert.equal(noRoleRes.status, 403, `no role ${p}`);
+      await themed(noRoleRes, p, "Not allowed");
+      const out = await req(p);
+      assert.equal(out.status, 302, `signed out ${p}`);
+      assert.equal(out.headers.get("location"), `/login/?next=${encodeURIComponent(p)}`);
+    }
+    const post = await req("/admin/no-such-page", { cookie: admin.cookie, method: "POST", form: {} });
+    assert.equal(post.status, 404);
+    assert.ok(!(await post.text()).includes("<html"), "a POST gets the plain 404");
+
+    for (const p of ["/api/admin/no-such", "/api/admin/media/uploads/extra", "/api/admin/a/b/c"]) {
+      const res = await req(p, { cookie: admin.cookie });
+      assert.equal(res.status, 404, p);
+      assertPrivate(res, p);
+      assert.match(res.headers.get("content-type"), /^application\/json/, p);
+      assert.deepEqual(await res.json(), { error: "not found" });
+      const posted = await fetch(`${BASE}${p}`, { method: "POST", headers: { cookie: admin.cookie, origin: BASE }, redirect: "manual" });
+      assert.equal(posted.status, 404, `POST ${p}`);
+      assert.equal((await req(p)).status, 401, `signed out ${p}`);
+      assert.equal((await req(p, { cookie: noRole.cookie })).status, 403, `no role ${p}`);
+    }
+  });
+
+  test("the catch-alls shadow no real admin route", async () => {
+    const pages = ["/admin/", "/admin", "/admin/account/", "/admin/events/", `/admin/events/${pastDate()}/`, "/admin/checkins/",
+      "/admin/streaks/", "/admin/email-list/", "/admin/attendees/", "/admin/users/"];
+    for (const p of pages) assert.equal((await req(p, { cookie: admin.cookie })).status, 200, p);
+    const me = await req("/api/admin/me", { cookie: admin.cookie });
+    assert.equal(me.status, 200);
+    assert.deepEqual((await me.json()).roles, ["admin"]);
+  });
+
   test("POST without or with a foreign Origin is 403; other methods 405", async () => {
     const d = pastDate();
     for (const origin of [null, "https://evil.example"]) {
