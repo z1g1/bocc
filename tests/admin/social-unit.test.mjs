@@ -75,7 +75,7 @@ describe("channel texts", () => {
 
 describe("hashtags", () => {
   test("with or without #, spaces or commas; duplicates and the defaults dropped", () => {
-    assert.deepEqual(r.normaliseHashtags("SmallBusiness, #founders  #Founders,,#buffalo #Café_2"), ["#SmallBusiness", "#founders", "#Café_2"]);
+    assert.deepEqual(r.normaliseHashtags("SmallBusiness, #founders  #Founders,,#networking #Café_2"), ["#SmallBusiness", "#founders", "#Café_2"]);
     assert.deepEqual(r.normaliseHashtags(""), []);
     assert.deepEqual(r.normaliseHashtags(undefined), []);
     assert.deepEqual(r.normaliseHashtags(["#A", "B"]), ["#A", "#B"]);

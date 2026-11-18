@@ -46,7 +46,7 @@ export const RSVP_PREFIX = "RSVP: ";
 export const LUMA_PLACEHOLDER = "[Luma link: add the Luma listing]";
 
 /** TikTok's default hashtags; extra_hashtags are added after them. */
-export const TIKTOK_HASHTAGS = Object.freeze(["#Buffalo", "#BuffaloNY", "#716", "#BuffaloBusiness", "#Networking", "#OpenCoffeeClub"]);
+export const TIKTOK_HASHTAGS = Object.freeze(["#Entrepreneurship", "#Startups", "#BuffaloBusiness", "#Networking"]);
 
 /** Each platform's caption limit, in characters (code points, like Postgres length()). */
 export const CAPTION_LIMITS = Object.freeze({

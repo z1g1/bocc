@@ -203,12 +203,12 @@ describe("social module (admin_app)", () => {
     const fresh = await so.getWorkOrder(pool, d);
     assert.deepEqual([fresh.exists, fresh.actionable, fresh.eventStatus], [false, false, "scheduled"]);
 
-    const res = await so.savePost(actor.id, d, { baseCaption: "  Coffee!\r\nTuesday.  ", extraHashtags: "founders, #Buffalo", coverNote: "", publishAt: "" });
+    const res = await so.savePost(actor.id, d, { baseCaption: "  Coffee!\r\nTuesday.  ", extraHashtags: "founders, #Networking", coverNote: "", publishAt: "" });
     assert.deepEqual(res, { changed: true, eventCreated: true });
     assert.equal((await owner.query(`select status from events where event_date = $1`, [d])).rows[0].status, "scheduled");
     const row = await postRow(d);
     assert.deepEqual([row.base_caption, row.extra_hashtags, row.cover_note, row.ready, row.video_media_id],
-      ["Coffee!\nTuesday.", ["#founders"], null, false, null], "#Buffalo is a default TikTok tag: dropped");
+      ["Coffee!\nTuesday.", ["#founders"], null, false, null], "#Networking is a default TikTok tag: dropped");
     assert.equal(row.publish_at.toISOString(), so.defaultPublishAt(d).toISOString());
     assert.equal(new Date(row.publish_at).getUTCDay(), 1, "a Monday");
     assert.deepEqual(await channelRows(d), [...CHANNELS].sort().map((channel) => ({ channel, caption: null, first_comment: null, status: "pending" })));
