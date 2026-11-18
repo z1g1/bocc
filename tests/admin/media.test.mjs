@@ -10,6 +10,7 @@
 // Media switched off is covered in media-disabled.test.mjs (its own process and env).
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { OWNER_URL, connect, unique, useAdminEnv } from "./helpers.mjs";
@@ -29,7 +30,7 @@ const { pool } = await import("../../src/lib/auth/auth.mjs");
 const { handleAuthRequest } = await import("../../src/lib/auth/handler.mjs");
 const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
-const { getStorage } = await import("../../src/lib/admin/storage.mjs");
+const { getStorage, mediaKey } = await import("../../src/lib/admin/storage.mjs");
 const media = await import("../../src/lib/admin/media.mjs");
 const lib = await import("../../public/js/admin-media-lib.js");
 
@@ -399,6 +400,31 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(page, /data-media-upload/);
     assert.match(page, /accept="image\/jpeg,image\/png"/);
     assert.match(page, /role="status" aria-live="polite"/);
+    // Two sections, each with its own heading, form (kind fixed, no dropdown) and status.
+    const section = (slug) => {
+      const m = page.match(new RegExp(`<section[^>]*id="media-${slug}"[\\s\\S]*?</section>`));
+      assert.ok(m, `section ${slug}`);
+      return m[0];
+    };
+    const signin = section("signin");
+    const socialSec = section("social");
+    assert.match(signin, /<h2[^>]*>Sign-in board<\/h2>/);
+    assert.match(socialSec, /<h2[^>]*>Social photos<\/h2>/);
+    assert.match(signin, /data-media-upload[^>]*data-kind="signin_board"/);
+    assert.match(signin, /<input type="hidden" name="kind" value="signin_board"/);
+    assert.match(socialSec, /<input type="hidden" name="kind" value="social_photo"/);
+    assert.ok(!/<select[^>]*name="kind"/.test(page), "no kind dropdown");
+    assert.match(socialSec, /name="publiclyUsable"/);
+    assert.ok(!signin.includes("publiclyUsable"), "no public checkbox or toggle for the sign-in board");
+    assert.ok(!signin.includes("OK to use publicly"));
+    for (const sec of [signin, socialSec]) {
+      const statusId = sec.match(/data-status="([^"]+)"/)[1];
+      assert.match(sec, new RegExp(`id="${statusId}" role="status" aria-live="polite"`));
+    }
+    assert.notEqual(signin.match(/data-status="([^"]+)"/)[1], socialSec.match(/data-status="([^"]+)"/)[1]);
+    assert.match(signin, /No sign-in board photo yet\./);
+    assert.ok(socialSec.includes(`${plan.id}/thumb.jpg`), "the social photo is in the social gallery");
+    assert.ok(!signin.includes(plan.id), "and not in the sign-in board's");
     const thumb = page.match(new RegExp(`src="([^"]*/${plan.id}/thumb\\.jpg\\?[^"]*)"`));
     assert.ok(thumb, "thumbnail img");
     const thumbRes = await fetch(thumb[1].replaceAll("&amp;", "&"));
@@ -406,7 +432,6 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.deepEqual(Buffer.from(await thumbRes.arrayBuffer()), THUMB);
     assert.match(page, new RegExp(`href="[^"]*/${plan.id}/display\\.jpg\\?`));
     assert.match(page, new RegExp(`href="[^"]*/${plan.id}/original\\.jpg\\?[^"]*" download[^>]*>Download original`));
-    assert.match(page, /Social photo/);
 
     const on = await req(`/api/admin/media/${plan.id}/public`, {
       cookie: admin.cookie, form: { publiclyUsable: "1" } });
@@ -434,6 +459,46 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.deepEqual(await res.json(), { id: plan.id, eventDate: date, leftovers: [] });
     const toggle = await req(`/api/admin/media/${plan.id}/public`, { cookie: admin.cookie, json: { publiclyUsable: true } });
     assert.equal(toggle.status, 404);
+  });
+
+  test("an imported sign-in photo (uploaded_by NULL, HEIC original) shows in the sign-in board gallery", async () => {
+    const date = await freshDate();
+    const id = randomUUID();
+    const keys = {
+      original: mediaKey(date, id, "original", "heic"),
+      display: mediaKey(date, id, "display", "jpg"),
+      thumb: mediaKey(date, id, "thumb", "jpg"),
+    };
+    const HEIC = Buffer.from("not really a heic, MinIO doesn't care");
+    const files = { original: [HEIC, "image/heic"], display: [DISPLAY, "image/jpeg"], thumb: [THUMB, "image/jpeg"] };
+    for (const [variant, [bytes, contentType]] of Object.entries(files)) {
+      const put = storage().presignPut({ key: keys[variant], contentType, contentLength: bytes.length });
+      const res = await fetch(put.url, { method: "PUT", headers: put.headers, body: bytes });
+      assert.equal(res.status, 200, variant);
+    }
+    // As the import does it (scripts/signin-photos/import.mjs): as the owner, ready, no uploader.
+    await owner.query("insert into events (event_date, status) values ($1, 'held')", [date]);
+    await owner.query(
+      `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes,
+                                publicly_usable, status, uploaded_by)
+       values ($1, $2, 'signin_board', $3, $4, $5, 'image/heic', $6, false, 'ready', null)`,
+      [id, date, keys.original, keys.display, keys.thumb, HEIC.length]);
+
+    const res = await req(`/admin/events/${date}/`, { method: "GET", cookie: admin.cookie });
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    const signin = page.match(/<section[^>]*id="media-signin"[\s\S]*?<\/section>/)[0];
+    const img = signin.match(new RegExp(`<img src="([^"]*/${id}/thumb\\.jpg\\?[^"]*)" alt="Sign-in board, ${date}"`));
+    assert.ok(img, "thumbnail <img> with its alt text");
+    assert.equal((await fetch(img[1].replaceAll("&amp;", "&"))).status, 200);
+    assert.match(signin, new RegExp(`<a href="[^"]*/${id}/display\\.jpg\\?[^"]*"[^>]*><img`), "the thumbnail links to the display copy");
+    const original = signin.match(new RegExp(`href="([^"]*/${id}/original\\.heic\\?[^"]*)" download[^>]*>Download original`));
+    assert.ok(original, "Download original");
+    const dl = await fetch(original[1].replaceAll("&amp;", "&"));
+    assert.equal(dl.status, 200);
+    assert.equal(dl.headers.get("content-type"), "image/heic");
+    assert.equal(dl.headers.get("content-disposition"), `attachment; filename="bocc-${date}-signin_board-${id.slice(0, 8)}.heic"`);
+    assert.ok(!signin.includes("publiclyUsable"));
   });
 
   test("stale pending uploads are listed on the event page with a delete button", async () => {

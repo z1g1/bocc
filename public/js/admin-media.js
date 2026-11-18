@@ -9,7 +9,9 @@
 //     from the 1600px copy, not from the original
 //   - canvas.toBlob wrapped in a Promise; canvas export drops EXIF/GPS
 //   - fetch PUT straight to the bucket with the presigned URL and its Content-Type
-// Several files upload one after another. Progress and errors go to one aria-live region.
+// Several files upload one after another. The event page has one form per kind (sign-in
+// board, social photos), each with a hidden `kind` field and its own aria-live status
+// line. One upload at a time across the forms: a finished upload reloads the page.
 
 import {
   DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
@@ -18,8 +20,15 @@ import {
 
 class UserError extends Error {}
 
-const root = document.querySelector("[data-media-upload]");
-if (root) setUpUpload(root);
+const forms = Array.from(document.querySelectorAll("form[data-media-upload]"));
+let busy = false;
+for (const form of forms) setUpUpload(form);
+if (forms.length) {
+  for (const el of document.querySelectorAll("[data-media-nojs]")) el.hidden = true;
+  window.addEventListener("beforeunload", (e) => {
+    if (busy) { e.preventDefault(); e.returnValue = ""; }
+  });
+}
 for (const form of document.querySelectorAll("form[data-confirm]")) {
   form.addEventListener("submit", (e) => {
     if (!window.confirm(form.getAttribute("data-confirm"))) e.preventDefault();
@@ -28,37 +37,25 @@ for (const form of document.querySelectorAll("form[data-confirm]")) {
 
 function setUpUpload(form) {
   const input = form.querySelector('input[type="file"]');
-  const kind = form.querySelector('select[name="kind"]');
-  const pub = form.querySelector('input[name="publiclyUsable"]');
-  const button = form.querySelector('button[type="submit"]');
+  const kind = form.querySelector('input[name="kind"]').value;
+  const pub = form.querySelector('input[name="publiclyUsable"]'); // social photos only
   const status = document.getElementById(form.getAttribute("data-status"));
   const eventDate = form.getAttribute("data-event-date");
-  let busy = false;
 
   const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
-  const syncPublic = () => {
-    const social = kind.value === "social_photo";
-    pub.disabled = !social;
-    if (!social) pub.checked = false;
+  const setBusy = (on) => {
+    busy = on;
+    for (const f of forms) f.querySelector('button[type="submit"]').disabled = on;
   };
-  kind.addEventListener("change", syncPublic);
-  syncPublic();
   form.hidden = false;
-  const noJs = document.querySelector("[data-media-nojs]");
-  if (noJs) noJs.hidden = true;
-
-  window.addEventListener("beforeunload", (e) => {
-    if (busy) { e.preventDefault(); e.returnValue = ""; }
-  });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (busy) return;
+    if (busy) { say("Wait for the other upload to finish."); return; }
     const files = Array.from(input.files || []);
     if (files.length === 0) { say("Choose at least one photo."); return; }
-    busy = true;
-    button.disabled = true;
-    const opts = { eventDate, kind: kind.value, publiclyUsable: pub.checked };
+    setBusy(true);
+    const opts = { eventDate, kind, publiclyUsable: Boolean(pub && pub.checked) };
     const failed = [];
     let done = 0;
     for (let i = 0; i < files.length; i++) {
@@ -72,8 +69,7 @@ function setUpUpload(form) {
         say(prefix + msg);
       }
     }
-    busy = false;
-    button.disabled = false;
+    setBusy(false);
     if (failed.length === 0) {
       say(`Uploaded ${done} photo${done === 1 ? "" : "s"}. Refreshing…`);
       window.location.reload();
