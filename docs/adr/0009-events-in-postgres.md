@@ -1,6 +1,6 @@
 # ADR 0009 — Events live in Postgres, and event pages render on request
 
-- **Status:** Accepted (2026-11-16)
+- **Status:** Accepted (2026-11-16); amended 2026-11-18 (Phase 4 build, see below)
 - **Date:** 2026-11-16
 - **Deciders:** Zack Glick
 
@@ -68,4 +68,73 @@ There is one event per day. The `bocc-afternoon` series has ended.
   experimental and not used. Purges cover every deploy unless they pass `deployAlias`.
 - *Phase 0 hands-on (2026-11-16):* a tagged page was served from the durable cache and a scoped
   purge re-rendered it within 5 s. That the scoped purge leaves production alone is re-checked
-  in Phase 4, once production serves tagged pages.
+  after the production release, once production serves tagged pages
+  ([PHASE4_RELEASE.md](../admin/PHASE4_RELEASE.md) step 14).
+
+## Amendments (2026-11-18, Phase 4 build)
+
+Settled while building Phase 4 on `dev`. Code: `src/pages/events/[date].astro`,
+`src/pages/sitemap.xml.ts`, `src/lib/site/` (`db.mjs`, `http.mjs`, `purge.mjs`).
+
+1. **Purge scope, per deploy context** (refines decision 4), from
+   `Astro.locals.netlify.context.deploy`:
+   - `production`: `{ domain }`, the hostname of the site URL (`716coffee.club`). Netlify:
+     a domain-scoped purge "targets the currently published production deploy on the
+     specified domain".
+   - `branch-deploy`: `{ deployAlias: deploy.branch }`, e.g. `dev`. That `deploy.branch`
+     holds the alias is observed, not documented by Netlify.
+   - deploy previews, or a missing branch or domain: **refused** and logged. There is no
+     unscoped purge.
+   - `astro dev`, or no Netlify context: skipped.
+
+   One `purgeCache` call per save carries every tag. It is raced against a 3 s timeout with
+   no retry on 429, and it never throws: the save is already committed, so a failed purge
+   is logged and the page refreshes when its CDN max-age ends.
+2. **Cache lifetime.**
+   - `Netlify-CDN-Cache-Control: public, durable, max-age=<seconds to the next Eastern
+     midnight, at most a day>, stale-while-revalidate=3600`. The purge is the normal way a
+     page changes, and the midnight expiry is the backstop: it lets a page roll from
+     upcoming to past, and its "Next" link move on, without anyone saving.
+   - The browser gets `Cache-Control: public, max-age=0, must-revalidate`, so it sees a
+     purge on its next load.
+   - Query strings make separate CDN entries. Netlify documents no way to ignore them, so
+     none is set. They carry the same tags, so they are purged with the plain URL.
+3. **Tags.**
+   - Every event page is tagged `event-YYYY-MM-DD`.
+   - Pages that show other dates also carry `event-list`: the sitemap, and the past and
+     cancelled pages with their "Next" link. Every purge includes `event-list`.
+   - An upload that creates an event's row (the first photo for a date) purges that date
+     too, so a cached 404 clears.
+4. **What each URL returns** (replaces the last bullet of decision 4):
+   - **Unknown well-formed date:** a real 404 ("Out of Coffee"), CDN-cached for 5 minutes
+     with the date's tag.
+   - **Malformed date:** a 404 that is never cached and never queries the database.
+   - **Past dates (held, or scheduled but past):** stay at 200 with a "this one has passed"
+     notice and a link to the next scheduled event. They are `noindex` and have no Event
+     JSON-LD.
+   - **Cancelled dates:** a cancelled notice with JSON-LD `EventCancelled`, `noindex` once
+     past.
+   - `/events/` is a 302 to `/`.
+   - If the database can't be reached: 503, `no-store`, `Retry-After: 60`.
+5. **The sitemap needs the database.** `/sitemap.xml` is rendered on request, lists only
+   upcoming scheduled events (`lastmod` is the event's last change), and is tagged
+   `event-list`. If Neon is down it returns 503 rather than a sitemap without its events,
+   so crawlers retry.
+6. **A separate read-only login for public pages.** The pages read Neon as `site_reader`
+   (`SITE_DB_URL`, pooled), which has SELECT on `events` and `event_links` only. Public
+   traffic never holds `admin_app`'s credentials. The pool gives each query a 6 s timeout
+   (`query_timeout`). The pooler accepts a `statement_timeout` startup parameter but
+   ignores it, so none is set.
+7. **`event_links` details** (refines decision 3):
+   - `external_id` holds a platform's own id where the site needs it; for Luma, the
+     `evt-…` id the RSVP embed is built from.
+   - `admin_app` may DELETE listings (ADR 0008 amended the same day). The audit row in the
+     same transaction records what was removed.
+8. **Imports done** (decision 6):
+   - The YAML file and the README table were imported by
+     `backend/scripts/import-event-links.js`, then deleted. The script reads them back from
+     git history (`829155c`) for the production run.
+   - The Google Form CSV was imported by `backend/scripts/import-google-form.js`.
+9. **Dependency.** `purge.mjs` imports `@netlify/cache`, at the version 4.2.1 that
+   `@astrojs/netlify` already brings in. It is pinned in the root `package.json` once that
+   version is two weeks old (on or after 2026-11-20).
