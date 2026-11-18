@@ -55,7 +55,9 @@ export function sitePool() {
       // page answers 503 rather than holding the visitor.
       connectionTimeoutMillis: 8000,
       idleTimeoutMillis: 10_000,
-      statement_timeout: 5000,
+      // Client-side limit on each query. Not `statement_timeout`: pg sends that as a
+      // startup parameter, and Neon's pooler (PgBouncer) silently drops it (tested on
+      // the dev pooled URL: SHOW statement_timeout -> 0).
       query_timeout: 6000,
       application_name: "bocc-site",
     }));

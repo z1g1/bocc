@@ -11,9 +11,10 @@
 //                                   external_id, RSVP button to its URL (no luma link:
 //                                   the Luma calendar). Other listings only as JSON-LD sameAs
 //   cancelled                       "this Tuesday is cancelled", next event link, 200,
-//                                   JSON-LD EventCancelled (noindex once past)
+//                                   JSON-LD EventCancelled (noindex once past); tagged
+//                                   event-<date>,event-list (the link depends on other dates)
 //   past (held, or scheduled but    "this one has passed", next event link, 200, noindex,
-//   past)                           no Event JSON-LD
+//   past)                           no Event JSON-LD; tagged event-<date>,event-list
 //   Neon down / SITE_DB_URL unset   503, no-store, a friendly message, error only logged
 export const prerender = false;
 
@@ -27,7 +28,7 @@ import OutOfCoffee from "../../components/OutOfCoffee.astro";
 import { data, site } from "../../lib/data";
 import { eventPage, longDate, parseIsoDate, todayIso } from "../../lib/events";
 import { getSiteEvent } from "../../lib/site/db.mjs";
-import { eventTag, logSiteFailure, setPublicHeaders } from "../../lib/site/http.mjs";
+import { LIST_TAG, eventTag, logSiteFailure, setPublicHeaders } from "../../lib/site/http.mjs";
 
 const ep = data("event_page");
 const e = site().event;
@@ -61,8 +62,14 @@ if (view === "bad-date") {
   Astro.response.status = 503;
   headers.set("Retry-After", "60");
   setPublicHeaders(headers, "no-store");
-} else {
+} else if (view === "upcoming") {
+  // Only this date's row and links, plus the static copy (the "See upcoming dates on
+  // Luma" fallback is the fixed calendar URL), so its own tag is enough.
   setPublicHeaders(headers, "cached", { tag: eventTag(date) });
+} else {
+  // Cancelled and past pages show the next scheduled event, which other dates' saves
+  // change, so every purge (they all include event-list) refreshes them too.
+  setPublicHeaders(headers, "cached", { tag: `${eventTag(date)},${LIST_TAG}` });
 }
 
 const luma = ev?.links.luma;

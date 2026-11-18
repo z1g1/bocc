@@ -65,8 +65,10 @@ const ldBlocks = (html) => [...html.matchAll(/<script type="application\/ld\+jso
 const eventLd = (html) => ldBlocks(html).find((o) => o["@type"] === "Event");
 const withoutLd = (html) => html.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, "");
 
-function assertCached(res, date) {
-  assert.equal(res.headers.get("netlify-cache-tag"), `event-${date}`);
+// Upcoming pages show only their own date; past and cancelled pages also show the next
+// event, so they carry event-list, which every purge includes.
+function assertCached(res, date, { list = false } = {}) {
+  assert.equal(res.headers.get("netlify-cache-tag"), list ? `event-${date},event-list` : `event-${date}`);
   assert.match(res.headers.get("netlify-cdn-cache-control"), /^public, durable, max-age=(\d+), stale-while-revalidate=3600$/);
   const maxAge = Number(res.headers.get("netlify-cdn-cache-control").match(/max-age=(\d+)/)[1]);
   assert.ok(maxAge >= 60 && maxAge <= 86400, `CDN max-age within a day: ${maxAge}`);
@@ -127,7 +129,7 @@ describe("public event pages from the database", { timeout: 300_000 }, () => {
   test("cancelled: a clear notice, no RSVP, the next event, EventCancelled", async () => {
     const res = await get(`/events/${D.cancelled}/`);
     assert.equal(res.status, 200);
-    assertCached(res, D.cancelled);
+    assertCached(res, D.cancelled, { list: true });
     const html = await res.text();
     assert.match(html, /This Tuesday is cancelled/);
     assert.doesNotMatch(html, /<iframe/);
@@ -144,7 +146,7 @@ describe("public event pages from the database", { timeout: 300_000 }, () => {
     test(`past (${label}): "has passed", the next event, noindex, no embed`, async () => {
       const res = await get(`/events/${date}/`);
       assert.equal(res.status, 200);
-      assertCached(res, date);
+      assertCached(res, date, { list: true });
       const html = await res.text();
       assert.match(html, /This one has passed/);
       assert.doesNotMatch(html, /<iframe/);

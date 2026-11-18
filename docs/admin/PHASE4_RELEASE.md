@@ -17,8 +17,11 @@ non-production context a production value.
     midnight, at most a day>, stale-while-revalidate=3600`
   - `Netlify-Cache-Tag: event-YYYY-MM-DD`
   - `Cache-Control: public, max-age=0, must-revalidate`, so browsers see a purge on the next load
-- An admin save purges `event-<date>` and `event-list` in one `purgeCache()` call
-  (`src/lib/site/purge.mjs`). Staging passes `deployAlias: "dev"` (from
+- An admin save, or the first photo upload for a new date, purges `event-<date>` and
+  `event-list` in one `purgeCache()` call (`src/lib/site/purge.mjs`), bounded at 3 s with no
+  retry, so a slow or rate-limited (429) purge only logs and the save stays fast. Past and
+  cancelled pages are tagged `event-<date>,event-list` (their "Next" link depends on other
+  dates), so every purge refreshes them. Staging passes `deployAlias: "dev"` (from
   `locals.netlify.context.deploy.branch`); production passes `domain: "716coffee.club"`
   (from `context.site.url`). Anything else is refused and logged, never purged unscoped.
 - A date with no `events` row is a real 404 ("Out of Coffee"), cached for 5 minutes under its
@@ -32,6 +35,14 @@ non-production context a production value.
   message. Every other public page is static and unaffected.
 
 ## Before you start
+
+- [ ] **On or after 2026-11-20: add `"@netlify/cache": "4.2.1"` to the root `package.json`
+  `dependencies`** (exact pin) and run `npm install`. It is already installed, as an exact
+  dependency of `@astrojs/netlify`'s `@netlify/functions@6.1.1`, and `purge.mjs` imports that
+  hoisted copy. The lockfile shouldn't change beyond the new top-level entry. It was
+  published 2026-11-06, so it meets the two-week rule from the 20th. Vetted: the official
+  Netlify package (`netlify/primitives`, MIT), 71 KB, its one dependency
+  `@netlify/runtime-utils@3.0.1` has none.
 
 - `cd backend && npm test` (152), `npm run test:db` (needs Docker) and `npm run build` pass on
   `dev`.
@@ -82,6 +93,9 @@ non-production context a production value.
    - [ ] `/events/2031-01-07/` → 404 "Out of Coffee"; `/events/nope/` → 404; `/events/` → `/`
    - [ ] a past date (e.g. last Tuesday) → "This one has passed", with a link to the next event
    - [ ] `/sitemap.xml` lists the upcoming dates, then the content pages
+   - [ ] for information: `curl -sI '<event URL>?x=1'` twice. Query strings get their own CDN
+         entry (Netlify keys function responses on them, and documents no header to ignore
+         them), so the first is a miss. The same tags purge it, so it is never staler
    - [ ] in the admin, change the next Tuesday's location to the food hall and save. Within about
          5 s the public page shows "Food hall" (one reload, no cache-busting). Change it back.
          Netlify → Logs → Functions → `ssr`: no `[site] purge refused` or `purge failed` lines

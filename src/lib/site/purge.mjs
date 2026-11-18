@@ -11,8 +11,14 @@
 //        the page refreshes when its cache max-age runs out (src/lib/site/http.mjs).
 //
 // One call to purgeCache() from @netlify/cache per save, with every tag in it:
-// `event-<date>` for each date plus `event-list` (the sitemap). Netlify allows each tag
-// two purges per 5 s; a 429 is retried once after 5 s.
+// `event-<date>` for each date plus `event-list` (the sitemap, and the past/cancelled
+// pages' "Next" link). Netlify allows each tag two purges per 5 s.
+//
+// Bounded: the admin save awaits this (an un-awaited promise can be cut off when the
+// function returns), and purgeCache() is a bare fetch with no timeout. So the call is
+// raced against a 3 s timer, and there is no retry: a 429 or a timeout is logged and
+// returns { ok: false }. The worst case is about 3 s added to a save; the page then
+// refreshes when its CDN max-age runs out (the next Eastern midnight at the latest).
 //
 // Scope. A purge with neither deployAlias nor domain covers EVERY deploy of the site,
 // so a staging save would clear production. locals.netlify.context.deploy is what the
@@ -34,7 +40,7 @@ import { LIST_TAG, eventTag } from "./http.mjs";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ALIAS = /^[a-z0-9][a-z0-9-]{0,62}$/i;
-const RETRY_MS = 5000;
+export const PURGE_TIMEOUT_MS = 3000;
 
 const redact = (text) =>
   String(text)
@@ -76,8 +82,8 @@ export function purgeScope(locals) {
 
 /**
  * @param {string[]} dates
- * @param {{ locals?: any, purge?: (opts: object) => Promise<void>, sleep?: (ms: number) => Promise<void> }} [opts]
- *   purge/sleep: injected by tests; default purgeCache from @netlify/cache and setTimeout
+ * @param {{ locals?: any, purge?: (opts: object) => Promise<void>, timeoutMs?: number }} [opts]
+ *   purge/timeoutMs: injected by tests; default purgeCache from @netlify/cache, 3000 ms
  * @returns {Promise<{ ok: boolean, skipped?: string }>}
  */
 export async function purgeEventPages(dates, opts = {}) {
@@ -94,18 +100,31 @@ export async function purgeEventPages(dates, opts = {}) {
 
     const tags = [...valid.map(eventTag), LIST_TAG];
     const purge = opts.purge ?? (await import("@netlify/cache")).purgeCache;
-    const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
-    const args = { tags, ...where.scope };
+    const timeoutMs = opts.timeoutMs ?? PURGE_TIMEOUT_MS;
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs} ms`)), timeoutMs);
+    });
     try {
-      await purge(args);
-    } catch (err) {
-      if (!/\b429\b/.test(describe(err))) throw err;
-      await sleep(RETRY_MS);
-      await purge(args);
+      await Promise.race([Promise.resolve().then(() => purge({ tags, ...where.scope })), timeout]);
+    } finally {
+      clearTimeout(timer);
     }
     return { ok: true };
   } catch (err) {
     console.error(`[site] purge failed: ${redact(describe(err))}`);
     return { ok: false };
   }
+}
+
+/**
+ * Purge a date's page when an admin action created its `events` row as a side effect
+ * (the first photo upload for a date), so a cached 404 for that date clears.
+ * @param {{ eventCreated?: boolean, eventDate?: string } | null | undefined} result
+ * @param {{ locals?: any, purge?: (opts: object) => Promise<void>, timeoutMs?: number }} [opts]
+ * @returns {Promise<{ ok: boolean, skipped?: string }>} never throws
+ */
+export async function purgeIfEventCreated(result, opts = {}) {
+  if (!result?.eventCreated || typeof result.eventDate !== "string") return { ok: true, skipped: "no event created" };
+  return purgeEventPages([result.eventDate], opts);
 }

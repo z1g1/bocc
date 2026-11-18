@@ -15,7 +15,14 @@
 //   Cache-Control  public, max-age=0, must-revalidate
 //     - the browser asks the CDN each time (a cheap CDN hit), so a purge is seen on
 //       the next load
-//   Netlify-Cache-Tag  event-YYYY-MM-DD, or event-list for lists of dates
+//   Netlify-Cache-Tag  event-YYYY-MM-DD; plus event-list on anything that shows other
+//                      dates (the sitemap; past and cancelled pages' "Next" link)
+//
+// Query strings are part of the CDN cache key for function responses, so
+// /events/<date>/?x=1 is a separate entry that renders once (it is purged by the same
+// tags, so it is never staler than the plain URL). Netlify documents no header to
+// ignore them (Netlify-Vary: query=… only narrows which parameters count), so none is
+// set; the cost is an extra function call per new query string.
 //
 // Unknown but well-formed date: 404, CDN max-age 300 (no stale-while-revalidate) with
 //   the date's tag. The admin's first save of that date purges the tag, so a new event

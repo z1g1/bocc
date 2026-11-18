@@ -1,12 +1,12 @@
 // Unit tests for the public-site seams (ADR 0009 decision 4), no server:
 //   - purgeEventPages: scoped to one deploy (branch alias, or the production domain),
 //     refuses outside production without an alias, never throws, one call for all tags,
-//     one retry on a 429, skipped off Netlify
+//     bounded by a 3 s timeout with no retry, skipped off Netlify
 //   - readSiteEnv: fail-fast, names variables never values
 //   - the cache headers
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { purgeEventPages, purgeScope } from "../../src/lib/site/purge.mjs";
+import { PURGE_TIMEOUT_MS, purgeEventPages, purgeIfEventCreated, purgeScope } from "../../src/lib/site/purge.mjs";
 import { readSiteEnv } from "../../src/lib/site/db.mjs";
 import { secondsToEasternMidnight, setPublicHeaders } from "../../src/lib/site/http.mjs";
 
@@ -22,7 +22,6 @@ function fakePurge(...outcomes) {
   };
   return { fn, calls };
 }
-const noSleep = { sleeps: [], fn(ms) { this.sleeps.push(ms); return Promise.resolve(); } };
 
 describe("purgeEventPages", () => {
   test("branch deploy: one call, every date's tag plus event-list, scoped by deployAlias", async () => {
@@ -86,25 +85,52 @@ describe("purgeEventPages", () => {
   test("never throws: a failing purge is logged with secrets redacted", async (t) => {
     const err = t.mock.method(console, "error", () => {});
     const p = fakePurge(new Error("boom Bearer nfp_secretToken123 at postgresql://u:pw@host/db"));
-    const r = await purgeEventPages(["2031-06-10"], { locals: branch(), purge: p.fn, sleep: noSleep.fn.bind(noSleep) });
+    const r = await purgeEventPages(["2031-06-10"], { locals: branch(), purge: p.fn });
     assert.deepEqual(r, { ok: false });
     const line = err.mock.calls.map((c) => c.arguments.join(" ")).join("\n");
     assert.match(line, /purge failed/);
     assert.doesNotMatch(line, /nfp_secretToken123|u:pw|postgresql:/);
-    assert.equal(p.calls.length, 1, "only a 429 is retried");
+    assert.equal(p.calls.length, 1, "no retry");
   });
 
-  test("a 429 is retried once after 5 s; a second 429 is logged, not thrown", async (t) => {
+  test("a 429 is logged and not retried (the save stays fast)", async (t) => {
+    const err = t.mock.method(console, "error", () => {});
+    const p = fakePurge(new Error("Cache purge API call returned an unexpected status code: 429"));
+    assert.deepEqual(await purgeEventPages(["2031-06-10"], { locals: branch(), purge: p.fn }), { ok: false });
+    assert.equal(p.calls.length, 1);
+    assert.match(err.mock.calls[0].arguments[0], /purge failed.*429/);
+  });
+
+  test("a purge that never answers times out: logged, ok:false, bounded", async (t) => {
+    const err = t.mock.method(console, "error", () => {});
+    assert.equal(PURGE_TIMEOUT_MS, 3000);
+    const hang = () => new Promise(() => {});
+    const started = Date.now();
+    assert.deepEqual(await purgeEventPages(["2031-06-10"], { locals: branch(), purge: hang, timeoutMs: 50 }), { ok: false });
+    assert.ok(Date.now() - started < 1000, "returned at the timeout");
+    assert.match(err.mock.calls[0].arguments[0], /purge failed: Error: timed out after 50 ms/);
+  });
+
+  test("the default timeout bounds a hanging purge at about 3 s", async (t) => {
     t.mock.method(console, "error", () => {});
-    const sleep = { sleeps: [], fn(ms) { this.sleeps.push(ms); return Promise.resolve(); } };
-    const rateLimited = () => new Error("Cache purge API call returned an unexpected status code: 429");
-    let p = fakePurge(rateLimited());
-    assert.deepEqual(await purgeEventPages(["2031-06-10"], { locals: branch(), purge: p.fn, sleep: sleep.fn.bind(sleep) }), { ok: true });
-    assert.equal(p.calls.length, 2);
-    assert.deepEqual(sleep.sleeps, [5000]);
-    p = fakePurge(rateLimited(), rateLimited());
-    assert.deepEqual(await purgeEventPages(["2031-06-10"], { locals: branch(), purge: p.fn, sleep: sleep.fn.bind(sleep) }), { ok: false });
-    assert.equal(p.calls.length, 2);
+    const started = Date.now();
+    assert.deepEqual(await purgeEventPages(["2031-06-10"], { locals: production(), purge: () => new Promise(() => {}) }), { ok: false });
+    const took = Date.now() - started;
+    assert.ok(took >= 2900 && took < 4000, `took ${took} ms`);
+  });
+
+  test("a purge that answers in time is ok, and its timer doesn't linger", async () => {
+    const slow = () => new Promise((r) => setTimeout(r, 20));
+    assert.deepEqual(await purgeEventPages(["2031-06-10"], { locals: branch(), purge: slow, timeoutMs: 1000 }), { ok: true });
+  });
+
+  test("purgeIfEventCreated purges only when the event row was created", async () => {
+    const p = fakePurge();
+    assert.deepEqual(await purgeIfEventCreated({ eventCreated: false, eventDate: "2031-06-10" }, { locals: branch(), purge: p.fn }), { ok: true, skipped: "no event created" });
+    assert.deepEqual(await purgeIfEventCreated(undefined, { locals: branch(), purge: p.fn }), { ok: true, skipped: "no event created" });
+    assert.equal(p.calls.length, 0);
+    assert.deepEqual(await purgeIfEventCreated({ eventCreated: true, eventDate: "2031-06-10" }, { locals: branch(), purge: p.fn }), { ok: true });
+    assert.deepEqual(p.calls, [{ tags: ["event-2031-06-10", "event-list"], deployAlias: "dev" }]);
   });
 
   test("a purge that throws synchronously, or a bad locals object, still never throws", async (t) => {

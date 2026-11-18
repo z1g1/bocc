@@ -13,6 +13,7 @@
 //   400 { error, errors[] } · 401/403 · 405 · 503 { error } when storage is off
 import type { APIRoute } from "astro";
 import { json, mediaRoute, methodNotAllowed, readJson } from "../../../../lib/admin/media-http.mjs";
+import { purgeIfEventCreated } from "../../../../lib/site/purge.mjs";
 
 export const prerender = false;
 
@@ -20,7 +21,11 @@ export const POST: APIRoute = (ctx) =>
   mediaRoute(ctx, async ({ storage, user, request }) => {
     const body = await readJson(request);
     const { startUpload } = await import("../../../../lib/admin/media.mjs");
-    return json(201, await startUpload(user.id, storage, body));
+    const result = await startUpload(user.id, storage, body);
+    // The first upload for a date creates its events row: clear a cached public 404
+    // for /events/<date>/ (ADR 0009). Awaited, bounded at ~3 s, never throws.
+    await purgeIfEventCreated(result, { locals: ctx.locals });
+    return json(201, result);
   });
 
 export const ALL: APIRoute = methodNotAllowed;
