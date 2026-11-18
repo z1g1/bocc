@@ -11,6 +11,7 @@
 //   events,
 //   event_reports       SELECT, INSERT, UPDATE (migration 20261118120000_events_media.sql)
 //   event_media         SELECT, INSERT, UPDATE, DELETE
+//   event_links         SELECT, INSERT, UPDATE, DELETE (migration 20261121120000_event_links_site_reader.sql)
 //   auth.*              Better Auth's tables
 // Anything else is refused by Postgres, whatever the app code says.
 //

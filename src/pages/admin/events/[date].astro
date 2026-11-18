@@ -1,19 +1,25 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
-// Status and location, the cancel flow, the after-event report (it replaces the
-// Google Form) and the photos (EventMedia, ADR 0010).
+// Status and location, the listings and readiness checklist (Phase 4), the cancel
+// flow, the after-event report (it replaces the Google Form) and the photos
+// (EventMedia, ADR 0010).
 //
 // A date with no events row still renders, as a new scheduled event; the first save
 // of any form creates the row. Plain HTML forms, no client script: each POSTs back
 // here with an `action` field, is Origin-checked, and answers 303 to a GET with a
 // fixed ?notice= (post/redirect/get). Invalid input re-renders with 400 (409 for a
 // refused state change) and the messages next to the fields. All logic and the audit
-// rows are in src/lib/admin/events.mjs.
+// rows are in src/lib/admin/events.mjs and event-links.mjs.
+//
+// Every save that changed something purges the public /events/<date>/ page from the
+// CDN (src/lib/site/purge.mjs). It is awaited so it runs before the function ends, but
+// it never throws, and a failure is caught here: the save is already committed.
 import Admin from "../../../layouts/Admin.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
 import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+import { purgeEventPages } from "../../../lib/site/purge.mjs";
 export const prerender = false;
 
 const denied = requireRole(Astro.locals, "admin");
@@ -21,6 +27,7 @@ if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const ev = await import("../../../lib/admin/events.mjs");
+const el = await import("../../../lib/admin/event-links.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
 
 const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
@@ -32,6 +39,8 @@ const NOTICES: Record<string, string> = {
   cancelled: "Event cancelled.",
   uncancelled: "Event un-cancelled. It is scheduled again.",
   report: "Report saved. The event is marked held.",
+  link: "Listing saved.",
+  unlink: "Listing cleared.",
   unchanged: "Nothing changed.",
 };
 const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>) => Promise<{ changed: boolean }>> = {
@@ -39,8 +48,12 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   cancel: ev.cancelEvent,
   uncancel: (actor, d) => ev.uncancelEvent(actor, d),
   report: ev.submitReport,
+  link: (actor, d, input) => el.setLink(actor, d, input.platform, input),
+  unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
 };
-const DONE: Record<string, string> = { save: "saved", cancel: "cancelled", uncancel: "uncancelled", report: "report" };
+const DONE: Record<string, string> = {
+  save: "saved", cancel: "cancelled", uncancel: "uncancelled", report: "report", link: "link", unlink: "unlink",
+};
 
 let errors: Record<string, string> = {};
 let posted: { action: string; values: Record<string, string> } | null = null;
@@ -61,6 +74,13 @@ if (Astro.request.method === "POST") {
   for (const [k, v] of data) if (typeof v === "string") values[k] = v;
   try {
     const { changed } = await run(user!.id, date, values);
+    if (changed) {
+      try {
+        await purgeEventPages([date], { locals: Astro.locals });
+      } catch (err) {
+        console.error(JSON.stringify({ level: "error", msg: "event page purge failed", date, error: String(err) }));
+      }
+    }
     return Astro.redirect(`/admin/events/${date}/?notice=${changed ? DONE[action] : "unchanged"}`, 303);
   } catch (err: any) {
     if (!(err instanceof ev.ValidationError)) throw err;
@@ -73,8 +93,10 @@ if (Astro.request.method === "POST") {
 }
 
 const { pool } = await import("../../../lib/admin/db.mjs");
-const event = await ev.getEvent(pool, date);
+const [event, links] = await Promise.all([ev.getEvent(pool, date), el.getLinks(pool, date)]);
 const today = ev.todayEastern();
+const upcoming = date >= today;
+const ready = el.readiness(event, links);
 const isFuture = date > today;
 const missing = ev.isReportMissing(event, today);
 const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
@@ -103,6 +125,16 @@ const detErr = errFor("save");
 const canErr = errFor("cancel");
 const repErr = errFor("report");
 const SOURCES: Record<string, string> = { admin: "the admin", google_form: "the Google Form import", pre_form: "the pre-Form history import" };
+// Listings: the posted values (on an error) for that platform's row, else what is stored.
+const linkPosted = (p: string) => (posted && (posted.action === "link" || posted.action === "unlink") && posted.values.platform === p ? posted : null);
+const linkVal = (p: string) => {
+  const lp = linkPosted(p);
+  return lp?.action === "link"
+    ? { url: lp.values.url ?? "", externalId: lp.values.externalId ?? "" }
+    : { url: links[p]?.url ?? "", externalId: links[p]?.externalId ?? "" };
+};
+const linkErr = (p: string) => (linkPosted(p) ? errors : {});
+const mark = (ok: boolean | null) => (ok === null ? "–" : ok ? "✓" : "✗");
 const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status === "held" ? "Held" : "Scheduled";
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
@@ -115,6 +147,23 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   </p>
   {notice && <p class="notice" role="status">{notice}</p>}
   {posted && errors.date && <p class="error" role="alert">{errors.date}</p>}
+  {posted && errors.platform && <p class="error" role="alert">{errors.platform}</p>}
+
+  {upcoming && (
+    <section aria-labelledby="h-ready" class="ready">
+      <h2 id="h-ready">Readiness <span class="muted">{ready.listings}/{ready.total} listings</span></h2>
+      <ul class="checklist">
+        {ready.items.map((i) => (
+          <li class={i.ok === null ? "later" : i.ok ? "ok" : "todo"}>
+            <span class="mark" aria-hidden="true">{mark(i.ok)}</span>
+            {i.href ? <a href={i.href} target="_blank" rel="noopener">{i.label}</a> : i.label}
+            <span class="visually-hidden">{i.ok === null ? " (not yet)" : i.ok ? " (done)" : " (missing)"}</span>
+            {i.note && <span class="muted"> · {i.note}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
 
   <section aria-labelledby="h-details">
     <h2 id="h-details">Status and location</h2>
@@ -144,6 +193,41 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
       </fieldset>
       <button type="submit">Save status and location</button>
     </form>
+  </section>
+
+  <section aria-labelledby="h-links">
+    <h2 id="h-links">Listings</h2>
+    <p class="muted">The event on each platform. Luma is the public page's call to action; the others are listed for search engines.</p>
+    {el.PLATFORM_KEYS.map((p) => {
+      const v = linkVal(p);
+      const e = linkErr(p);
+      const stored = links[p];
+      return (
+        <form method="post" class="link-row" id={`link-${p}`}>
+          <input type="hidden" name="platform" value={p}>
+          <label for={`url-${p}`}>{el.PLATFORMS[p]}</label>
+          {stored
+            ? <p class="current"><a href={stored.url} target="_blank" rel="noopener">{stored.url}</a></p>
+            : <p class="current muted">Not listed yet.</p>}
+          <input id={`url-${p}`} name="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" maxlength={el.URL_MAX} value={v.url}
+            placeholder={p === "luma" ? "https://luma.com/…" : p === "eventbrite" ? "https://www.eventbrite.com/e/…" : p === "facebook_event" ? "https://www.facebook.com/events/…" : "https://www.linkedin.com/events/…"}
+            aria-invalid={e.url ? "true" : undefined}>
+          {e.url && <p class="error" role="alert">{e.url}</p>}
+          {p === "luma" && (
+            <>
+              <label for="externalId-luma">Luma event id <span class="muted">(evt-…, from the embed code; needed for the RSVP embed)</span></label>
+              <input id="externalId-luma" name="externalId" maxlength="100" value={v.externalId} pattern="evt-[A-Za-z0-9_\-]+"
+                aria-invalid={e.externalId ? "true" : undefined}>
+              {e.externalId && <p class="error" role="alert">{e.externalId}</p>}
+            </>
+          )}
+          <div class="buttons">
+            <button type="submit" name="action" value="link">Save {el.PLATFORMS[p]}</button>
+            {stored && <button type="submit" name="action" value="unlink" class="secondary">Clear</button>}
+          </div>
+        </form>
+      );
+    })}
   </section>
 
   <section aria-labelledby="h-report">
@@ -238,4 +322,17 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   .badge { display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
   .badge.cancelled, .badge.missing { color: var(--err); border-color: var(--err); }
   .badge.held { color: var(--accent); border-color: var(--accent); }
+  .ready { margin-top: 1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
+  .ready h2 { margin: 0; font-size: 1rem; }
+  .checklist { list-style: none; padding: 0; margin: 0.25rem 0 0; display: flex; flex-wrap: wrap; gap: 0.15rem 1.25rem; }
+  .checklist .mark { display: inline-block; width: 1.1em; font-weight: 700; }
+  .checklist .ok .mark { color: var(--accent); }
+  .checklist .todo .mark { color: var(--err); }
+  .checklist .later { opacity: 0.55; }
+  .link-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
+  .link-row label:first-of-type { font-weight: 600; }
+  .link-row .current { margin: 0.1rem 0 0.35rem; overflow-wrap: anywhere; }
+  .link-row input { width: 100%; }
+  .link-row .buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

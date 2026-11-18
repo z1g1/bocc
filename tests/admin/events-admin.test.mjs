@@ -608,4 +608,62 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const paged = await req("/admin/events/?page=999", { cookie: admin.cookie });
     assert.equal(paged.status, 200);
   });
+
+  // Phase 4: the Listings forms and the readiness checklist.
+  test("listings: save creates the event, readiness at the top for upcoming dates, list and home at a glance", async () => {
+    // A few days ahead (Eastern), so it is among the soonest upcoming events.
+    const d = ev.todayEastern(new Date(Date.now() + 3 * 86400_000));
+    assert.equal(await eventRow(d), null, "no other test uses this date");
+    const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    assert.ok(page.includes('id="h-ready"') && page.includes("0/4 listings"), "readiness near the top");
+    assert.ok(page.indexOf('id="h-ready"') < page.indexOf('id="h-details"'));
+    assert.ok(page.includes("public page") && page.includes("404 until the event is saved") && !page.includes(`href="/events/${d}/"`));
+    assert.ok(page.includes("social channels (Phase 5)"));
+    for (const p of ["luma", "eventbrite", "facebook_event", "linkedin_event"]) assert.ok(page.includes(`id="link-${p}"`), p);
+
+    const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "link", platform: "luma", url: 'https://evil.example/"><b>x', externalId: "nope" } });
+    assert.equal(bad.status, 400);
+    const badHtml = await bad.text();
+    assert.ok(badHtml.includes("a link to Luma (evil.example)") && badHtml.includes("evt-AbC123"), "messages by the fields");
+    assert.ok(badHtml.includes("https://evil.example/&quot;") && !badHtml.includes('"><b>x'), "re-filled, escaped");
+    assert.equal(await eventRow(d), null, "nothing written");
+
+    const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "link", platform: "luma", url: "lu.ma/abc", externalId: "" } });
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?notice=link`);
+    assert.equal((await eventRow(d)).status, "scheduled", "the first save created the event");
+    const [audit] = (await auditRows(d)).filter((a) => a.action === "event_link.set");
+    assert.deepEqual([audit.target_table, audit.details.platform, audit.details.created], ["event_links", "luma", true]);
+    const after = await (await req(`/admin/events/${d}/?notice=link`, { cookie: admin.cookie })).text();
+    assert.ok(after.includes("Listing saved.") && after.includes('href="https://lu.ma/abc"') && after.includes("1/4 listings"));
+    assert.ok(after.includes("no embed id"));
+    assert.ok(after.includes(`href="/events/${d}/" target="_blank" rel="noopener"`), "the public page link, in a new tab");
+
+    const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
+    const item = list.match(new RegExp(`<li\\b[^>]*><a href="/admin/events/${d}/"[\\s\\S]*?</li>`))?.[0] ?? "";
+    assert.match(item, /1\/4 listings · no embed id/);
+    const home = await (await req("/admin/", { cookie: admin.cookie })).text();
+    // Structure, not distance: astro dev adds data-astro-* attributes to every tag.
+    const nextItems = [...home.matchAll(/<li\b[^>]*>Next: ([\s\S]*?)<\/li>/g)].map((m) => m[1]);
+    assert.ok(nextItems.length > 0, "home lists the next events");
+    for (const li of nextItems) assert.match(li, /<span class="ready-tag[^"]*"[^>]*>\s*\d\/4 listings/, "home: listings at a glance");
+
+    const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "unlink", platform: "luma" } });
+    assert.equal(clear.headers.get("location"), `/admin/events/${d}/?notice=unlink`);
+    const again = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "unlink", platform: "luma" } });
+    assert.equal(again.headers.get("location"), `/admin/events/${d}/?notice=unchanged`);
+    assert.equal((await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "link", platform: "myspace", url: "x" } })).status, 400);
+    for (const who of [social, noRole]) {
+      const res = await req(`/admin/events/${d}/`, { cookie: who.cookie, method: "POST", form: { action: "link", platform: "luma", url: "https://luma.com/x" } });
+      assert.equal(res.status, 403);
+    }
+    assert.equal((await owner.query(`select 1 from event_links where event_date = $1`, [d])).rowCount, 0);
+  });
+
+  test("a past event has the Listings section but no readiness block at the top", async () => {
+    const html = await (await req(`/admin/events/${pastDate()}/`, { cookie: admin.cookie })).text();
+    assert.ok(html.includes('id="h-links"') && !html.includes('id="h-ready"'));
+  });
 });
