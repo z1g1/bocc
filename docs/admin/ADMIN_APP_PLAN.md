@@ -407,12 +407,19 @@ on-device checks and production are open.
 
 - [ ] Migration: `event_links`
 - [ ] Import `luma_events.yml` and the README URL table, then delete both
-- [ ] `/events/[date]` rendered from Neon on request and cached at the CDN, with the cache cleared
+- [x] `/events/[date]` rendered from Neon on request and cached at the CDN, with the cache cleared
       on save:
   - Luma embed as the only call to action
   - `sameAs` in JSON-LD for the other listings
   - a real 404 for unknown dates
-- [ ] Remove the Ruby build and the `/events/* → /` 302
+  - Built on `dev` 2026-11-18 (`src/pages/events/[date].astro`, `src/lib/site/`), read as
+    `site_reader` (`SITE_DB_URL`). Cancelled and past dates get their own notice (past:
+    `noindex`); `/events/` 302s to `/`; the sitemap is on demand too (tag `event-list`).
+    Headers and purge scoping: `src/lib/site/http.mjs`, `src/lib/site/purge.mjs`. Release:
+    [PHASE4_RELEASE.md](PHASE4_RELEASE.md). The Phase 0 open item (a staging purge leaves
+    production's copy alone) is its step 14
+- [x] Remove the Ruby build and the `/events/* → /` 302 (the Ruby build went with the Astro
+      port; the 302 and the YAML readers are gone, and no event page is prerendered)
 - [ ] Readiness checklist on the admin event page: four links, the public page, and the social
       channels (once Phase 5 lands)
 

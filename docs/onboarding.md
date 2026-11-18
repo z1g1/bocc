@@ -141,7 +141,7 @@ Database schema changes are **not** applied by deploys. Add a new file to
 ### Website
 - `src/data/site.yml` — Site settings: title, description, analytics id, event facts
 - `src/data/home.yml` — Homepage copy (the Luma calendar embed is in `src/components/home/Signup.astro`)
-- `src/data/luma_events.yml` — Luma event for each Tuesday page
+- `src/pages/events/[date].astro` — the `/events/YYYY-MM-DD/` pages, rendered from Neon on request (ADR 0009); event links are edited in the admin
 - `public/js/checkin.js` — Check-in form logic (the most complex JS file)
 - `src/pages/checkin/bocc.astro` — The check-in page (site layout, no analytics). Keep its
   element IDs: `public/js/checkin.js` reads them

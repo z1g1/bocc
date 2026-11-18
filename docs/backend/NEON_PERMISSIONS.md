@@ -85,6 +85,8 @@ is an optional override; a malformed value fails closed.
 | `BETTER_AUTH_SECRET` | Netlify (required for the admin app) | at least 32 characters (`openssl rand -hex 32`); signs session cookies. Its own value per context |
 | `BETTER_AUTH_URL` | Netlify (required for the admin app) | the site origin, no path. Production `https://716coffee.club`; Branch deploys `https://dev--bocc-backend.netlify.app`; local `http://localhost:4321`. Passkeys (`rpID`) and the admin CSRF check are bound to it |
 | `ADMIN_DB_POOL_MAX` | Netlify (optional) | `admin_app` pool size per function instance, default `3`, minimum `2` (a password reset holds one connection while Better Auth uses another) |
+| `SITE_DB_URL` | Netlify (required for the public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, ADR 0009) | pooled `site_reader` URL. Its own value per context, like `ADMIN_DB_URL`. Without it those pages answer 503 (no-store); the rest of the site is static and unaffected. Read only by `src/lib/site/db.mjs`, at first use |
+| `SITE_DB_POOL_MAX` | Netlify (optional) | `site_reader` pool size per function instance, default `2`, from `1` to `10` |
 
 | `STORAGE_ENDPOINT` | Netlify (optional; media is off without it) | the branch's S3 endpoint, see "Storage". Not secret |
 | `STORAGE_BUCKET` | Netlify (optional) | `bocc-media`. Not secret |

@@ -142,7 +142,7 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 
 ### Luma
 - Primary RSVP: https://luma.com/716coffeeclub
-- Calendar embed on the homepage; event embed on each `/events/YYYY-MM-DD/` page, from `_data/luma_events.yml`
+- Calendar embed on the homepage; event embed on each `/events/YYYY-MM-DD/` page, from the `luma` row in Neon `event_links` (ADR 0009)
 - No API integration — purely frontend iframes
 - CSP in `_layouts/default.html` allows `luma.com` as a frame source
 
