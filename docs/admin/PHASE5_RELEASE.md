@@ -76,11 +76,11 @@ The Click link uses existing variables: Netlify's own `URL` / site URL, and `BET
 
 ## Staging
 
-1. [ ] **Migrate Neon `dev`.** Put the owner URL of `dev` in `DATABASE_URL_UNPOOLED`, as in
+1. [x] **Migrate Neon `dev`.** *(done 2026-11-18)* Put the owner URL of `dev` in `DATABASE_URL_UNPOOLED`, as in
    Phase 2, then run `cd backend && npm run migrate:status && npm run migrate`. Expect
    `20261122120000_social_posts.sql` and `20261123120000_social_checker.sql`, and nothing
    else.
-2. [ ] **`social_checker` on `dev`.** As `neondb_owner` on `dev`, with a fresh
+2. [x] **`social_checker` on `dev`.** *(done 2026-11-18)* As `neondb_owner` on `dev`, with a fresh
    `openssl rand -hex 32` (never production's):
    ```sql
    alter role social_checker login password '<new hex>';
@@ -93,14 +93,14 @@ The Click link uses existing variables: Netlify's own `URL` / site URL, and `BET
    - `select original_key from event_media limit 1`
    - `select 1 from attendees limit 1`
    - `update social_post_channels set status = status`
-3. [ ] **Netlify env, Branch deploys and Deploy Previews contexts:**
+3. [x] **Netlify env, Branch deploys and Deploy Previews contexts:** *(done 2026-11-18)*
    - `SOCIAL_CHECK_DB_URL`: the **pooled** `dev` URL for `social_checker` (host with
      `-pooler`). Mark it secret.
    - `SOCIAL_ALERT_NTFY_TOPIC`: a new staging topic (`bocc-alert-` +
      `openssl rand -hex 16`). Mark it secret.
 
    In the ntfy app, subscribe to the staging topic on `https://ntfy.sh`.
-4. [ ] **Push `dev`.** Netlify → the `dev` deploy → Functions should list `social-check` as
+4. [x] **Push `dev`.** *(done 2026-11-18)* Netlify → the `dev` deploy → Functions should list `social-check` as
    scheduled (`0 14 * * 4`).
 5. [ ] **Your checks on https://dev--bocc-backend.netlify.app**, signed in as admin:
    - [ ] **On your iPhone**, open `/admin/events/<next Tuesday>/` and use "Social post" to

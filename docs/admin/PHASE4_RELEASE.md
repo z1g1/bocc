@@ -52,10 +52,10 @@ non-production context a production value.
 
 ## Staging
 
-1. [ ] **Migrate Neon `dev`** (owner URL of `dev` in `DATABASE_URL_UNPOOLED`, as in Phase 2):
+1. [x] **Migrate Neon `dev`** (owner URL of `dev` in `DATABASE_URL_UNPOOLED`, as in Phase 2):
    `cd backend && npm run migrate:status && npm run migrate`. Expect only
    `20261121120000_event_links_site_reader.sql`.
-2. [ ] **`site_reader` on `dev`**, as `neondb_owner` on `dev`, with a fresh
+2. [x] **`site_reader` on `dev`**, as `neondb_owner` on `dev`, with a fresh
    `openssl rand -hex 32` (never production's):
    ```sql
    alter role site_reader login password '<new hex>';
@@ -63,10 +63,10 @@ non-production context a production value.
    Then check it, as `site_reader` on `dev`: `select count(*) from events` works;
    `select 1 from event_reports limit 1` and `select 1 from attendees limit 1` fail with
    `permission denied`.
-3. [ ] **Netlify, Branch deploys and Deploy Previews contexts:** `SITE_DB_URL` = the **pooled**
+3. [x] **Netlify, Branch deploys and Deploy Previews contexts:** `SITE_DB_URL` = the **pooled**
    `dev` URL for `site_reader` (host with `-pooler`). Mark it secret. Production gets its own
    value in step 11.
-4. [ ] **Links import on `dev`** (A's `backend/scripts/import-event-links.js`, as the owner). The
+4. [x] **Links import on `dev`** *(done 2026-11-18: 10 events created, 28 links; re-run unchanged)* (A's `backend/scripts/import-event-links.js`, as the owner). The
    YAML and the README table are deleted from the tree, so take them from git history:
    ```sh
    git show 829155c:src/data/luma_events.yml > /tmp/luma_events.yml
@@ -82,7 +82,7 @@ non-production context a production value.
    row's status. It refuses while there are conflicts; fix those in the admin, or add
    `--prefer-db` to keep what is stored. The last run should report `insert 0, fill id 0`.
    Delete the two `/tmp` files afterwards.
-5. [ ] **Push `dev`.**
+5. [x] **Push `dev`.**
 6. [ ] On https://dev--bocc-backend.netlify.app:
    - [ ] `/events/<next Tuesday>/`: looks like before, the Luma embed works, "RSVP free" goes to
          that date's Luma page. View source: the Event JSON-LD has `sameAs` with the
