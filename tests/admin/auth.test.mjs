@@ -128,9 +128,15 @@ describe("guard and roles", () => {
     const { cookie } = await signIn(user.email);
     const r = await guardRequest(url("/admin/"), new Headers({ cookie }));
     assert.equal(r.response.status, 403);
-    assert.equal(await r.response.text(), "Forbidden");
+    assert.match(r.response.headers.get("content-type"), /^text\/html/);
+    const html = await r.response.text();
+    assert.match(html, /<h1>Not allowed<\/h1>/);
+    assert.match(html, /action="\/logout"/, "sign out");
+    assert.ok(!html.includes('href="/admin/"'), "no link into the app without a role");
+    assert.ok(!html.includes("<script"), "no script");
     const api = await guardRequest(url("/api/admin/x"), new Headers({ cookie }));
     assert.equal(api.response.status, 403);
+    assert.deepEqual(await api.response.json(), { error: "forbidden" });
   });
 
   test("roles come from user_roles; requireRole enforces them per route", async () => {

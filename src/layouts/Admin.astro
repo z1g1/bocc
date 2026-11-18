@@ -2,9 +2,11 @@
 // Minimal shell for /login/ and /admin/* (ADR 0008). Deliberately separate from
 // Default.astro: no Google Analytics, no site header/footer, no third-party origins,
 // noindex. The CSP is also sent as a header by src/middleware.ts; frame-ancestors
-// only works as a header, so the meta copy leaves it out.
+// only works as a header, so the meta copy leaves it out. The CSS lives in
+// src/lib/admin/error-page.mjs, shared with the 403/404 pages the middleware sends.
 import { adminCsp } from "../lib/admin/headers.mjs";
 import { storageOrigin } from "../lib/admin/storage.mjs";
+import { ADMIN_CSS } from "../lib/admin/error-page.mjs";
 interface Props {
   title: string;
   /** Pass Astro.locals.user on signed-in pages to show the nav and sign-out button. */
@@ -26,6 +28,7 @@ const csp = adminCsp({ dev: import.meta.env.DEV, mediaOrigin: storageOrigin() })
     <meta http-equiv="Content-Security-Policy" content={csp}>
     <title>{title} · BOCC admin</title>
     <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+    <style is:inline set:html={ADMIN_CSS}></style>
   </head>
   <body>
     <header class="bar">
@@ -47,51 +50,3 @@ const csp = adminCsp({ dev: import.meta.env.DEV, mediaOrigin: storageOrigin() })
   </body>
 </html>
 
-<style is:global>
-  :root { color-scheme: light dark; --fg: #161616; --bg: #fafaf7; --muted: #5c5c5c; --accent: #8a4b14; --line: #d9d6cf; --err: #b00020; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #eeeeea; --bg: #161616; --muted: #a8a8a3; --accent: #f0a35e; --line: #3a3a37; --err: #ff6b81; } }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
-  .bar { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }
-  .brand { font-weight: 700; color: var(--fg); text-decoration: none; }
-  nav { display: flex; gap: 1rem; align-items: center; }
-  nav form { margin: 0; }
-  main { max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-  footer { max-width: 40rem; margin: 0 auto; padding: 0 1rem 2rem; color: var(--muted); font-size: 0.875rem; }
-  a { color: var(--accent); }
-  h1 { font-size: 1.5rem; margin: 0 0 1rem; }
-  label { display: block; margin: 0.75rem 0 0.25rem; font-weight: 600; }
-  input { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
-  button { margin-top: 1rem; padding: 0.6rem 1rem; font: inherit; font-weight: 600; border: 0; border-radius: 6px; background: var(--accent); color: var(--bg); cursor: pointer; }
-  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
-  button.link { margin: 0; padding: 0; background: none; color: var(--accent); font-weight: 400; text-decoration: underline; }
-  button:disabled { opacity: 0.6; cursor: wait; }
-  .error { color: var(--err); min-height: 1.5em; }
-  .muted { color: var(--muted); }
-  ul.plain { list-style: none; padding: 0; }
-  ul.plain li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 1rem; align-items: center; }
-  ul.plain li button { margin: 0; }
-  /* Data views (checkins, streaks, email list, attendees) */
-  main.wide { max-width: 72rem; }
-  .scroll { overflow-x: auto; }
-  table.data { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
-  table.data th, table.data td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-  table.data th { font-weight: 600; white-space: nowrap; }
-  table.data .num { text-align: right; font-variant-numeric: tabular-nums; }
-  table.data tr.debug { color: var(--muted); }
-  .tag { margin-left: 0.4rem; padding: 0 0.35rem; border: 1px solid var(--line); border-radius: 4px; font-size: 0.75rem; color: var(--muted); }
-  .filters { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: end; margin-bottom: 1rem; }
-  .filters label { margin: 0; }
-  .filters input:not([type=checkbox]), .filters select { width: auto; min-width: 14rem; }
-  .filters button { margin: 0; }
-  label.check { font-weight: 400; display: flex; gap: 0.4rem; align-items: center; }
-  label.check input { width: auto; }
-  select { padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
-  form.inline { margin: 0; }
-  button.small { margin: 0; padding: 0.2rem 0.6rem; font-size: 0.875rem; }
-  form.narrow { max-width: 32rem; }
-  .notice { padding: 0.5rem 0.75rem; border-left: 3px solid var(--accent); }
-  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
-  dl.facts dt { font-weight: 600; }
-  dl.facts dd { margin: 0; }
-</style>

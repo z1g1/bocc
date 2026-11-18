@@ -369,6 +369,71 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     }
   });
 
+  // The themed error pages (src/lib/admin/error-page.mjs), with the private headers.
+  const assertPrivate = (res, p) => {
+    assert.equal(res.headers.get("cache-control"), "no-store", p);
+    assert.equal(res.headers.get("x-robots-tag"), "noindex, nofollow", p);
+    assert.match(res.headers.get("content-security-policy"), /script-src 'self'/, p);
+    assert.match(res.headers.get("content-security-policy"), /frame-ancestors 'none'/, p);
+  };
+  const themed = async (res, p, heading) => {
+    assert.match(res.headers.get("content-type"), /^text\/html/, p);
+    const html = await res.text();
+    assert.match(html, new RegExp(`<h1>${heading}</h1>`), p);
+    assert.ok(!html.includes("<script"), `${p}: no script`);
+    assert.match(html, /action="\/logout"/, `${p}: sign out`);
+    return html;
+  };
+
+  test("no role -> /admin/ is a themed 403 that names nothing", async () => {
+    const res = await req("/admin/", { cookie: noRole.cookie });
+    assert.equal(res.status, 403);
+    assertPrivate(res, "/admin/");
+    const html = await themed(res, "/admin/", "Not allowed");
+    assert.ok(!html.includes('href="/admin/"'), "no link into the app without a role");
+    const d = pastDate();
+    const ev = await req(`/admin/events/${d}/`, { cookie: noRole.cookie });
+    assert.equal(ev.status, 403);
+    const evHtml = await themed(ev, "event page", "Not allowed");
+    assert.ok(!evHtml.includes(d), "the page doesn't echo the URL");
+  });
+
+  test("social -> /admin/events/ is a themed 403 with a way home", async () => {
+    for (const p of ["/admin/events/", `/admin/events/${pastDate()}/`]) {
+      const res = await req(p, { cookie: social.cookie });
+      assert.equal(res.status, 403, p);
+      assertPrivate(res, p);
+      const html = await themed(res, p, "Not allowed");
+      assert.match(html, /href="\/admin\/"/, "link to the admin home");
+      assert.ok(!html.includes("Report") && !html.includes("Photos") && !html.includes("Sign-in board"), "nothing of the page");
+    }
+  });
+
+  test("a bad date is a themed 404 (Out of Coffee); APIs and signed-out requests are unchanged", async () => {
+    for (const p of ["/admin/events/2001-02-30/", "/admin/events/latest/"]) {
+      const res = await req(p, { cookie: admin.cookie });
+      assert.equal(res.status, 404, p);
+      assertPrivate(res, p);
+      const html = await themed(res, p, "This page is out of coffee");
+      assert.match(html, /href="\/admin\/"/);
+    }
+    const out = await req("/admin/events/2001-02-30/");
+    assert.equal(out.status, 302);
+    assert.match(out.headers.get("location"), /^\/login\/\?next=/);
+    // APIs: plain bodies, never the HTML pages.
+    const api401 = await req("/api/admin/me");
+    assert.equal(api401.status, 401);
+    assert.deepEqual(await api401.json(), { error: "unauthorized" });
+    const api403 = await req("/api/admin/me", { cookie: noRole.cookie });
+    assert.equal(api403.status, 403);
+    assert.deepEqual(await api403.json(), { error: "forbidden" });
+    assertPrivate(api403, "/api/admin/me");
+    const csv = await fetch(`${BASE}/api/admin/email-list.csv`, { method: "POST", headers: { cookie: social.cookie, origin: BASE }, redirect: "manual" });
+    assert.equal(csv.status, 403);
+    assert.doesNotMatch(csv.headers.get("content-type") ?? "", /html/);
+    assert.ok(!(await csv.text()).includes("<html"));
+  });
+
   test("POST without or with a foreign Origin is 403; other methods 405", async () => {
     const d = pastDate();
     for (const origin of [null, "https://evil.example"]) {

@@ -5,6 +5,7 @@
 // session.mjs would drag pg into the bundle); use next.mjs.
 
 import { safeNext } from "./next.mjs";
+import { errorPageResponse } from "./error-page.mjs";
 
 export { safeNext };
 
@@ -40,10 +41,12 @@ export async function guardRequest(url, headers, load) {
     return { response, setCookies: ctx.setCookies };
   }
   if (ctx.roles.length === 0) {
-    // Signed in but no role: show nothing at all (ADR 0008 decision 4).
+    // Signed in but no role: show nothing of the app (ADR 0008 decision 4). Pages get
+    // the static "Not allowed" page (src/lib/admin/error-page.mjs): no nav, nothing
+    // about the URL, only "Sign out".
     const response = isApi
       ? Response.json({ error: "forbidden" }, { status: 403 })
-      : new Response("Forbidden", { status: 403, headers: { "content-type": "text/plain; charset=utf-8" } });
+      : errorPageResponse(403, { user: ctx.user, roles: [] });
     return { response, setCookies: ctx.setCookies };
   }
   return { response: null, user: ctx.user, session: ctx.session, roles: ctx.roles, setCookies: ctx.setCookies };
