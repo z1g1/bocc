@@ -51,10 +51,10 @@ describe("migration", () => {
     assert.ok(names.indexOf("20261116120000_admin_auth.sql") >= 0);
   });
 
-  test("no Phase 4/5 tables yet", async () => {
+  test("no Phase 5 tables yet", async () => {
     const { rows } = await owner.query(
       `select table_name from information_schema.tables where table_schema = 'public'
-        and table_name in ('event_links', 'social_posts', 'social_post_channels')`);
+        and table_name in ('social_posts', 'social_post_channels')`);
     assert.deepEqual(rows, []);
   });
 
@@ -70,6 +70,7 @@ describe("migration", () => {
       "event_media:admin_app:DELETE", "event_media:admin_app:INSERT", "event_media:admin_app:SELECT", "event_media:admin_app:UPDATE",
       "event_reports:admin_app:INSERT", "event_reports:admin_app:SELECT", "event_reports:admin_app:UPDATE",
       "events:admin_app:INSERT", "events:admin_app:SELECT", "events:admin_app:UPDATE",
+      "events:site_reader:SELECT", // migration 20261121120000 (public event pages)
     ]);
   });
 });

@@ -31,6 +31,7 @@ describe("migrations", () => {
       "20261118120000_events_media.sql",
       "20261119120000_media_heic_originals.sql",
       "20261120120000_social_photos_publicly_usable.sql",
+      "20261121120000_event_links_site_reader.sql",
     ]);
   });
 
