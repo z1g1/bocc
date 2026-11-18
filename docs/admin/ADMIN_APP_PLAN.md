@@ -351,9 +351,15 @@ compared.
 
 ## Phase 3: Google Form replacement and media (ADRs 0009, 0010)
 
-- [ ] Migration: `events`, `event_reports`, `event_media`
-- [ ] Neon bucket (private) and `storage:read`/`storage:write` credentials for staging and
-      production
+Release runbook: [PHASE3_RELEASE.md](PHASE3_RELEASE.md). Staging (Neon `dev` + the `dev`
+branch deploy) has the migrations, storage env and both imports since 2026-11-17; the
+on-device checks and production are open.
+
+- [x] Migration: `events`, `event_reports`, `event_media` (`20261118120000`), plus
+      `20261119120000` (HEIC originals for imported `signin_board` photos). Applied on `dev`
+- [x] Neon bucket (private) and `storage:read`/`storage:write` credentials for staging and
+      production (2026-11-17: a `bocc-media` bucket and credential on each branch; CORS
+      locked to each branch's site origins)
 - [x] `/admin/events/YYYY-MM-DD`:
   - status
   - location
@@ -383,7 +389,8 @@ compared.
       Dry run of the real export: 135 rows (22 `google_form`, 113 `pre_form`), 3 year fixes,
       1 Bling inferred from the "who" column (Zack: names there mean Bling was given), 0
       errors. Two non-Tuesday dates are listed for information and imported as is
-- [ ] Run the import on Neon (staging, then production): pending Zack's go-ahead
+- [ ] Run the import on Neon: done on `dev` 2026-11-17 (135 created; a re-run changes nothing).
+      Production pending (runbook step 8)
 - [ ] Import the old sign-in board photos (45, from the Drive export) with a local script:
       HEIC converted on the operator's machine, matched to events by file-name date or capture
       date, dry-run match table confirmed by Zack first (ADR 0010, amended 2026-11-17).
@@ -391,7 +398,8 @@ compared.
       Originals are stored as the untouched HEIC (migration `20261119120000`, `signin_board`
       only). Dry run done 2026-11-17 against the Form's dates (no Neon read): 10 of 45
       uncertain, all confirmed by Zack (3 date changes); with the confirm file it would import
-      45 and create 2024-11-12 and 2026-08-18 as `held`. Pending: `--apply` on Neon
+      45 and create 2024-11-12 and 2026-08-18 as `held`. Applied on `dev` 2026-11-17 against the
+      real events: 45 imported, 2024-11-12 created as `held`. Production pending (runbook step 8)
 
 ## Phase 4: event pages from the database and readiness checklist (ADR 0009)
 
