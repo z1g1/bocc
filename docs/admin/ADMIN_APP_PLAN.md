@@ -405,8 +405,11 @@ on-device checks and production are open.
 
 ## Phase 4: event pages from the database and readiness checklist (ADR 0009)
 
-- [ ] Migration: `event_links`
-- [ ] Import `luma_events.yml` and the README URL table, then delete both
+- [x] Migration: `event_links` (and the `site_reader` role): `20261121120000_event_links_site_reader.sql`
+- [x] Import `luma_events.yml` and the README URL table, then delete both:
+      `backend/scripts/import-event-links.js` (dry run by default, `--apply`, `--prefer-db`).
+      Both sources deleted 2026-11-18; the import reads them from git history (`829155c`).
+      Run on `dev` and production: [PHASE4_RELEASE.md](PHASE4_RELEASE.md) steps 4 and 12
 - [x] `/events/[date]` rendered from Neon on request and cached at the CDN, with the cache cleared
       on save:
   - Luma embed as the only call to action
@@ -420,8 +423,10 @@ on-device checks and production are open.
     production's copy alone) is its step 14
 - [x] Remove the Ruby build and the `/events/* → /` 302 (the Ruby build went with the Astro
       port; the 302 and the YAML readers are gone, and no event page is prerendered)
-- [ ] Readiness checklist on the admin event page: four links, the public page, and the social
-      channels (once Phase 5 lands)
+- [x] Readiness checklist on the admin event page: four links, the public page, and the social
+      channels (once Phase 5 lands). Built 2026-11-18: the Listings forms and the checklist on
+      `/admin/events/YYYY-MM-DD/` (`src/lib/admin/event-links.mjs`), "n/4 listings" on the
+      events list and home. The social channels line is a greyed placeholder until Phase 5
 
 ## Phase 5: social work order (ADR 0011)
 

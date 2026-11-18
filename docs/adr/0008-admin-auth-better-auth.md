@@ -55,7 +55,10 @@ Options checked against current docs on 2026-11-16:
    - `attendees`: **column-level UPDATE** on `ok_to_email`, `name`, `business_name`, `phone`.
      No DELETE anywhere on attendee or check-in data
    - `events`, `event_reports`, `event_links`, `event_media`, `social_posts`,
-     `social_post_channels`: SELECT, INSERT, UPDATE. DELETE only on `event_media`
+     `social_post_channels`: SELECT, INSERT, UPDATE. DELETE only on `event_media` and
+     `event_links` (amended 2026-11-18: removing a wrong listing is a normal edit, and the
+     `event_link.delete` audit row in the same transaction records what was removed;
+     migration `20261121120000_event_links_site_reader.sql`)
    - `audit_log`: **SELECT and INSERT only**, for every app role. Each change and its audit row
      are written in one transaction
    - `checkin_writer` is unchanged.

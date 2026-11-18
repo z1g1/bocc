@@ -65,7 +65,11 @@ non-production context a production value.
    node --env-file=<dev owner env> scripts/import-event-links.js --yaml /tmp/luma_events.yml --readme /tmp/social-README.md --apply
    node --env-file=<dev owner env> scripts/import-event-links.js --yaml /tmp/luma_events.yml --readme /tmp/social-README.md
    ```
-   The first is a dry run (0 errors, 0 conflicts expected); the last should change nothing.
+   The first is a dry run: expect 13 dates (2026-11-10 … 2027-02-16), links luma 13,
+   eventbrite 13, facebook_event 1, linkedin_event 1, 0 mismatches, 0 conflicts, 0 errors.
+   `--apply` creates the missing `events` rows as `scheduled` and never changes an existing
+   row's status. It refuses while there are conflicts; fix those in the admin, or add
+   `--prefer-db` to keep what is stored. The last run should report `insert 0, fill id 0`.
    Delete the two `/tmp` files afterwards.
 5. [ ] **Push `dev`.**
 6. [ ] On https://dev--bocc-backend.netlify.app:
