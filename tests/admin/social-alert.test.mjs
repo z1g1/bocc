@@ -159,8 +159,10 @@ describe("runSocialCheck end to end", () => {
     assert.equal(result.outcome, "sent", lines.join("\n"));
     assert.equal(result.date, d);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, "https://ntfy.sh/bocc-test-topic");
-    assert.match(calls[0].init.body, /- Instagram: pending/);
+    assert.equal(calls[0].url, "https://ntfy.sh/", "the server root: the topic is never in the URL");
+    const body = JSON.parse(calls[0].init.body);
+    assert.equal(body.topic, "bocc-test-topic");
+    assert.match(body.message, /- Instagram: pending/);
     assert.doesNotMatch(lines.join("\n"), /bocc-test-topic|social_checker:/);
   });
 });

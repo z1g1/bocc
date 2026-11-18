@@ -3,7 +3,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_GET_EXPIRES, createStorage, extForContentType, mediaKey, readStorageEnv, storageOrigin,
+  DEFAULT_GET_EXPIRES, EMPTY_SHA256, createStorage, extForContentType, mediaKey, readStorageEnv, storageOrigin,
 } from "../../src/lib/admin/storage.mjs";
 import { adminCsp } from "../../src/lib/admin/headers.mjs";
 
@@ -71,6 +71,56 @@ describe("SigV4 presigning", () => {
     assert.throws(() => s.presignPut({ key: "a.jpg", contentType: "image/jpeg", contentLength: -1 }), /contentLength/);
     for (const expiresIn of [0, 1.5, 604801]) {
       assert.throws(() => s.presignGet({ key: "a.jpg", expiresIn }), /expiresIn/);
+    }
+  });
+});
+
+// AWS SigV4 docs, "Authenticating Requests: Using the Authorization Header (AWS
+// Signature Version 4)", example "GET Object": test.txt with Range: bytes=0-9 and an
+// empty payload, virtual-hosted style, same credentials and clock as above.
+describe("SigV4 header signing (server-side requests)", () => {
+  test("matches AWS's documented GET Object Authorization header", () => {
+    const s = createStorage(aws, { now: awsClock });
+    const r = s.signRequest({ method: "GET", key: "test.txt", headers: { Range: "bytes=0-9" } });
+    assert.equal(r.url, "https://examplebucket.s3.amazonaws.com/test.txt");
+    assert.deepEqual(r.headers, {
+      range: "bytes=0-9",
+      "x-amz-content-sha256": EMPTY_SHA256,
+      "x-amz-date": "20130524T000000Z",
+      authorization: "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, " +
+        "SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, " +
+        "Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41",
+    });
+  });
+
+  test("headObject and deleteObject send path-style URLs with no X-Amz- query; the signature is in headers", async () => {
+    const calls = [];
+    const fetch = async (url, init) => { calls.push({ url, init }); return new Response(null, { status: 404 }); };
+    const cfg = readStorageEnv(neonEnv).config;
+    const s = createStorage(cfg, { now: awsClock, fetch });
+    const key = "events/2026-11-24/0b6f6a43-3c5e-4f0e-9a51-7b3c2f9d1e20/original.jpg";
+    assert.equal(await s.headObject({ key }), null);
+    await s.deleteObject({ key });
+    assert.deepEqual(calls.map((c) => c.init.method), ["HEAD", "DELETE"]);
+    for (const { url, init } of calls) {
+      assert.equal(url, `${neonEnv.STORAGE_ENDPOINT}/bocc-media/${key}`);
+      const u = new URL(url);
+      assert.equal(u.search, "");
+      assert.doesNotMatch(url, /X-Amz-|nak_live_example|Signature/i);
+      assert.equal("host" in init.headers, false, "fetch sets Host from the URL");
+      assert.equal(init.headers["x-amz-content-sha256"], EMPTY_SHA256);
+      assert.equal(init.headers["x-amz-date"], "20130524T000000Z");
+      assert.match(init.headers.authorization,
+        /^AWS4-HMAC-SHA256 Credential=nak_live_example\/20130524\/us-east-2\/s3\/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$/);
+      assert.doesNotMatch(init.headers.authorization, /nsk_live_example/);
+    }
+    assert.notEqual(calls[0].init.headers.authorization, calls[1].init.headers.authorization, "the method is signed");
+  });
+
+  test("refuses bad keys", () => {
+    const s = createStorage(aws, { now: awsClock });
+    for (const key of [null, "", "../a", "a?b"]) {
+      assert.throws(() => s.signRequest({ method: "HEAD", key }), /invalid object key/, String(key));
     }
   });
 });

@@ -5,7 +5,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, readNtfyConfig, sendNtfy, socialAlert,
+  alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, NTFY_MESSAGE_MAX, NTFY_TITLE_MAX, ntfyBody, readNtfyConfig, sendNtfy, socialAlert,
 } from "../../src/lib/social-alert/alert.mjs";
 import { runSocialCheck } from "../../src/lib/social-alert/run.mjs";
 import { buildWorkOrder, CHANNEL_KEYS } from "../../src/lib/admin/social-rules.mjs";
@@ -162,26 +162,49 @@ describe("sendNtfy", () => {
   const cfg = { topic: "bocc-secret-topic", server: "https://ntfy.sh" };
   const alert = { title: "BOCC social: x", message: "Line one\n- Facebook: pending", priority: "high", tags: ["warning"], click: "https://716coffee.club/admin/social/next" };
 
-  test("POSTs the message to <server>/<topic> with the ntfy headers", async () => {
+  test("POSTs JSON to the server root; the topic is only in the body", async () => {
     const f = fakeFetch();
     await sendNtfy(alert, cfg, { fetch: f });
     assert.equal(f.calls.length, 1);
     const { url, init } = f.calls[0];
-    assert.equal(url, "https://ntfy.sh/bocc-secret-topic");
+    assert.equal(url, "https://ntfy.sh/");
+    assert.equal(new URL(url).pathname, "/");
+    assert.equal(new URL(url).search, "");
+    assert.doesNotMatch(url, /bocc-secret-topic/);
     assert.equal(init.method, "POST");
-    assert.equal(init.body, alert.message);
-    assert.equal(init.headers.Title, "BOCC social: x");
-    assert.equal(init.headers.Priority, "high");
-    assert.equal(init.headers.Tags, "warning");
-    assert.equal(init.headers.Click, "https://716coffee.club/admin/social/next");
+    assert.deepEqual(init.headers, { "Content-Type": "application/json" });
+    assert.doesNotMatch(JSON.stringify(init.headers), /bocc-secret-topic/);
+    assert.deepEqual(JSON.parse(init.body), {
+      topic: "bocc-secret-topic",
+      title: "BOCC social: x",
+      message: alert.message,
+      priority: 4,
+      tags: ["warning"],
+      click: "https://716coffee.club/admin/social/next",
+    });
     assert.ok(init.signal instanceof AbortSignal);
     assert.equal(init.redirect, "error");
   });
 
-  test("no Click header without a link", async () => {
+  test("a custom server with a path: POSTs to <server>/", async () => {
+    const f = fakeFetch();
+    await sendNtfy(alert, { topic: "bocc-secret-topic", server: "https://ntfy.example.org/push" }, { fetch: f });
+    assert.equal(f.calls[0].url, "https://ntfy.example.org/push/");
+  });
+
+  test("no click field without a link", async () => {
     const f = fakeFetch();
     await sendNtfy({ ...alert, click: null }, cfg, { fetch: f });
-    assert.equal("Click" in f.calls[0].init.headers, false);
+    assert.equal("click" in JSON.parse(f.calls[0].init.body), false);
+  });
+
+  test("the title is one bounded line; the message is bounded", () => {
+    const body = ntfyBody({ ...alert, title: `a\r\nb\u0000${"x".repeat(500)}`, message: "y".repeat(5000) }, "t");
+    assert.ok(body.title.startsWith("a b "));
+    assert.doesNotMatch(body.title, /[\x00-\x1f]/);
+    assert.equal(body.title.length, NTFY_TITLE_MAX);
+    assert.equal(body.message.length, NTFY_MESSAGE_MAX);
+    assert.equal(ntfyBody({ ...alert, priority: "unknown" }, "t").priority, 3);
   });
 
   test("an HTTP error throws, without the topic", async () => {
@@ -238,7 +261,8 @@ describe("runSocialCheck (database read replaced)", () => {
       env, context: prod, now: THURSDAY, fetch: f, readOrder: async () => order({ statuses: { linkedin_page: "pending" } }),
     }));
     assert.equal(result.outcome, "sent");
-    assert.equal(f.calls[0].init.headers.Click, "https://716coffee.club/admin/social/next");
+    assert.equal(JSON.parse(f.calls[0].init.body).click, "https://716coffee.club/admin/social/next");
+    assert.equal(f.calls[0].url, "https://ntfy.sh/");
     assert.match(lines.join("\n"), /alert sent \(BOCC social: 1 of 5 channels/);
     assert.doesNotMatch(lines.join("\n"), /bocc-secret-topic/);
   });
@@ -248,7 +272,7 @@ describe("runSocialCheck (database read replaced)", () => {
     await captureLogs(() => runSocialCheck({
       env, context: { deploy: { context: "branch-deploy" }, site: { url: SITE } }, now: THURSDAY, fetch: f, readOrder: async () => null,
     }));
-    assert.equal(f.calls[0].init.headers.Click, "https://dev--bocc-backend.netlify.app/admin/social/next");
+    assert.equal(JSON.parse(f.calls[0].init.body).click, "https://dev--bocc-backend.netlify.app/admin/social/next");
   });
 
   test("topic unset: logs and stops before reading anything", async () => {
@@ -277,7 +301,7 @@ describe("runSocialCheck (database read replaced)", () => {
       readOrder: async () => { throw new Error("connect failed postgresql://social_checker:pw@host/neondb"); },
     }));
     assert.equal(result.outcome, "failed");
-    assert.match(f.calls[0].init.headers.Title, /the Thursday check failed/);
+    assert.match(JSON.parse(f.calls[0].init.body).title, /the Thursday check failed/);
     assert.doesNotMatch(lines.join("\n"), /pw@host/);
   });
 

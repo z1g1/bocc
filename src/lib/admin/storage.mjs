@@ -1,7 +1,9 @@
 // Media storage seam (ADR 0010): presigned URLs for one private S3-compatible bucket
 // (Neon Object Storage in staging and production, MinIO in scripts/test-db.sh).
-// Dependency-free: AWS Signature Version 4, query-string ("presigned URL") form, with
-// node:crypto. No AWS SDK.
+// Dependency-free: AWS Signature Version 4 with node:crypto. No AWS SDK. Two forms:
+//   query-string ("presigned URL")  for URLs handed to a browser (PUT, GET) or to the
+//                                   operator script (presignBucket)
+//   Authorization header            for requests the server sends itself (HEAD, DELETE)
 //
 // The browser never gets a storage credential. The server checks the user's role,
 // builds the object key itself (mediaKey, never from a user's filename) and hands
@@ -9,9 +11,12 @@
 //   PUT  presignPut  — signs Content-Type (and Content-Length when given), so the
 //                      browser can't upload a different type (or size) with that URL
 //   GET  presignGet  — 10 minutes by default; the gallery re-signs on each render
-// headObject / deleteObject are server-side calls (they presign and fetch at once):
-// HEAD confirms an upload landed before a row goes pending → ready, and DELETE goes
-// with removing an event_media row.
+// headObject / deleteObject are server-side calls, header-signed (signRequest): HEAD
+// confirms an upload landed before a row goes pending → ready, and DELETE goes with
+// removing an event_media row. Their URL is just <origin>/<bucket>/<key>, with no
+// X-Amz-* query: the Netlify runtime's fetch tracing records full outgoing URLs, and
+// the signature, access key id and date stay in headers it skips (authorization, x-*).
+// The browser-facing URLs are never fetched by the server, so they never reach a span.
 //
 // Storage is OPTIONAL. readStorageEnv() never throws: with no STORAGE_* variables (or a
 // broken set) it returns { enabled: false, message }, and the admin keeps working with
@@ -178,6 +183,8 @@ export function mediaKey(eventDate, id, variant, ext) {
 // ─── SigV4 ───────────────────────────────────────────────────────────────────
 
 const sha256Hex = (s) => createHash("sha256").update(s, "utf8").digest("hex");
+/** SHA-256 of an empty body (HEAD, DELETE). */
+export const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const hmac = (key, s) => createHmac("sha256", key).update(s, "utf8").digest();
 
 /** RFC 3986 encoding as SigV4 wants it: only A-Z a-z 0-9 - . _ ~ stay literal. */
@@ -222,58 +229,101 @@ export function createStorage(config, { now = () => new Date(), fetch: fetchImpl
     return span("storage.presign", { "storage.method": method }, () => sign(method, key, opts));
   }
 
-  /** presign's body. */
-  function sign(method, key, { expiresIn, headers = {}, query: extra = {} }) {
+  /**
+   * The parts of a SigV4 request both forms share.
+   * @param {string} method
+   * @param {string|null} key
+   * @param {Record<string, string>} headers  signed, in addition to host
+   */
+  function prepare(method, key, headers) {
     if (key !== null) assertKey(key);
-    assertExpires(expiresIn);
     const t = now();
     const datetime = amzDate(t);
     const date = datetime.slice(0, 8);
     const scope = `${date}/${config.region}/s3/aws4_request`;
-
     const signed = { host, ...Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v).trim()])) };
     for (const v of Object.values(signed)) if (/[\r\n]/.test(v)) throw new Error("storage: invalid header value");
     const names = Object.keys(signed).sort();
-    const signedHeaders = names.join(";");
-
     const bucketPath = config.forcePathStyle ? `/${config.bucket}` : "";
     const path = key === null ? bucketPath || "/" : `${bucketPath}/${uriEncode(key, true)}`;
-    const params = {
-      ...extra,
-      "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
-      "X-Amz-Credential": `${config.accessKeyId}/${scope}`,
-      "X-Amz-Date": datetime,
-      "X-Amz-Expires": String(expiresIn),
-      "X-Amz-SignedHeaders": signedHeaders,
-    };
-    const query = Object.entries(params)
-      .map(([k, v]) => [uriEncode(k), uriEncode(v)])
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([k, v]) => `${k}=${v}`)
-      .join("&");
+    return { t, datetime, date, scope, signed, names, signedHeaders: names.join(";"), path };
+  }
 
+  /** Hex signature over a canonical request. */
+  function signature({ datetime, date, scope, signed, names, signedHeaders, path }, method, query, payloadHash) {
     const canonicalRequest = [
       method,
       path,
       query,
       names.map((n) => `${n}:${signed[n]}\n`).join(""),
       signedHeaders,
-      "UNSIGNED-PAYLOAD",
+      payloadHash,
     ].join("\n");
     const stringToSign = ["AWS4-HMAC-SHA256", datetime, scope, sha256Hex(canonicalRequest)].join("\n");
     const kDate = hmac(`AWS4${config.secretAccessKey}`, date);
     const kSigning = hmac(hmac(hmac(kDate, config.region), "s3"), "aws4_request");
-    const signature = createHmac("sha256", kSigning).update(stringToSign, "utf8").digest("hex");
+    return createHmac("sha256", kSigning).update(stringToSign, "utf8").digest("hex");
+  }
 
+  /** presign's body. */
+  function sign(method, key, { expiresIn, headers = {}, query: extra = {} }) {
+    assertExpires(expiresIn);
+    const p = prepare(method, key, headers);
+    const params = {
+      ...extra,
+      "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+      "X-Amz-Credential": `${config.accessKeyId}/${p.scope}`,
+      "X-Amz-Date": p.datetime,
+      "X-Amz-Expires": String(expiresIn),
+      "X-Amz-SignedHeaders": p.signedHeaders,
+    };
+    const query = Object.entries(params)
+      .map(([k, v]) => [uriEncode(k), uriEncode(v)])
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${k}=${v}`)
+      .join("&");
+    const sig = signature(p, method, query, "UNSIGNED-PAYLOAD");
     return {
       method,
-      url: `${origin}${path}?${query}&X-Amz-Signature=${signature}`,
-      expiresAt: new Date(t.getTime() + expiresIn * 1000),
+      url: `${origin}${p.path}?${query}&X-Amz-Signature=${sig}`,
+      expiresAt: new Date(p.t.getTime() + expiresIn * 1000),
     };
+  }
+
+  /**
+   * A header-signed request for the server to send itself: the URL carries no query
+   * (no credential, date or signature), only <origin>/<bucket>/<key>. The body is
+   * empty (its hash is signed as x-amz-content-sha256).
+   * @param {{ method: string, key: string, headers?: Record<string, string> }} opts
+   *   headers are signed and returned with the auth headers
+   * @returns {{ method: string, url: string, headers: Record<string, string> }}
+   *   headers: Authorization, x-amz-date, x-amz-content-sha256 and any given; never
+   *   Host (fetch sets it from the URL, the same value that was signed)
+   */
+  function signRequest({ method, key, headers = {} }) {
+    return span("storage.sign", { "storage.method": method }, () => {
+      if (key === null || key === undefined) throw new Error("storage: invalid object key");
+      const p0 = prepare(method, key, headers); // validates, fixes the clock once
+      const amz = { "x-amz-content-sha256": EMPTY_SHA256, "x-amz-date": p0.datetime };
+      const p = { ...p0, signed: { ...p0.signed, ...amz } };
+      p.names = Object.keys(p.signed).sort();
+      p.signedHeaders = p.names.join(";");
+      const sig = signature(p, method, "", EMPTY_SHA256);
+      const out = Object.fromEntries(p.names.filter((n) => n !== "host").map((n) => [n, p.signed[n]]));
+      out.authorization = `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${p.scope}, SignedHeaders=${p.signedHeaders}, Signature=${sig}`;
+      return { method, url: `${origin}${p.path}`, headers: out };
+    });
+  }
+
+  /** Send a header-signed request with an empty body. */
+  function send(method, key) {
+    const r = signRequest({ method, key });
+    return fetchImpl(r.url, { method, headers: r.headers });
   }
 
   return {
     origin,
+    signRequest,
 
     /**
      * A URL the browser PUTs one file to. Send exactly `headers` with it.
@@ -319,7 +369,7 @@ export function createStorage(config, { now = () => new Date(), fetch: fetchImpl
      * @returns {Promise<null | { contentType: string|null, contentLength: number, etag: string|null }>}
      */
     async headObject({ key }) {
-      const res = await fetchImpl(presign("HEAD", key, { expiresIn: 60 }).url, { method: "HEAD" });
+      const res = await send("HEAD", key);
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`storage: HEAD failed with ${res.status}`);
       return {
@@ -334,7 +384,7 @@ export function createStorage(config, { now = () => new Date(), fetch: fetchImpl
      * @param {{ key: string }} opts
      */
     async deleteObject({ key }) {
-      const res = await fetchImpl(presign("DELETE", key, { expiresIn: 60 }).url, { method: "DELETE" });
+      const res = await send("DELETE", key);
       await res.body?.cancel();
       if (!res.ok && res.status !== 404) throw new Error(`storage: DELETE failed with ${res.status}`);
     },

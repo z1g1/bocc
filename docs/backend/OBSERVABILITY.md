@@ -31,7 +31,7 @@ Netlify ingests **OpenTelemetry traces only**. It has no OTLP endpoint for metri
 
 | Signal | What the app does | Where to see it |
 | --- | --- | --- |
-| Traces | `span(name, attrs, fn)`. One span per on-demand request, named `<METHOD> <route pattern>` (e.g. `GET /events/[date]`), from `src/middleware.ts`. Under it: `db.query` (every query on the admin, site and social pools), `db.transaction` (`withAudit`), `cdn.purge`, `storage.presign`, `social.check`, `ntfy.send`, plus the runtime's own fetch/http client spans. | Netlify Observability (traces), once tracing is on |
+| Traces | `span(name, attrs, fn)`. One span per on-demand request, named `<METHOD> <route pattern>` (e.g. `GET /events/[date]`), from `src/middleware.ts`. Under it: `db.query` (every query on the admin, site and social pools), `db.transaction` (`withAudit`), `cdn.purge`, `storage.presign` (browser URLs), `storage.sign` (server HEAD/DELETE), `social.check`, `ntfy.send`, plus the runtime's own fetch/http client spans. | Netlify Observability (traces), once tracing is on |
 | Events | `event(name, attrs)` adds a span event. `withAudit` adds `audit` with the `action` and `target_table` when it commits. | On the span in the trace view |
 | Metrics | Netlify takes no OTLP metrics, so measurements are numeric span attributes (`db.rows`, `http.response.status_code`) and per-request counters (`count()`). The middleware's `request` log line carries `status`, `duration_ms`, `db_queries` and `db_ms`. | Netlify Observability's built-in request and function charts. Per-request numbers are in the `request` log lines and span attributes |
 | Logs | `log(level, msg, attrs)` writes one JSON line: `{"level","msg",...attrs,"trace_id","span_id"}`. The trace ids are there whenever a span is active, so a log line leads to its trace. | Logs → Functions (pick `ssr` or `social-check`), and Observability |
@@ -62,16 +62,27 @@ keys or URLs, attendee names or emails, or check-in payloads. As a backstop, eve
 attribute and every log message goes through `redact()`, which strips postgres URLs,
 `Bearer` tokens and `nfp_` tokens.
 
-**Known gap once tracing is on.** The runtime's own fetch instrumentation (not ours)
-records outgoing request URLs. Two of ours carry secrets in the URL:
+### What the runtime's fetch tracing records
 
-- the ntfy push (`https://ntfy.sh/<topic>`; the topic is the secret)
-- the server-side S3 HEAD/DELETE calls (presigned URLs with the access key id and a
-  signature that expires after 60 s)
+The runtime's own fetch and http client instrumentation (not ours) records the **full URL**
+of every outgoing request, path and query included, plus the method and status. It skips
+headers matching `authorization|x-.*|via|alt-svc|server`. Request and response bodies are
+not recorded. So no secret may sit in an outgoing URL; secrets go in a skipped header or
+the body. What the server sends, and what its span shows:
 
-The runtime skips `authorization` and `x-*` headers, but not URL paths or query strings.
-Before turning tracing on, consider posting to ntfy's JSON endpoint (the topic goes in the
-body), or accept the exposure in the trace store.
+| Request | URL recorded | Where the secret is |
+| --- | --- | --- |
+| ntfy push (`social-check`) | `https://ntfy.sh/` (the server root; `SOCIAL_ALERT_NTFY_SERVER` + `/` if set) | the topic is only in the JSON body ([publish as JSON](https://docs.ntfy.sh/publish/#publish-as-json)) |
+| Storage HEAD (media complete) and DELETE (media removal) | `<STORAGE_ENDPOINT>/<bucket>/<key>`, no query | SigV4 header signing: `Authorization`, `x-amz-date`, `x-amz-content-sha256` (all skipped). The object key is in the URL; it is built from the event date and a random uuid, not from user input |
+| Cache purge (`@netlify/cache` `purgeCache`) | `https://api.netlify.com/api/v1/purge` | the purge token is a `Bearer` `Authorization` header (skipped); tags and scope are in the body |
+
+Postgres (Neon) is TCP, not HTTP, and shows up only as our `db.query` spans. Better Auth
+makes no outgoing HTTP calls in this setup (no social providers or email flows, its
+telemetry is off, passkeys verify locally). The browser-facing presigned URLs (upload
+PUT, gallery and download GET) carry query-string credentials, but the server only
+builds them and hands them to the browser; it never fetches them, so they never reach a
+span. The operator scripts (`scripts/storage-cors.mjs`, `scripts/signin-photos/`) run on
+a laptop, outside any traced function.
 
 ## What isn't possible
 

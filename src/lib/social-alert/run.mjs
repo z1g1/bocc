@@ -18,7 +18,9 @@
 // Logs one line per run, prefixed "[social-check]", as JSON (src/lib/telemetry.mjs
 // log()). Nothing logged contains the topic or a connection string. Traced as one
 // "social.check" span (outcome, date) with the reads as "db.query" spans and the ntfy
-// push as "ntfy.send" when Netlify tracing is on.
+// push as "ntfy.send" when Netlify tracing is on. The push is ntfy JSON publishing to the
+// server root (alert.mjs sendNtfy), so the runtime's fetch span records `<server>/` and
+// never the topic.
 
 import pg from "pg";
 import { toAdminPgConfig } from "../auth/pg-config.mjs";

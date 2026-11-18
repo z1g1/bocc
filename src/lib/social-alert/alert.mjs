@@ -10,11 +10,14 @@
 //                                      cancelled
 //   alertSiteUrl({ deployContext, siteUrl, env })   the origin the Click link opens
 //   readNtfyConfig(env)                { topic, server } | { problem } | null (unset)
-//   sendNtfy(alert, config, { fetch }) POST to <server>/<topic>; 5 s timeout; errors
+//   sendNtfy(alert, config, { fetch }) POST JSON to the server root; 5 s timeout; errors
 //                                      never contain the topic
 //
-// An alert is { title, message, priority, tags, click }. The title is plain ASCII
-// (ntfy takes it as an HTTP header); the message is UTF-8 text.
+// An alert is { title, message, priority, tags, click }. The push uses ntfy's JSON
+// publishing (https://docs.ntfy.sh/publish/#publish-as-json): the request goes to the
+// server root, `<server>/`, and the topic travels only in the body. The URL never holds
+// the secret, so the Netlify runtime's fetch tracing (which records full outgoing URLs)
+// can't leak it.
 
 import { CHANNELS, CHANNEL_KEYS } from "../admin/social-rules.mjs";
 
@@ -170,8 +173,30 @@ export function readNtfyConfig(env = {}) {
   return { topic, server };
 }
 
-/** Header values must be latin1; titles are ASCII already, this only guards. */
-const headerSafe = (s) => String(s).replace(/[^\x20-\x7e]/g, "?");
+/** ntfy's JSON `priority` is an integer 1-5; alerts name it like the header does. */
+const PRIORITY = Object.freeze({ min: 1, low: 2, default: 3, high: 4, max: 5, urgent: 5 });
+/** Bounds well inside ntfy's limits (4,096-byte message; the title is a short line). */
+export const NTFY_TITLE_MAX = 200;
+export const NTFY_MESSAGE_MAX = 3000;
+/** One line, no control characters, bounded. JSON escaping does the rest. */
+const oneLine = (s, max) => String(s).replace(/[\x00-\x1f\x7f]+/g, " ").trim().slice(0, max);
+
+/**
+ * The JSON body for one alert (exported for tests).
+ * @param {{ title: string, message: string, priority: string, tags: string[], click: string|null }} alert
+ * @param {string} topic
+ */
+export function ntfyBody(alert, topic) {
+  const body = {
+    topic,
+    title: oneLine(alert.title, NTFY_TITLE_MAX),
+    message: String(alert.message).slice(0, NTFY_MESSAGE_MAX),
+    priority: PRIORITY[alert.priority] ?? PRIORITY.default,
+    tags: alert.tags.map(String),
+  };
+  if (alert.click) body.click = alert.click;
+  return body;
+}
 
 /**
  * Publish one alert. Throws an Error whose message never contains the topic.
@@ -180,19 +205,13 @@ const headerSafe = (s) => String(s).replace(/[^\x20-\x7e]/g, "?");
  * @param {{ fetch?: typeof fetch, timeoutMs?: number }} [opts]
  */
 export async function sendNtfy(alert, { topic, server }, { fetch: doFetch = globalThis.fetch, timeoutMs = NTFY_TIMEOUT_MS } = {}) {
-  const headers = {
-    "Content-Type": "text/plain; charset=utf-8",
-    Title: headerSafe(alert.title),
-    Priority: alert.priority,
-    Tags: alert.tags.join(","),
-  };
-  if (alert.click) headers.Click = alert.click;
   let res;
   try {
-    res = await doFetch(`${server}/${topic}`, {
+    // The server root, never <server>/<topic>: the topic is only in the JSON body.
+    res = await doFetch(`${server}/`, {
       method: "POST",
-      headers,
-      body: alert.message,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ntfyBody(alert, topic)),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: "error",
     });
