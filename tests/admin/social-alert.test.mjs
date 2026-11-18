@@ -145,9 +145,8 @@ describe("runSocialCheck end to end", () => {
     const calls = [];
     const fetch = async (url, init) => { calls.push({ url, init }); return new Response("{}"); };
     const lines = [];
-    const { log, error } = console;
-    console.log = (...a) => lines.push(a.join(" "));
-    console.error = (...a) => lines.push(a.join(" "));
+    const { log, info, error } = console;
+    console.log = console.info = console.error = (...a) => lines.push(a.join(" "));
     let result;
     try {
       result = await runSocialCheck({
@@ -156,7 +155,7 @@ describe("runSocialCheck end to end", () => {
         now: thursday,
         fetch,
       });
-    } finally { console.log = log; console.error = error; }
+    } finally { Object.assign(console, { log, info, error }); }
     assert.equal(result.outcome, "sent", lines.join("\n"));
     assert.equal(result.date, d);
     assert.equal(calls.length, 1);

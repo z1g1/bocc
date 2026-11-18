@@ -15,6 +15,7 @@
 
 import pg from "pg";
 import { toAdminPgConfig } from "../auth/pg-config.mjs";
+import { instrumentPg, log } from "../telemetry.mjs";
 
 /**
  * @param {Record<string, string|undefined>} [env]
@@ -49,7 +50,7 @@ let pool = null;
 export function sitePool() {
   if (!pool) {
     const { dbUrl, poolMax } = readSiteEnv();
-    pool = new pg.Pool(toAdminPgConfig(dbUrl, {
+    pool = instrumentPg(new pg.Pool(toAdminPgConfig(dbUrl, {
       max: poolMax,
       // Neon may be scaled to zero; a cold start takes a few seconds. Past that the
       // page answers 503 rather than holding the visitor.
@@ -60,8 +61,8 @@ export function sitePool() {
       // the dev pooled URL: SHOW statement_timeout -> 0).
       query_timeout: 6000,
       application_name: "bocc-site",
-    }));
-    pool.on("error", (err) => console.error("[site db] idle client error:", err.message));
+    })), "site");
+    pool.on("error", (err) => log("error", `[site db] idle client error: ${err.message}`));
   }
   return pool;
 }

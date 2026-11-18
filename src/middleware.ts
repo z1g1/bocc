@@ -18,12 +18,24 @@
 // no database). APIs keep their plain JSON/text bodies.
 // Private paths (the above plus /api/auth/*, /login/, /logout) get noindex,
 // no-store and the admin CSP (src/lib/admin/headers.mjs).
+//
+// Telemetry (src/lib/telemetry.mjs, docs/backend/OBSERVABILITY.md): every on-demand
+// request (not prerendered pages) runs in one span named "<METHOD> <route pattern>",
+// e.g. "GET /events/[date]". The Netlify runtime makes no server span of its own (it
+// only continues the incoming trace context), so this is the function's top span and
+// the db/purge/storage spans nest under it. Attributes: method, route, status, and the
+// role names when signed in (never the user id or email). 5xx marks it ERROR. One
+// "request" log line per request carries the same fields plus duration_ms and the db
+// counters (the metrics, since Netlify takes no OTLP metrics). With tracing off it is
+// the same code path minus the span.
 import { defineMiddleware } from "astro:middleware";
+import type { APIContext, MiddlewareNext } from "astro";
 import { guardRequest, isPrivatePath, isProtectedPath } from "./lib/admin/guard.mjs";
 import { withPrivateHeaders } from "./lib/admin/headers.mjs";
 import { storageOrigin } from "./lib/admin/storage.mjs";
 import { adminFailure } from "./lib/admin/log.mjs";
 import { errorPageResponse } from "./lib/admin/error-page.mjs";
+import { log, metrics, span } from "./lib/telemetry.mjs";
 
 const THEMED = new Set([403, 404]);
 
@@ -37,9 +49,34 @@ function themeErrors(ctx: { url: URL; request: Request; locals: App.Locals }, re
   return errorPageResponse(response.status as 403 | 404, { user, roles });
 }
 
-export const onRequest = defineMiddleware(async (ctx, next) => {
+export const onRequest = defineMiddleware((ctx, next) => {
+  if (ctx.isPrerendered) return next();
+  const method = ctx.request.method;
+  const route = ctx.routePattern || "unknown";
+  const started = performance.now();
+  return span(`${method} ${route}`, { "http.request.method": method, "http.route": route }, async (h) => {
+    let status = 500;
+    try {
+      const response = await gate(ctx, next);
+      status = response.status;
+      return response;
+    } finally {
+      const roles = ((ctx.locals as { roles?: string[] }).roles ?? []).join(",");
+      const attrs = { "http.response.status_code": status, ...(roles ? { "enduser.role": roles } : {}) };
+      h.setAttributes(attrs);
+      if (status >= 500) h.setError(`HTTP ${status}`);
+      log(status >= 500 ? "error" : "info", "request", {
+        method, route, status, ...(roles ? { role: roles } : {}),
+        duration_ms: Math.round(performance.now() - started), ...metrics(),
+      });
+    }
+  });
+});
+
+/** The admin gate (see the top of this file). */
+async function gate(ctx: APIContext, next: MiddlewareNext): Promise<Response> {
   const path = ctx.url.pathname;
-  if (ctx.isPrerendered || !isPrivatePath(path)) return next();
+  if (!isPrivatePath(path)) return next();
 
   const dev = import.meta.env.DEV;
   const mediaOrigin = storageOrigin(); // null when media storage isn't configured
@@ -61,4 +98,4 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 
   const response = isProtectedPath(path) ? themeErrors(ctx, await next()) : await next();
   return withPrivateHeaders(response, { setCookies, dev, mediaOrigin });
-});
+}

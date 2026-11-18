@@ -23,6 +23,7 @@
 
 import { ROLES, requireRole } from "./roles.mjs";
 import { checkOrigin } from "./csrf.mjs";
+import { log } from "../telemetry.mjs";
 
 /** Fixed notices for the redirect after a change (?done=…); nothing user-supplied is echoed. */
 export const NOTICES = Object.freeze({
@@ -106,7 +107,7 @@ async function createAction(form, actorId) {
     // Undo: a user without the role and audit row must not be left behind.
     // (admin_app may DELETE in auth.*; the FK cascades remove the credential account.)
     await query(`delete from auth."user" where id = $1`, [user.id]).catch((undoErr) => {
-      console.error("[admin users] could not remove half-created user", user.id, undoErr.message);
+      log("error", `[admin users] could not remove half-created user: ${undoErr.message}`, { user_id: user.id });
     });
     throw err;
   }
@@ -239,7 +240,7 @@ export async function usersPage(request, locals, opts = {}) {
       };
     } catch (err) {
       if (!(err instanceof UserActionError)) {
-        console.error("[admin users]", field(data, "action"), err?.message);
+        log("error", `[admin users] ${field(data, "action")} failed: ${err?.message}`, { action: field(data, "action") });
         throw err;
       }
       status = err.status;

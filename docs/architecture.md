@@ -203,3 +203,9 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 - Allows: self-hosted fonts and scripts, Luma embeds (`frame-src`), images over https, Google
   Analytics origins (website only), and form posts to Google Forms
 - Inline scripts are allowed (`'unsafe-inline'`); there is no nonce or hash yet
+
+## Observability
+- OpenTelemetry traces for the SSR function and `social-check`, structured JSON logs with
+  trace ids, and request metrics in span attributes and log lines: see
+  [backend/OBSERVABILITY.md](backend/OBSERVABILITY.md) (`src/lib/telemetry.mjs`). Netlify
+  ingests traces only, when it has tracing turned on for the site

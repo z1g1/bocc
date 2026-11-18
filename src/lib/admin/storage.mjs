@@ -32,6 +32,7 @@
 
 import { createHash, createHmac } from "node:crypto";
 import { isLocalHost } from "../auth/env.mjs";
+import { span } from "../telemetry.mjs";
 
 export const DEFAULT_REGION = "us-east-2";
 export const DEFAULT_PUT_EXPIRES = 300; // 5 min: long enough for a phone on bad signal
@@ -215,7 +216,14 @@ export function createStorage(config, { now = () => new Date(), fetch: fetchImpl
    * @param {{ expiresIn: number, headers?: Record<string, string>, query?: Record<string, string> }} opts
    *   headers are signed; query adds signed sub-resource parameters
    */
-  function presign(method, key, { expiresIn, headers = {}, query: extra = {} }) {
+  function presign(method, key, opts) {
+    // A "storage.presign" span (src/lib/telemetry.mjs): the method only, never the
+    // key, the URL or the credential.
+    return span("storage.presign", { "storage.method": method }, () => sign(method, key, opts));
+  }
+
+  /** presign's body. */
+  function sign(method, key, { expiresIn, headers = {}, query: extra = {} }) {
     if (key !== null) assertKey(key);
     assertExpires(expiresIn);
     const t = now();

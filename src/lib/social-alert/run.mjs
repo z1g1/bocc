@@ -15,8 +15,10 @@
 //   DB_CA_CERT                optional PEM CA override (src/lib/auth/pg-config.mjs)
 //   URL, BETTER_AUTH_URL      for the Click link (alert.mjs alertSiteUrl)
 //
-// Logs one line per run, prefixed "[social-check]". Nothing logged contains the topic
-// or a connection string.
+// Logs one line per run, prefixed "[social-check]", as JSON (src/lib/telemetry.mjs
+// log()). Nothing logged contains the topic or a connection string. Traced as one
+// "social.check" span (outcome, date) with the reads as "db.query" spans and the ntfy
+// push as "ntfy.send" when Netlify tracing is on.
 
 import pg from "pg";
 import { toAdminPgConfig } from "../auth/pg-config.mjs";
@@ -24,10 +26,12 @@ import { buildWorkOrder, CHANNEL_KEYS } from "../admin/social-rules.mjs";
 import {
   alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, readNtfyConfig, sendNtfy, socialAlert,
 } from "./alert.mjs";
+import { instrumentPg, log as logLine, redact, span } from "../telemetry.mjs";
 
-const redact = (text) => String(text).replace(/postgres(ql)?:\/\/\S+/gi, "<redacted-url>");
-const log = (msg) => console.log(`[social-check] ${msg}`);
-const logError = (msg) => console.error(`[social-check] ${msg}`);
+const log = (msg) => logLine("info", `[social-check] ${msg}`);
+const logError = (msg) => logLine("error", `[social-check] ${msg}`);
+/** The ntfy push, traced. Attributes: never the topic or the server URL. */
+const push = (alert, ntfy, doFetch) => span("ntfy.send", () => sendNtfy(alert, ntfy, { fetch: doFetch }));
 
 /**
  * The work order for `date` as buildWorkOrder() returns it, or null when there is no
@@ -70,13 +74,13 @@ export async function readWorkOrder(db, date) {
 async function connect(env) {
   const url = env.SOCIAL_CHECK_DB_URL;
   if (!url) throw new Error("SOCIAL_CHECK_DB_URL is not set (pooled social_checker connection string)");
-  const client = new pg.Client(toAdminPgConfig(url, {
+  const client = instrumentPg(new pg.Client(toAdminPgConfig(url, {
     // Neon may be scaled to zero; the whole run must stay well inside the scheduled
     // function's 30 s limit.
     connectionTimeoutMillis: 8000,
     query_timeout: 6000,
     application_name: "bocc-social-check",
-  }, env));
+  }, env)), "social");
   client.on("error", (err) => logError(`client error: ${redact(err.message)}`));
   await client.connect();
   return client;
@@ -89,7 +93,17 @@ async function connect(env) {
  *   readOrder replaces the database read (tests); fetch replaces the ntfy call
  * @returns {Promise<{ outcome: "skipped"|"ok"|"sent"|"failed", date?: string, alert?: object }>}
  */
-export async function runSocialCheck({ env = process.env, context = undefined, now = new Date(), fetch: doFetch = globalThis.fetch, readOrder } = {}) {
+export function runSocialCheck(opts = {}) {
+  return span("social.check", async (h) => {
+    const result = await check(opts);
+    h.setAttributes({ "social.outcome": result.outcome, "social.date": result.date });
+    if (result.outcome === "failed") h.setError("social check failed");
+    return result;
+  });
+}
+
+/** runSocialCheck's body. */
+async function check({ env = process.env, context = undefined, now = new Date(), fetch: doFetch = globalThis.fetch, readOrder } = {}) {
   const deployContext = context?.deploy?.context ?? null;
   if (!contextAllowed(deployContext)) {
     log(`skipped: deploy context ${deployContext}`);
@@ -117,7 +131,7 @@ export async function runSocialCheck({ env = process.env, context = undefined, n
   } catch (err) {
     logError(`${date}: could not read the work order: ${redact(err?.message ?? err)}`);
     const alert = failureAlert({ date, siteUrl });
-    try { await sendNtfy(alert, ntfy, { fetch: doFetch }); log(`${date}: failure alert sent`); } catch (e) { logError(`${date}: ${e.message}`); }
+    try { await push(alert, ntfy, doFetch); log(`${date}: failure alert sent`); } catch (e) { logError(`${date}: ${e.message}`); }
     return { outcome: "failed", date, alert };
   }
 
@@ -127,7 +141,7 @@ export async function runSocialCheck({ env = process.env, context = undefined, n
     return { outcome: "ok", date };
   }
   try {
-    await sendNtfy(alert, ntfy, { fetch: doFetch });
+    await push(alert, ntfy, doFetch);
   } catch (err) {
     logError(`${date}: alert not sent (${alert.title}): ${err.message}`);
     return { outcome: "failed", date, alert };

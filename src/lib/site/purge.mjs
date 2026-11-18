@@ -37,21 +37,11 @@
 // and purgeCache() reads it; nothing is passed here.
 
 import { LIST_TAG, eventTag } from "./http.mjs";
+import { describeError, log, span } from "../telemetry.mjs";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ALIAS = /^[a-z0-9][a-z0-9-]{0,62}$/i;
 export const PURGE_TIMEOUT_MS = 3000;
-
-const redact = (text) =>
-  String(text)
-    .replace(/postgres(ql)?:\/\/\S+/gi, "<redacted-url>")
-    .replace(/Bearer\s+\S+/gi, "Bearer <redacted>")
-    .replace(/nfp_[A-Za-z0-9_-]+/g, "<redacted-token>");
-
-const describe = (err) => {
-  const e = /** @type {any} */ (err);
-  return e && typeof e === "object" ? `${e.name ?? "Error"}: ${e.message ?? ""}` : String(err);
-};
 
 /**
  * Which deploy to purge, from the request's Netlify context.
@@ -86,7 +76,19 @@ export function purgeScope(locals) {
  *   purge/timeoutMs: injected by tests; default purgeCache from @netlify/cache, 3000 ms
  * @returns {Promise<{ ok: boolean, skipped?: string }>}
  */
-export async function purgeEventPages(dates, opts = {}) {
+export function purgeEventPages(dates, opts = {}) {
+  // Traced as "cdn.purge" (src/lib/telemetry.mjs): tag count and the outcome, never
+  // the token. A failed purge is swallowed, so the span is marked ERROR by hand.
+  return span("cdn.purge", async (h) => {
+    const r = await purge(dates, opts);
+    h.setAttributes({ "purge.ok": r.ok, "purge.skipped": r.skipped });
+    if (!r.ok) h.setError(r.skipped ?? "purge failed");
+    return r;
+  });
+}
+
+/** purgeEventPages' body. @returns {Promise<{ ok: boolean, skipped?: string }>} */
+async function purge(dates, opts) {
   try {
     const valid = [...new Set((Array.isArray(dates) ? dates : []).filter((d) => typeof d === "string" && DATE.test(d)))];
     if (valid.length === 0) return { ok: true, skipped: "no dates" };
@@ -94,25 +96,25 @@ export async function purgeEventPages(dates, opts = {}) {
     const where = purgeScope(opts.locals);
     if ("local" in where) return { ok: true, skipped: "not on Netlify" };
     if ("refused" in where) {
-      console.error(`[site] purge refused (${where.refused}); not purging unscoped. Pages refresh when their cache expires.`);
+      log("error", `[site] purge refused (${where.refused}); not purging unscoped. Pages refresh when their cache expires.`);
       return { ok: false, skipped: "no deploy alias" };
     }
 
     const tags = [...valid.map(eventTag), LIST_TAG];
-    const purge = opts.purge ?? (await import("@netlify/cache")).purgeCache;
+    const purgeCache = opts.purge ?? (await import("@netlify/cache")).purgeCache;
     const timeoutMs = opts.timeoutMs ?? PURGE_TIMEOUT_MS;
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(() => reject(new Error(`timed out after ${timeoutMs} ms`)), timeoutMs);
     });
     try {
-      await Promise.race([Promise.resolve().then(() => purge({ tags, ...where.scope })), timeout]);
+      await Promise.race([Promise.resolve().then(() => purgeCache({ tags, ...where.scope })), timeout]);
     } finally {
       clearTimeout(timer);
     }
     return { ok: true };
   } catch (err) {
-    console.error(`[site] purge failed: ${redact(describe(err))}`);
+    log("error", `[site] purge failed: ${describeError(err)}`);
     return { ok: false };
   }
 }

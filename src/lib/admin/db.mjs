@@ -29,8 +29,13 @@
 //   }, { action: "attendee.opt_out", targetTable: "attendees", targetId: attendeeId });
 
 import { pool } from "../auth/auth.mjs";
+import { event, span } from "../telemetry.mjs";
 
 export { pool };
+
+// Tracing (src/lib/telemetry.mjs): the pool is instrumented in auth.mjs, so every
+// query below is a "db.query" span; withAudit() adds a "db.transaction" span around
+// its queries and an "audit" span event with the action when it commits.
 
 /**
  * One-off read on the shared pool.
@@ -86,7 +91,12 @@ export async function writeAudit(db, actorUserId, entry) {
  * @param {AuditEntry | ((result: T) => AuditEntry)} auditEntry
  * @returns {Promise<T>}
  */
-export async function withAudit(actorUserId, fn, auditEntry) {
+export function withAudit(actorUserId, fn, auditEntry) {
+  return span("db.transaction", { "db.system": "postgresql" }, () => runAudited(actorUserId, fn, auditEntry));
+}
+
+/** withAudit's body. */
+async function runAudited(actorUserId, fn, auditEntry) {
   const client = await pool.connect();
   let broken;
   try {
@@ -95,6 +105,7 @@ export async function withAudit(actorUserId, fn, auditEntry) {
     const entry = typeof auditEntry === "function" ? auditEntry(result) : auditEntry;
     await writeAudit(client, actorUserId, entry);
     await client.query("commit");
+    event("audit", { action: entry.action, target_table: entry.targetTable });
     return result;
   } catch (err) {
     try {

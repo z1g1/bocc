@@ -12,10 +12,22 @@
 // Functions, pick the dev branch deploy, open `social-check`, "Run now". Scheduled
 // functions can't be invoked by URL. See docs/admin/PHASE5_RELEASE.md.
 
+// Telemetry (docs/backend/OBSERVABILITY.md): this is a v2 function, so when Netlify
+// tracing is on the run is a "social.check" span (src/lib/social-alert/run.mjs) under
+// the invocation's trace. Its log lines are JSON with the trace id either way.
+
 import { runSocialCheck } from "../../../src/lib/social-alert/run.mjs";
+import { describeError, log } from "../../../src/lib/telemetry.mjs";
 
 export default async (_req, context) => {
-  await runSocialCheck({ env: process.env, context });
+  try {
+    await runSocialCheck({ env: process.env, context });
+  } catch (err) {
+    // runSocialCheck logs and alerts on every expected failure; this is a bug. Log it
+    // without secrets, then fail the invocation as before.
+    log("error", `[social-check] unexpected failure: ${describeError(err)}`);
+    throw err;
+  }
 };
 
 export const config = {

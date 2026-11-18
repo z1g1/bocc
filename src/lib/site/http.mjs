@@ -33,6 +33,8 @@
 // netlify.toml's [[headers]] apply to static files only, not function responses, so
 // the site-wide security headers are repeated here.
 
+import { describeError, log, setError } from "../telemetry.mjs";
+
 const TZ = "America/New_York";
 export const SWR_SECONDS = 3600;
 export const UNKNOWN_DATE_MAX_AGE = 300;
@@ -73,14 +75,13 @@ export function setPublicHeaders(headers, mode, { tag, now } = {}) {
   return headers;
 }
 
-const redact = (text) =>
-  String(text)
-    .replace(/postgres(ql)?:\/\/\S+/gi, "<redacted-url>")
-    .replace(/Bearer\s+\S+/gi, "Bearer <redacted>");
-
-/** Log a public-site failure without secrets: error name, message and code only. */
+/**
+ * Log a public-site failure without secrets: error name, message and code only
+ * (redacted), as one JSON line correlated with the request's trace
+ * (src/lib/telemetry.mjs), and mark the active span failed.
+ */
 export function logSiteFailure(where, err) {
-  const e = /** @type {any} */ (err);
-  const detail = e && typeof e === "object" ? `${e.name ?? "Error"}: ${e.message ?? ""}${e.code ? ` (${e.code})` : ""}` : String(err);
-  console.error(`[site] ${where} failed: ${redact(detail)}`);
+  const detail = describeError(err);
+  setError(detail);
+  log("error", `[site] ${where} failed: ${detail}`);
 }

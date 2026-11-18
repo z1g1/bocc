@@ -215,10 +215,9 @@ describe("runSocialCheck (database read replaced)", () => {
   /** Capture console output for the duration of fn. */
   async function captureLogs(fn) {
     const lines = [];
-    const { log, error } = console;
-    console.log = (...a) => lines.push(a.join(" "));
-    console.error = (...a) => lines.push(a.join(" "));
-    try { return { result: await fn(), lines }; } finally { console.log = log; console.error = error; }
+    const { log, info, error } = console;
+    console.log = console.info = console.error = (...a) => lines.push(a.join(" "));
+    try { return { result: await fn(), lines }; } finally { Object.assign(console, { log, info, error }); }
   }
 
   test("checks next Tuesday and sends nothing when all is well", async () => {

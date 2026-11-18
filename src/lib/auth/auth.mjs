@@ -20,13 +20,16 @@ import { PostgresDialect } from "kysely";
 import pg from "pg";
 import { readAdminEnv } from "./env.mjs";
 import { toAdminPgConfig } from "./pg-config.mjs";
+import { instrumentPg, log } from "../telemetry.mjs";
 
 export const adminEnv = readAdminEnv();
 
 /** The one admin_app pool. Use it through src/lib/admin/db.mjs. */
-export const pool = new pg.Pool(toAdminPgConfig(adminEnv.dbUrl, { max: adminEnv.poolMax }));
+// Every query on it (admin pages, Better Auth through Kysely) is a "db.query" span when
+// Netlify tracing is on (src/lib/telemetry.mjs); a no-op otherwise.
+export const pool = instrumentPg(new pg.Pool(toAdminPgConfig(adminEnv.dbUrl, { max: adminEnv.poolMax })), "admin");
 // An idle client dropped by Neon (scale to zero) must not crash the process.
-pool.on("error", (err) => console.error("[admin db] idle client error:", err.message));
+pool.on("error", (err) => log("error", `[admin db] idle client error: ${err.message}`));
 
 const DAY = 60 * 60 * 24;
 
