@@ -162,6 +162,8 @@ The Click link uses existing variables: Netlify's own `URL` / site URL, and `BET
 
 ## Production (together with Phases 3 and 4)
 
+> **Released 2026-11-18**: steps 8 to 11 done. Grants checked, `social_checker` fenced (no `original_key`, no attendees, no writes), `SOCIAL_CHECK_DB_URL` set and a new production ntfy topic in `SOCIAL_ALERT_NTFY_TOPIC`, merged as `b9520de`. Step 12's checks are still open.
+
 These steps fold into the combined release in [PHASE4_RELEASE.md](PHASE4_RELEASE.md) ("Production
 (together with Phase 3)"). Everything up to the merge happens before the one merge-and-push
 (PHASE4_RELEASE.md step 13). The checks come after it.

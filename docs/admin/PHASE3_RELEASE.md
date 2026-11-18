@@ -54,6 +54,8 @@ The 403 is there, but it's a generic white page. Need an intheme experince for 4
 
 ## Production
 
+> **Released 2026-11-18** (with Phases 4 and 5): steps 6 to 9 done. Migrations applied, grants checked, `STORAGE_*` set in Production, Google Form import 135 created (re-run 135 unchanged), sign-in photos 45 imported plus 2024-11-12 as `held`, merged as `b9520de`. Step 10's on-device checks are still open.
+
 6. **Migrate Neon `production`** (owner; `.env.local` points there):
    `cd backend && npm run migrate:status && npm run migrate`. Expect exactly the three migrations
    above. Check the grants: `admin_app` has SELECT/INSERT/UPDATE on `events`, `event_reports`,
