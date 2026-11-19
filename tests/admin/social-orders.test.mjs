@@ -497,6 +497,43 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     assert.ok(!j.includes("original.mp4") && !j.includes("originalKey"), "no storage key in the JSON");
     assert.equal(JSON.parse(j).order.channels.length, 5);
   });
+
+  test("the work order's cover: the Event Image (the logo, no signing) or the override's presigned link", async () => {
+    const D = "2095-01-11";
+    await readyPost(D);
+    const now = at("2095-01-07");
+    const origin = "https://dev--bocc-backend.netlify.app";
+    const calls = [];
+    const fake = { presignGet: (o) => { calls.push(o); return { url: `https://bucket.example/${calls.length}?sig`, expiresAt: new Date(0) }; } };
+
+    const logo = await sp.loadPick("next", { now, storage: fake, origin });
+    assert.deepEqual(logo.cover, {
+      source: "event_image", eventImageSource: "default", fileName: `bocc-${D}-cover.png`,
+      downloadUrl: `${origin}/assets/images/brand/bocc-logo-square.png`, expiresAt: null, contentType: "image/png",
+    });
+    assert.equal(calls.filter((c) => c.downloadName?.includes("cover")).length, 0, "the logo isn't signed");
+    assert.equal((await sp.loadPick("next", { now, storage: null, origin })).cover.downloadUrl,
+      `${origin}/assets/images/brand/bocc-logo-square.png`, "the logo works with storage off");
+
+    const photo = randomUUID();
+    await owner.query(
+      `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
+       values ($1, $2, 'social_photo', $3, $4, $5, 'image/jpeg', 900000, 'ready', true)`,
+      [photo, D, `events/${D}/${photo}/original.jpg`, `events/${D}/${photo}/display.jpg`, `events/${D}/${photo}/thumb.jpg`]);
+    await so.setCover(actor.id, D, photo);
+    calls.length = 0;
+    const over = await sp.loadPick("next", { now, storage: fake, origin });
+    const signed = calls.find((c) => c.downloadName === `bocc-${D}-cover.jpg`);
+    assert.deepEqual([signed.key, signed.expiresIn], [`events/${D}/${photo}/original.jpg`, sp.VIDEO_LINK_SECONDS]);
+    assert.deepEqual([over.cover.source, over.cover.fileName, over.cover.contentType], ["override", `bocc-${D}-cover.jpg`, "image/jpeg"]);
+    assert.match(over.cover.downloadUrl, /^https:\/\/bucket\.example\/\d\?sig$/);
+    assert.equal(over.order.actionable, true, "the cover never blocks the order");
+    assert.match((await sp.loadPick("next", { now, storage: null })).cover.unavailable, /can't be downloaded/);
+
+    const j = sp.toJson(over);
+    assert.deepEqual(j.cover, over.cover);
+    assert.ok(!JSON.stringify(j).includes("original.jpg"), "no storage key in the JSON");
+  });
 });
 
 // ── 3. Over HTTP ────────────────────────────────────────────────────────────
@@ -614,6 +651,8 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.ok(html.includes(`data-date="${NEXT}"`), "this post is the next one");
     assert.ok(html.includes(order.publishAtDisplay.et) && html.includes(order.publishAtDisplay.utc), "publish time in ET and UTC");
     assert.ok(inner(html, "pre", "cover-note") === "Use the frame at 0:03");
+    assert.ok(has(html, /<a id="cover-download" href="http:\/\/localhost:\d+\/assets\/images\/brand\/bocc-logo-square\.png" download="bocc-[\d-]+-cover\.png"/),
+      "the cover (the logo default) as a link on the site's origin");
     assert.ok(!/<script(?![^>]*\bsrc=)/.test(html), "no inline script (CSP script-src 'self')");
     assert.ok(!/<script[^>]*src="\/(?!@vite|src\/)/.test(html), "and no page script of its own (dev serves only Vite's client)");
     for (const c of order.channels) {
@@ -675,6 +714,8 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.equal(j.order.date, NEXT);
     assert.deepEqual(j.order.channels.map((c) => c.channel), CHANNELS);
     assert.equal(j.order.channels[0].status, "scheduled");
+    assert.equal(j.cover.source, "event_image");
+    assert.equal(j.cover.downloadUrl, `${BASE}/assets/images/brand/bocc-logo-square.png`);
 
     const ok = await req("/api/admin/social/channel", { cookie: social.cookie, method: "POST",
       json: { date: NEXT, channel: "tiktok", status: "scheduled", notes: "TikTok Studio" } });
