@@ -516,8 +516,15 @@ work (to save deploy credits); everything is verified on staging first.
       nothing was created, allow retry" retiring a `pending` row, and LinkedIn errors in plain
       language. A failed step leaves the last committed state, even when LinkedIn clearly
       refused before creating anything: the page then says it is safe to allow retry.
-      Drift and cancellation notices are still to do)
+      #27 done: drift is flagged, not synced: once posted, a change of location (by its
+      wording: not set reads as the lobby) or of the Event Image's cover shows "LinkedIn is
+      out of date…" in Readiness and the LinkedIn section, linking the event (a CLI-imported
+      row with no image recorded compares the location only). A cancelled event with a
+      posted row shows a red "Cancel the LinkedIn event on LinkedIn" item in Cancel and
+      Readiness until "Done on LinkedIn" (audited `linkedin_event.cancel_ack`))
 - [ ] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
+      (Event Image, LinkedIn out of date and cancel on LinkedIn done, #21/#27; "LinkedIn posted"
+      is still covered only by the `linkedin_event` listing line)
 - [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
       or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
       independent check in `src/lib/social-alert/run.mjs`; migration
