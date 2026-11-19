@@ -524,7 +524,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     calls.length = 0;
     const over = await sp.loadPick("next", { now, storage: fake, origin });
     const signed = calls.find((c) => c.downloadName === `bocc-${D}-cover.jpg`);
-    assert.deepEqual([signed.key, signed.expiresIn], [`events/${D}/${photo}/original.jpg`, sp.VIDEO_LINK_SECONDS]);
+    assert.deepEqual([signed.key, signed.expiresIn], [`events/${D}/${photo}/display.jpg`, sp.VIDEO_LINK_SECONDS]);
     assert.deepEqual([over.cover.source, over.cover.fileName, over.cover.contentType], ["override", `bocc-${D}-cover.jpg`, "image/jpeg"]);
     assert.match(over.cover.downloadUrl, /^https:\/\/bucket\.example\/\d\?sig$/);
     assert.equal(over.order.actionable, true, "the cover never blocks the order");
@@ -532,7 +532,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
 
     const j = sp.toJson(over);
     assert.deepEqual(j.cover, over.cover);
-    assert.ok(!JSON.stringify(j).includes("original.jpg"), "no storage key in the JSON");
+    assert.ok(!JSON.stringify(j).includes("display.jpg"), "no storage key in the JSON");
   });
 });
 

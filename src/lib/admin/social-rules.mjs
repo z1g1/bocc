@@ -260,12 +260,14 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
  * (event-image-rules.mjs resolveEventImage: uploaded, referenced, or the BOCC logo);
  * an override is a publicly usable, ready `social_photo` (social_posts.cover_media_id).
  * An override that can't be used falls back to the Event Image. The cover is the
- * square/original file (video platforms crop their own covers), plus its thumbnail
+ * display copy (a JPEG at most 1600px on its long edge, the image's own shape; the
+ * original can be up to 25 MB, too big for some uploaders; video platforms crop
+ * covers themselves), plus its thumbnail
  * for the admin page's preview. Files are { key, contentType } (private bucket) or
  * { path, contentType, width, height } (checked in under public/).
  * @param {{ override?: null | { id: string, eventDate: string, kind: string, status: string, publiclyUsable: boolean,
- *            originalKey: string, thumbKey: string, contentType: string },
- *           eventImage: { source: string, mediaId: string|null, eventDate: string|null, original: object, thumb: object } }} s
+ *            displayKey: string, thumbKey: string },
+ *           eventImage: { source: string, mediaId: string|null, eventDate: string|null, display: object, thumb: object } }} s
  * @returns {{ source: "override"|"event_image", eventImageSource: string|null, mediaId: string|null,
  *             eventDate: string|null, file: object, thumb: object }}
  */
@@ -273,13 +275,13 @@ export function resolveSocialCover({ override = null, eventImage }) {
   if (override && override.kind === "social_photo" && override.status === "ready" && override.publiclyUsable) {
     return {
       source: "override", eventImageSource: null, mediaId: override.id, eventDate: override.eventDate,
-      file: { key: override.originalKey, contentType: override.contentType },
+      file: { key: override.displayKey, contentType: "image/jpeg" },
       thumb: { key: override.thumbKey, contentType: "image/jpeg" },
     };
   }
   return {
     source: "event_image", eventImageSource: eventImage.source, mediaId: eventImage.mediaId, eventDate: eventImage.eventDate,
-    file: eventImage.original, thumb: eventImage.thumb,
+    file: eventImage.display, thumb: eventImage.thumb,
   };
 }
 

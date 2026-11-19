@@ -151,7 +151,7 @@ export async function readState(db, date) {
 
 const COVER_COLUMNS = `
   id, event_date::text as "eventDate", kind, status, publicly_usable as "publiclyUsable",
-  original_key as "originalKey", thumb_key as "thumbKey", content_type as "contentType"`;
+  display_key as "displayKey", thumb_key as "thumbKey"`;
 
 async function getCoverMedia(db, id) {
   const { rows: [m] } = await db.query(`select ${COVER_COLUMNS} from public.event_media where id = $1`, [id]);

@@ -232,15 +232,15 @@ describe("the Social Post cover image", () => {
     });
     const u = r.resolveSocialCover({ override: null, eventImage: uploaded });
     assert.deepEqual([u.source, u.eventImageSource, u.mediaId, u.file, u.thumb], ["event_image", "uploaded",
-      "11111111-1111-4111-8111-111111111111", { key: "events/2026-11-24/1111/original.png", contentType: "image/png" },
+      "11111111-1111-4111-8111-111111111111", { key: "events/2026-11-24/1111/display.jpg", contentType: "image/jpeg" },
       { key: "events/2026-11-24/1111/thumb.jpg", contentType: "image/jpeg" }]);
   });
 
-  test("an override: that photo's original", () => {
+  test("an override: that photo's display copy", () => {
     const c = r.resolveSocialCover({ override: photo, eventImage: uploaded });
     assert.deepEqual(c, {
       source: "override", eventImageSource: null, mediaId: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17",
-      file: { key: "events/2026-11-17/2222/original.jpg", contentType: "image/jpeg" },
+      file: { key: "events/2026-11-17/2222/display.jpg", contentType: "image/jpeg" },
       thumb: { key: "events/2026-11-17/2222/thumb.jpg", contentType: "image/jpeg" },
     });
   });

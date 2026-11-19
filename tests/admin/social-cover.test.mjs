@@ -112,7 +112,7 @@ describe("social cover (admin_app)", () => {
     const img = await insertMedia(d, { kind: "event_image" });
     const up = await so.getWorkOrder(pool, d);
     assert.deepEqual([up.cover.source, up.cover.eventImageSource, up.cover.mediaId, up.cover.file.key],
-      ["event_image", "uploaded", img, `events/${d}/${img}/original.jpg`]);
+      ["event_image", "uploaded", img, `events/${d}/${img}/display.jpg`]);
   });
 
   test("setCover: set, change and clear an override, each audited; clearing returns to the Event Image", async () => {
@@ -123,7 +123,7 @@ describe("social cover (admin_app)", () => {
     assert.deepEqual(r1, { changed: true, eventCreated: false });
     assert.equal((await postRow(d)).cover_media_id, mine);
     let w = await so.getWorkOrder(pool, d);
-    assert.deepEqual([w.cover.source, w.cover.mediaId, w.cover.file.key], ["override", mine, `events/${d}/${mine}/original.jpg`]);
+    assert.deepEqual([w.cover.source, w.cover.mediaId, w.cover.file.key], ["override", mine, `events/${d}/${mine}/display.jpg`]);
     assert.deepEqual(await so.setCover(actor.id, d, mine), { changed: false, eventCreated: false });
 
     await so.setCover(actor.id, d, old); // a photo from another event is fine
