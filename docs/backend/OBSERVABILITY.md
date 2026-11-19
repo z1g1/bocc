@@ -31,7 +31,7 @@ Netlify ingests **OpenTelemetry traces only**. It has no OTLP endpoint for metri
 
 | Signal | What the app does | Where to see it |
 | --- | --- | --- |
-| Traces | `span(name, attrs, fn)`. One span per on-demand request, named `<METHOD> <route pattern>` (e.g. `GET /events/[date]`), from `src/middleware.ts`. Under it: `db.query` (every query on the admin, site and social pools), `db.transaction` (`withAudit`), `cdn.purge`, `storage.presign` (browser URLs), `storage.sign` (server HEAD/DELETE), `social.check`, `ntfy.send`, plus the runtime's own fetch/http client spans. | Netlify Observability (traces), once tracing is on |
+| Traces | `span(name, attrs, fn)`. One span per on-demand request, named `<METHOD> <route pattern>` (e.g. `GET /events/[date]`), from `src/middleware.ts`. Under it: `db.query` (every query on the admin, site and social pools), `db.transaction` (`withAudit`), `cdn.purge`, `storage.presign` (browser URLs), `storage.sign` (server HEAD/GET/DELETE), `social.check`, `ntfy.send`, `linkedin.<op>` (one per LinkedIn call, with its HTTP status only), plus the runtime's own fetch/http client spans. | Netlify Observability (traces), once tracing is on |
 | Events | `event(name, attrs)` adds a span event. `withAudit` adds `audit` with the `action` and `target_table` when it commits. | On the span in the trace view |
 | Metrics | Netlify takes no OTLP metrics, so measurements are numeric span attributes (`db.rows`, `http.response.status_code`) and per-request counters (`count()`). The middleware's `request` log line carries `status`, `duration_ms`, `db_queries` and `db_ms`. | Netlify Observability's built-in request and function charts. Per-request numbers are in the `request` log lines and span attributes |
 | Logs | `log(level, msg, attrs)` writes one JSON line: `{"level","msg",...attrs,"trace_id","span_id"}`. The trace ids are there whenever a span is active, so a log line leads to its trace. | Logs → Functions (pick `ssr` or `social-check`), and Observability |
@@ -68,12 +68,27 @@ The runtime's own fetch and http client instrumentation (not ours) records the *
 of every outgoing request, path and query included, plus the method and status. It skips
 headers matching `authorization|x-.*|via|alt-svc|server`. Request and response bodies are
 not recorded. So no secret may sit in an outgoing URL; secrets go in a skipped header or
-the body. What the server sends, and what its span shows:
+the body. The one URL the app doesn't build, LinkedIn's image `uploadUrl` (signed by
+LinkedIn in its query string), is fetched inside `withoutClientTracing()`
+(`src/lib/telemetry.mjs`): it sets OpenTelemetry's suppress-tracing context key, so the
+runtime's tracer hands the fetch instrumentation a non-recording span and the URL is
+never recorded. Our own `linkedin.upload_image` span still records the call and its
+status. `tests/admin/linkedin-upload-trace-unit.test.mjs` runs the runtime's own fetch
+instrumentation (`@netlify/otel/instrumentation-fetch`, configured as the runtime does)
+and checks no span carries the upload URL. What the server sends, and what its span shows:
 
 | Request | URL recorded | Where the secret is |
 | --- | --- | --- |
 | ntfy push (`social-check`) | `https://ntfy.sh/` (the server root; `SOCIAL_ALERT_NTFY_SERVER` + `/` if set) | the topic is only in the JSON body ([publish as JSON](https://docs.ntfy.sh/publish/#publish-as-json)) |
-| Storage HEAD (media complete) and DELETE (media removal) | `<STORAGE_ENDPOINT>/<bucket>/<key>`, no query | SigV4 header signing: `Authorization`, `x-amz-date`, `x-amz-content-sha256` (all skipped). The object key is in the URL; it is built from the event date and a random uuid, not from user input |
+| Storage HEAD (media complete), GET (`getObject`: the Event Image cover sent to LinkedIn) and DELETE (media removal) | `<STORAGE_ENDPOINT>/<bucket>/<key>`, no query | SigV4 header signing: `Authorization`, `x-amz-date`, `x-amz-content-sha256` (all skipped). The object key is in the URL; it is built from the event date and a random uuid, not from user input |
+| Public asset GET (`readPublicAsset`: the BOCC logo default cover, when `public/` isn't in the function bundle) | `<BETTER_AUTH_URL>/assets/images/brand/bocc-logo-wide-16x9.png` | none: a public file |
+| LinkedIn token exchange (`exchangeCode`, the OAuth callback) | `https://www.linkedin.com/oauth/v2/accessToken` | the code and client secret are in the form body |
+| LinkedIn profile (`getProfile`) | `https://api.linkedin.com/v2/userinfo` | the member's token is a `Bearer` `Authorization` header (skipped), as on every LinkedIn call below |
+| LinkedIn image upload init (`initializeImageUpload`) | `https://api.linkedin.com/rest/images?action=initializeUpload` | token in the header; the owner URN in the body |
+| LinkedIn image upload (`uploadImage`) | **not recorded**: runs in `withoutClientTracing()` | the `uploadUrl` carries LinkedIn's signed query; the token is in the header |
+| LinkedIn event create (`createEvent`) | `https://api.linkedin.com/rest/events` | token in the header; the event in the body |
+| LinkedIn member post (`createPost`) | `https://api.linkedin.com/rest/posts` | token in the header; the post in the body |
+| LinkedIn organizer listing (`listOrganizerEvents`, the duplicate check) | `https://api.linkedin.com/rest/events?q=eventsByOrganizer&organizer=urn%3Ali%3Aorganization%3A89993057&start=…&count=50&…` | token in the header; the query holds only the public organizer id and paging |
 | Cache purge (`@netlify/cache` `purgeCache`) | `https://api.netlify.com/api/v1/purge` | the purge token is a `Bearer` `Authorization` header (skipped); tags and scope are in the body |
 
 Postgres (Neon) is TCP, not HTTP, and shows up only as our `db.query` spans. Better Auth

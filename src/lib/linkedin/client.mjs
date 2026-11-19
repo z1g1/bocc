@@ -17,7 +17,9 @@
 //     token can't be replayed to wherever a redirect points.
 //   - No secret in any URL: the Netlify runtime's fetch tracing records full outgoing
 //     URLs (docs/backend/OBSERVABILITY.md). The code and client secret go in the token
-//     request's form body, the token only in the Authorization header.
+//     request's form body, the token only in the Authorization header. The one URL we
+//     don't build, LinkedIn's signed image uploadUrl, is fetched with the runtime's
+//     client tracing suppressed (telemetry.mjs withoutClientTracing).
 //   - Each call is a "linkedin.<op>" span with the HTTP status only. Errors carry
 //     LinkedIn's own message (bounded, redacted, the token scrubbed), never headers.
 //   - LinkedIn event ids are 19 digits, past JS Number precision: JSON is parsed with
@@ -28,7 +30,7 @@
 // Tests inject `fetch`; tests through `astro dev` replace the whole client with
 // setLinkedInClientForTests() (a globalThis slot, so it reaches Vite's module copy).
 
-import { redact, span } from "../telemetry.mjs";
+import { redact, span, withoutClientTracing } from "../telemetry.mjs";
 import { SCOPES } from "./rules.mjs";
 
 export const API_BASE = "https://api.linkedin.com";
@@ -128,16 +130,18 @@ export function createLinkedInClient({ clientId, clientSecret }, { fetch: doFetc
   /**
    * One request. Returns { status, headers, text } for a 2xx; throws LinkedInError otherwise.
    * @param {string} op  span name suffix
-   * @param {{ method: string, url: string, token?: string, headers?: Record<string,string>, body?: any, timeoutMs?: number }} req
+   * @param {{ method: string, url: string, token?: string, headers?: Record<string,string>, body?: any, timeoutMs?: number,
+   *   signedUrl?: boolean }} req  signedUrl: the URL carries a credential, so the runtime's fetch span is suppressed
    */
-  function call(op, { method, url, token, headers = {}, body, timeoutMs = TIMEOUT_MS }) {
+  function call(op, { method, url, token, headers = {}, body, timeoutMs = TIMEOUT_MS, signedUrl = false }) {
     return span(`linkedin.${op}`, { "linkedin.op": op, "http.request.method": method }, async (h) => {
       if (!isLinkedInUrl(url)) throw new LinkedInError("refused", `linkedin ${op}: refused a non-LinkedIn URL`);
       const all = { ...headers };
       if (token) all.Authorization = `Bearer ${token}`;
       let res;
       try {
-        res = await doFetch(url, { method, headers: all, body, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+        const send = () => doFetch(url, { method, headers: all, body, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });
+        res = await (signedUrl ? withoutClientTracing(send) : send());
       } catch (err) {
         const timedOut = err?.name === "TimeoutError" || err?.name === "AbortError";
         const why = timedOut ? `timed out after ${timeoutMs} ms` : `failed (${err?.name ?? "Error"})`;
@@ -221,7 +225,8 @@ export function createLinkedInClient({ clientId, clientSecret }, { fetch: doFetc
 
     /** @param {Uint8Array} bytes @param {"image/png"|"image/jpeg"} contentType */
     async uploadImage(token, uploadUrl, bytes, contentType) {
-      await call("upload_image", { method: "PUT", url: uploadUrl, token, headers: { "Content-Type": contentType }, body: bytes, timeoutMs: UPLOAD_TIMEOUT_MS });
+      // LinkedIn signs the uploadUrl in its query: no runtime fetch span may record it.
+      await call("upload_image", { method: "PUT", url: uploadUrl, token, headers: { "Content-Type": contentType }, body: bytes, timeoutMs: UPLOAD_TIMEOUT_MS, signedUrl: true });
     },
 
     /** @returns {Promise<{ id: string, vanityName: string|null }>} */
