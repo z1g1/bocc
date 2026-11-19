@@ -62,8 +62,12 @@ accounts at risk under the platforms' terms.
      `ready` as they treated the flag. A post in `error` stays offered too, so the Wednesday
      task can carry on with the other channels after one fails and a failed channel can be
      scheduled again (which, once nothing is pending or failed, makes it `posted`). A `posted`
-     post is never handed out again. The Thursday check counts `ready` and `posted` as ready;
-     `error` alerts as not ready, naming the failed channel. The rules are in
+     post is never handed out again: an Admin who sets Posted by hand ends the Chrome tasks'
+     work on that post even while channels are still pending (`findNext` skips it). That is
+     intended: it is how an Admin says "done, stop" (the channels were posted by hand, or the
+     rest are dropped). The Thursday check counts `ready`, `posted` and `error` as ready, as
+     the old flag did (it stayed on after a failure): an `error` post alerts as "N of 5
+     channels not scheduled", naming the failed channel, unless it also has problems. The rules are in
      `src/lib/admin/social-rules.mjs` (`POST_STATUSES`, `POST_STATUS_LABELS`,
      `OFFERED_STATUSES`, `postStatusAfterChannelUpdate`).
 2. **Caption rules are code defaults**, not settings.
@@ -96,7 +100,7 @@ accounts at risk under the platforms' terms.
      `src/lib/social-alert/`). It runs Thursdays at 14:00 UTC, which is 9:00 AM EST or
      10:00 AM EDT.
    - It checks the next Tuesday and alerts when any of these is true: there is no post; the post
-     isn't ready (since #39: its status isn't Ready for Posting or Posted), or has problems; or a channel isn't `scheduled` or `live`. A cancelled event
+     isn't ready (since #39: its status is To do; Ready for Posting, Posted and Error count as ready), or has problems; or a channel isn't `scheduled` or `live`. A cancelled event
      never alerts. When everything is fine it only logs. If it can't read the database, it sends
      a "check failed" push instead.
    - The Click link opens `/admin/social/next` on that context's site.

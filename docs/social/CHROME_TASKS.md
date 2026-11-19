@@ -202,7 +202,7 @@ prompts don't change: the tasks only save channel statuses, and the post status 
 | **Posted** | every channel is `scheduled` or `live`; never handed out again | automatically, when a task's channel save leaves every channel `scheduled`/`live`; an Admin can also set it |
 | **Error** | a channel failed | automatically, when a task saves a channel as `failed`; an Admin can also set it. Still offered, so the Wednesday task carries on with the other channels and a failed channel can be scheduled again (then the post becomes Posted) |
 
-Each automatic change is audited as `social_post.status` under the `social` user.
+Each automatic change is audited as `social_post.status`; its actor is whoever records the channel update (the `social` user, or an Admin saving a channel result).
 
 ## When a task reports a problem
 

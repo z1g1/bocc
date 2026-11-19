@@ -161,7 +161,7 @@ describe("readWorkOrder as social_checker", () => {
     assert.match(socialAlert({ order: o, date: d }).title, /post not ready/);
   });
 
-  test("the post status (ticket #39): Posted counts as ready, Error and To do don't", async () => {
+  test("the post status (ticket #39): Posted counts as ready; Error alerts as channels not scheduled; To do isn't ready", async () => {
     const [p, e, t] = [tuesday(), tuesday(), tuesday()];
     await seed(p, { postStatus: "posted", statuses: { tiktok: "live" } });
     await seed(e, { postStatus: "error", statuses: { threads: "failed" } });
@@ -170,8 +170,8 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(posted.status, "posted");
     assert.equal(socialAlert({ order: posted, date: p }), null);
     const error = socialAlert({ order: await readWorkOrder(checker, e), date: e });
-    assert.match(error.title, /post not ready/);
-    assert.match(error.message, /status is Error: a channel failed[\s\S]*- Threads: failed/);
+    assert.match(error.title, /1 of 5 channels not scheduled/);
+    assert.match(error.message, /status is Error: Threads failed[\s\S]*- Threads: failed/);
     assert.match(socialAlert({ order: await readWorkOrder(checker, t), date: t }).message, /isn't set to Ready for Posting \(it is To do\)/);
   });
 

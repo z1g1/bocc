@@ -214,6 +214,10 @@ describe("ready and the work order", () => {
     ]);
     assert.deepEqual([ready.ok, ready.scheduled, ready.total], [true, 2, 5]);
     assert.equal(at("todo").ok, false);
+    // A tick only for Posted, or Ready for Posting with no problems: never Error or To do.
+    assert.equal(at("error").ok, false, "Error is never ticked");
+    assert.equal(at("error", stored()).ok, false, "Error with no problems is still not ticked");
+    assert.equal(at("ready", stored(), null).ok, false, "Ready for Posting with a problem");
     // The problems are listed (no "not marked ready" line any more)...
     const noLuma = at("todo", stored(), null);
     assert.match(noLuma.items[0].label, /Luma listing/);

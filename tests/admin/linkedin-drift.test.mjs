@@ -98,12 +98,13 @@ describe("drift and cancellation (use-case, admin_app, fake client)", () => {
     assert.deepEqual(f, { eventUrl: EVENT_URL, drift: null, cancel: null });
   });
 
-  test("the location changed after posting: drift, linking the event", async () => {
+  test("the location changed after posting: drift, linking the LinkedIn section", async () => {
     const date = await postedDate(user);
     await ev.saveEvent(user.id, date, { status: "scheduled", location: "food_hall" });
     const f = await li.linkedInFollowUpFor(pool, date);
     assert.deepEqual(f.drift.changes, ["location"]);
-    assert.equal(f.drift.href, EVENT_URL);
+    assert.equal(f.drift.href, "?tab=info#h-linkedin");
+    assert.equal(f.eventUrl, EVENT_URL);
   });
 
   test("the Event Image changed after posting: drift", async () => {
@@ -125,7 +126,8 @@ describe("drift and cancellation (use-case, admin_app, fake client)", () => {
     await cancel(user, date);
     const due = await li.linkedInFollowUpFor(pool, date);
     assert.equal(due.cancel.due, true);
-    assert.equal(due.cancel.href, EVENT_URL);
+    assert.equal(due.cancel.href, "?tab=info#h-linkedin");
+    assert.equal(due.eventUrl, EVENT_URL);
 
     const other = await newUser();
     assert.deepEqual(await li.markCancelledOnLinkedIn(other.id, date, { now: NOW }), { changed: true });

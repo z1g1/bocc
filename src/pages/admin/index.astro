@@ -20,7 +20,7 @@ const isSocial = hasRole(Astro.locals, "social");
 
 // Admin-only events block (plan Phase 3): the next events and the "report missing"
 // count, with "today" the Eastern calendar day; listings at a glance (Phase 4).
-let events: { upcoming: any[]; missing: number; nextTue: string; links: Map<string, any> } | null = null;
+let events: { upcoming: any[]; missing: number; nextTue: string; links: Map<string, any>; labels: Record<string, string> } | null = null;
 if (isAdmin) {
   const { pool } = await import("../../lib/admin/db.mjs");
   const ev = await import("../../lib/admin/events.mjs");
@@ -31,9 +31,9 @@ if (isAdmin) {
   ]);
   const el = await import("../../lib/admin/event-links.mjs");
   const links = await el.linkSummaries(pool, upcoming.map((e: any) => e.date));
-  events = { upcoming, missing, nextTue: ev.nextTuesday(today), links };
+  events = { upcoming, missing, nextTue: ev.nextTuesday(today), links, labels: ev.STATUS_LABELS };
 }
-const statusText = (s: string) => (s === "cancelled" ? "cancelled" : s === "held" ? "held" : "scheduled");
+const statusText = (s: string) => (events!.labels[s] ?? events!.labels.scheduled).toLowerCase();
 ---
 <Admin title="Home" user={user} roles={roles}>
   <h1>Hello, {user!.name}</h1>

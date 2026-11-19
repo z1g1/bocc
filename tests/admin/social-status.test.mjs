@@ -2,7 +2,8 @@
 // against the throwaway database (npm run test:db):
 //   1. migration 20261201120000_social_post_status.sql: the mapping from the old
 //      `ready` flag (re-run on a rebuilt pre-migration table, in a rolled-back
-//      transaction), the CHECKs, the grants
+//      transaction), the CHECKs, the grants, and that it is expand-only: the deprecated
+//      `ready` column stays, so the code live before the deploy keeps working
 //   2. src/lib/admin/social.mjs as admin_app: savePost's status (Ready for Posting
 //      checked, the others always allowed, audited) and setChannelResult moving the
 //      post to Posted / Error in the channel update's transaction, audited
@@ -56,12 +57,11 @@ after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 describe("migration 20261201120000_social_post_status.sql", () => {
-  test("maps ready -> 'ready' and not ready -> 'todo', and drops the flag", () =>
+  test("maps ready -> 'ready' and not ready -> 'todo'; keeps the deprecated flag but drops its CHECK", () =>
     inRollback(owner, async () => {
       // Back to the table as it was before the migration, then run the migration file.
       await owner.query(`alter table social_posts drop constraint social_posts_status_ready_ck`);
       await owner.query(`alter table social_posts drop column status`);
-      await owner.query(`alter table social_posts add column ready boolean not null default false`);
       await owner.query(`alter table social_posts add constraint social_posts_ready_ck
                            check (not ready or (video_media_id is not null and base_caption is not null))`);
       const [a, b] = [date(), date()];
@@ -79,7 +79,40 @@ describe("migration 20261201120000_social_post_status.sql", () => {
       assert.deepEqual(rows, [{ d: a, status: "ready" }, { d: b, status: "todo" }]);
       const { rows: cols } = await owner.query(
         `select column_name from information_schema.columns where table_schema = 'public' and table_name = 'social_posts' and column_name in ('ready', 'status')`);
-      assert.deepEqual(cols.map((c) => c.column_name), ["status"]);
+      assert.deepEqual(cols.map((c) => c.column_name).sort(), ["ready", "status"], "expand-only: ready stays until the contract migration");
+      const { rows: cks } = await owner.query(
+        `select conname from pg_constraint where conrelid = 'public.social_posts'::regclass and conname like 'social_posts_%ready_ck' order by 1`);
+      assert.deepEqual(cks.map((c) => c.conname), ["social_posts_status_ready_ck"]);
+    }));
+
+  test("the code live before the deploy keeps working: it inserts, updates and reads `ready` as admin_app", async () => {
+    const admin = await connect(ADMIN_URL);
+    try {
+      await inRollback(admin, async () => {
+        const d = date();
+        await admin.query(`insert into events (event_date) values ($1)`, [d]);
+        // Old savePost/attach: insert with defaults, then update ready; old reads select p.ready.
+        await admin.query(`insert into social_posts (event_date, publish_at) values ($1, now())`, [d]);
+        await admin.query(`update social_posts set base_caption = 'x', ready = true where event_date = $1`, [d]);
+        const { rows } = await admin.query(`select ready, status from social_posts where event_date = $1`, [d]);
+        assert.deepEqual(rows, [{ ready: true, status: "todo" }]);
+      });
+    } finally {
+      await admin.end();
+    }
+  });
+
+  test("a stale ready = true no longer blocks clearing the video (new code never writes ready)", () =>
+    inRollback(owner, async () => {
+      const d = date();
+      await owner.query(`insert into events (event_date) values ($1)`, [d]);
+      const vid = randomUUID();
+      await owner.query(
+        `insert into event_media (id, event_date, kind, original_key, content_type, size_bytes, status)
+         values ($1, $2, 'promo_video', $3, 'video/mp4', 10, 'ready')`, [vid, d, `events/${d}/${vid}/original.mp4`]);
+      await owner.query(
+        `insert into social_posts (event_date, publish_at, video_media_id, base_caption, ready, status) values ($1, now(), $2, 'x', true, 'posted')`, [d, vid]);
+      await assertAllowed(owner, `update social_posts set video_media_id = null where event_date = $1`, [d]);
     }));
 
   test("CHECKs: four statuses, default To do; Ready for Posting needs the video and the caption", () =>

@@ -24,7 +24,7 @@
 // the secret, so the Netlify runtime's fetch tracing (which records full outgoing URLs)
 // can't leak it.
 
-import { CHANNELS, CHANNEL_KEYS, POST_STATUS_LABELS } from "../admin/social-rules.mjs";
+import { CHANNELS, CHANNEL_KEYS, OFFERED_STATUSES, POSTED_CHANNEL_STATUSES, POST_STATUS_LABELS } from "../admin/social-rules.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
 import { expiryAlertDue, expiryLevel } from "../linkedin/rules.mjs";
 
@@ -32,10 +32,14 @@ export { isHolidayWeek };
 
 const TZ = "America/New_York";
 
-/** Channel statuses that need no nudge on Thursday. */
-export const DONE_STATUSES = Object.freeze(["scheduled", "live"]);
-/** Post statuses the check counts as ready (ticket #39): what the old `ready` flag meant here. */
-export const READY_POST_STATUSES = Object.freeze(["ready", "posted"]);
+/**
+ * Post statuses the check treats as ready (ticket #39): offered to the Chrome tasks
+ * (Ready for Posting, Error) or Posted. Error is here because the old `ready` flag stayed
+ * on after a channel failed: such a post alerts as "N of 5 channels not scheduled",
+ * naming the failed channel, not as "post not ready". Channel statuses that need no
+ * nudge are social-rules.mjs POSTED_CHANNEL_STATUSES (scheduled, live).
+ */
+export const READY_POST_STATUSES = Object.freeze([...OFFERED_STATUSES, "posted"]);
 
 export const NTFY_DEFAULT_SERVER = "https://ntfy.sh";
 export const NTFY_TIMEOUT_MS = 5000;
@@ -126,7 +130,7 @@ export function socialAlert({ order, date, siteUrl = null }) {
   const ready = exists && READY_POST_STATUSES.includes(order.status);
   const notReady = !ready || problems.length > 0;
   const channels = exists
-    ? order.channels.filter((c) => !DONE_STATUSES.includes(c.status))
+    ? order.channels.filter((c) => !POSTED_CHANNEL_STATUSES.includes(c.status))
     : CHANNEL_KEYS.map((channel) => ({ channel, label: CHANNELS[channel], status: null }));
   if (!notReady && channels.length === 0) return null;
 
@@ -140,7 +144,9 @@ export function socialAlert({ order, date, siteUrl = null }) {
   if (!exists) {
     lines.push(`There is no social post yet. Upload the promo video and caption on /admin/events/${date}/ and set it to ${POST_STATUS_LABELS.ready}.`);
   } else if (order.status === "error") {
-    lines.push(`The post's status is ${POST_STATUS_LABELS.error}: a channel failed. Fix it on /admin/events/${date}/.`);
+    const failed = order.channels.filter((c) => c.status === "failed").map((c) => c.label ?? CHANNELS[c.channel] ?? c.channel);
+    const what = failed.length ? `${failed.join(", ")} failed` : "a channel failed";
+    lines.push(`The post's status is ${POST_STATUS_LABELS.error}: ${what}. Fix it on /admin/events/${date}/.`);
   } else if (!ready) {
     lines.push(`The post isn't set to ${POST_STATUS_LABELS.ready} (it is ${order.statusLabel}), so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
   } else if (problems.length) {

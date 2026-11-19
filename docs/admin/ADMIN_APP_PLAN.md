@@ -430,7 +430,7 @@ on-device checks and production are open.
 - [x] Readiness checklist on the admin event page: four links, the public page, and the social
       channels (once Phase 5 lands). Built 2026-11-18: the Listings forms and the checklist on
       `/admin/events/YYYY-MM-DD/` (`src/lib/admin/event-links.mjs`), "n/4 listings" on the
-      events list and home. The social lines (post ready, then each channel's status) came with
+      events list and home (x/5 since #42: the four listings plus the public page). The social lines (post ready, then each channel's status) came with
       Phase 5 part A
 
 ## Phase 5: social work order (ADR 0011)

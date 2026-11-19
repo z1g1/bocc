@@ -39,7 +39,8 @@ const pageHref = (p: number) => `/admin/events/?${missingOnly ? "missing=1&" : "
 const nextTue = ev.nextTuesday(today);
 const LOC: Record<string, string> = ev.LOCATIONS;
 const where = (e: any) => (e.location === "other" ? e.locationOther : e.location ? LOC[e.location] : "");
-const statusText = (e: any) => (e.status === "cancelled" ? "Cancelled" : e.status === "held" ? "Held" : "Scheduled");
+const STATUS_LABELS: Record<string, string> = ev.STATUS_LABELS;
+const statusText = (e: any) => STATUS_LABELS[e.status] ?? STATUS_LABELS.scheduled;
 const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "No");
 ---
 <Admin title="Events" user={user} roles={roles} wide>

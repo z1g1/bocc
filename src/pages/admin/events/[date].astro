@@ -60,7 +60,7 @@ const el = await import("../../../lib/admin/event-links.mjs");
 const so = await import("../../../lib/admin/social.mjs");
 const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
-const STATUS_LABELS: Record<string, string> = { scheduled: "Scheduled", held: "Held", cancelled: "Cancelled" };
+const STATUS_LABELS: Record<string, string> = ev.STATUS_LABELS;
 
 const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 const date = ev.parseDate(Astro.params.date ?? "");
@@ -322,12 +322,12 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
         <form method="post" class="linkedin-cancel" role="alert">
           <input type="hidden" name="action" value="linkedin_cancel_done">
           <p><strong>{linkedIn.cancel.message}</strong>: this event was posted on LinkedIn and is still live there.
-            <a href={linkedIn.cancel.href} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
+            <a href={linkedIn.eventUrl} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
           <button type="submit">Done on LinkedIn</button>
         </form>
       )}
       {linkedIn.cancel && !linkedIn.cancel.due && (
-        <p class="muted">The <a href={linkedIn.cancel.href} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
+        <p class="muted">The <a href={linkedIn.eventUrl} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
       )}
       {liCancelErr.linkedin && <p class="error" role="alert">{liCancelErr.linkedin}</p>}
     </div>
@@ -370,7 +370,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   <section aria-labelledby="h-linkedin">
     <h2 id="h-linkedin">LinkedIn event</h2>
     {linkedIn.drift && (
-      <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.drift.href} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
+      <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.eventUrl} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
     )}
     <LinkedInConnection returnTo={date} />
     <LinkedInEvent date={date} result={linkedInResult} />
