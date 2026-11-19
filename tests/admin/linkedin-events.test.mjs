@@ -299,7 +299,8 @@ describe("preview and dry run (use-case, fake client)", () => {
     assert.equal((await ledgerRows(taken)).length, 1);
   });
 
-  test("live: no connection or an expired one is refused; with one, the live sequence is not wired yet (#26)", async () => {
+  test("live: no connection or an expired one is refused, and nothing is sent or written", async () => {
+    // The live sequence itself is tested in linkedin-live.test.mjs (#26).
     const date = "2087-08-19";
     await seedEvent(date);
     const client = createFakeLinkedInClient();
@@ -307,12 +308,7 @@ describe("preview and dry run (use-case, fake client)", () => {
 
     const stale = await connectedUser({ expiresIn: 86400, now: new Date(NOW.getTime() - 3 * 86400_000) });
     assert.deepEqual(codes(await li.createLinkedInEvent(stale.id, date, { confirm: "live" }, opts(client, { config: LIVE }))), ["expired"]);
-
-    const user = await connectedUser();
-    const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client, { config: LIVE }));
-    assert.equal(r.ok, false);
-    assert.deepEqual(codes(r), ["live_unavailable"]);
-    assert.deepEqual(client.ops(), ["listOrganizerEvents"]);
+    assert.deepEqual(client.calls, []);
     assert.deepEqual(await ledgerRows(date), []);
   });
 });

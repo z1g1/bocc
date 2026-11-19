@@ -510,7 +510,13 @@ work (to save deploy credits); everything is verified on staging first.
       the `linkedin_event` listing filled on post, drift and cancellation notices
       (#25 done: `linkedin_events` ledger migration, the preview, the dialog with
       `confirm=live`, the allowed-actions matrix, the organizer duplicate check and the dry
-      run; the live sequence and recovery are #26)
+      run. #26 done: the live sequence, `pending` committed before anything is sent, each
+      transition audited `linkedin_event.{pending,created,posted,retire}`, the listing filled
+      with `posted` in one transaction, "Publish event" retrying only the post, "I checked:
+      nothing was created, allow retry" retiring a `pending` row, and LinkedIn errors in plain
+      language. A failed step leaves the last committed state, even when LinkedIn clearly
+      refused before creating anything: the page then says it is safe to allow retry.
+      Drift and cancellation notices are still to do)
 - [ ] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
 - [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
       or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
