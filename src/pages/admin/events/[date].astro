@@ -4,8 +4,10 @@
 //   ?tab=info    Event Info: status and location, the Online Event Listings, the Event
 //                Image (EventImage, ADR 0012 decision 3), cancel
 //   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011) and the
-//                LinkedIn event section (ADR 0012; so far the Admin's own LinkedIn
-//                connection, LinkedInConnection, which posts to /api/admin/linkedin/*)
+//                LinkedIn event section (ADR 0012): the Admin's own LinkedIn
+//                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
+//                the event's preview, dialog and dry run (LinkedInEvent; action
+//                linkedin_create, rendered without a redirect, 409 when refused)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -30,6 +32,7 @@ import EventImage from "../../../components/admin/EventImage.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
 import SocialPost from "../../../components/admin/SocialPost.astro";
 import LinkedInConnection from "../../../components/admin/LinkedInConnection.astro";
+import LinkedInEvent from "../../../components/admin/LinkedInEvent.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
 import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
@@ -83,6 +86,7 @@ const DONE: Record<string, string> = {
 
 let errors: Record<string, string> = {};
 let posted: { action: string; values: Record<string, string> } | null = null;
+let linkedInResult: any = null;
 
 if (Astro.request.method === "POST") {
   const refused = checkOrigin(Astro.request);
@@ -95,7 +99,19 @@ if (Astro.request.method === "POST") {
   }
   const action = String(data.get("action") ?? "");
   const run = ACTIONS[action];
-  if (!run) return new Response("Bad Request: unknown action", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
+  if (action === "linkedin_create") {
+    // Rendered straight away, no redirect: a dry run changes nothing, and its result
+    // (the requests that would have been sent) only exists in this response.
+    const li = await import("../../../lib/linkedin/linkedin.mjs");
+    const env = li.linkedInEnv();
+    if (!env.enabled) return new Response(env.message, { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
+    const { getStorage } = await import("../../../lib/admin/storage.mjs");
+    linkedInResult = await li.createLinkedInEvent(user!.id, date, { confirm: String(data.get("confirm") ?? "") }, { storage: getStorage().storage });
+    posted = { action, values: {} };
+    Astro.response.status = linkedInResult.ok ? 200 : 409;
+  } else if (!run) {
+    return new Response("Bad Request: unknown action", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
+  } else {
   const values: Record<string, string> = {};
   for (const [k, v] of data) if (typeof v === "string") values[k] = v;
   try {
@@ -114,6 +130,7 @@ if (Astro.request.method === "POST") {
     errors = (err as any).errors;
     posted = { action, values };
     Astro.response.status = err.status;
+  }
   }
 } else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
   return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
@@ -311,6 +328,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     <section aria-labelledby="h-linkedin">
       <h2 id="h-linkedin">LinkedIn event</h2>
       <LinkedInConnection returnTo={date} />
+      <LinkedInEvent date={date} result={linkedInResult} />
     </section>
   </>)}
 

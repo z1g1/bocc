@@ -48,6 +48,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed) |
 | `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
+| `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261126120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -64,7 +65,8 @@ else is granted on them: `checkin_writer` and `public` get nothing, and Supabase
 no `site_reader` grant. `linkedin_connections` (Phase 6) is granted to `admin_app` only:
 `site_reader`, `checkin_writer` and `social_checker` get nothing (the Thursday expiry alert
 adds a column grant for `social_checker` later). The database holds only ciphertext; the key
-is in Netlify env, never in Postgres.
+is in Netlify env, never in Postgres. `linkedin_events` (Phase 6) is the same: `admin_app` only,
+and without DELETE.
 
 ### site_reader
 

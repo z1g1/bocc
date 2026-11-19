@@ -508,6 +508,9 @@ work (to save deploy credits); everything is verified on staging first.
       dialog, dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
       the `linkedin_event` listing filled on post, drift and cancellation notices
+      (#25 done: `linkedin_events` ledger migration, the preview, the dialog with
+      `confirm=live`, the allowed-actions matrix, the organizer duplicate check and the dry
+      run; the live sequence and recovery are #26)
 - [ ] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
 - [ ] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
 - [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both

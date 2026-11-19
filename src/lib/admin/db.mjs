@@ -15,6 +15,8 @@
 //   social_posts,
 //   social_post_channels SELECT, INSERT, UPDATE (migration 20261122120000_social_posts.sql)
 //   linkedin_connections SELECT, INSERT, UPDATE, DELETE (migration 20261124120000_linkedin_connections.sql)
+//   linkedin_events     SELECT, INSERT, UPDATE (migration 20261126120000_linkedin_events.sql; no DELETE:
+//                       allow-retry retires a pending row)
 //   auth.*              Better Auth's tables
 // Anything else is refused by Postgres, whatever the app code says.
 //
