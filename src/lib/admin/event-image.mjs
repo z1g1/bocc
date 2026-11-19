@@ -31,12 +31,12 @@
 // an upload. Only one of the two is ever set: a pick deletes the upload, and an upload
 // (completeUpload) or a clear drops the reference.
 
-import { readFile } from "node:fs/promises";
 import { withAudit } from "./db.mjs";
 import { ValidationError, isUuid } from "./attendees.mjs";
 import { isIsoDate } from "./storage.mjs";
 import { deleteObjects, rowKeys } from "./media.mjs";
 import { DEFAULT_EVENT_IMAGE, resolveEventImage } from "./event-image-rules.mjs";
+import { readPublicAsset } from "./public-asset.mjs";
 
 export { DEFAULT_EVENT_IMAGE, resolveEventImage };
 
@@ -175,19 +175,16 @@ export async function clearEventImage(actorUserId, storage, date, { log } = {}) 
   return { changed: true, eventDate: date, mediaId: row.id, leftovers };
 }
 
-/** The checked-in default files, read from public/ (where they are in the repo). */
-const readPublicFile = (path) => readFile(new URL(`../../../public${path}`, import.meta.url));
-
 /**
  * The 16:9 cover's bytes on the server: a stored copy through a header-signed GET,
- * the logo's wide version through `readAsset` (by default from public/ on disk; on
- * Netlify the function bundle may not include public/, so the LinkedIn upload should
- * pass a readAsset that fetches it from the site, or bundle the file).
+ * the logo's wide version through `readAsset` (by default readPublicAsset: public/ on
+ * disk, else fetched from the site's own origin, since the Netlify function bundle
+ * has no public/).
  * @param {import("./event-image-rules.mjs").EventImage} image
  * @param {{ storage?: import("./storage.mjs").Storage | null, readAsset?: (path: string) => Promise<Buffer> }} deps
  * @returns {Promise<{ contentType: string, bytes: Buffer }>}
  */
-export async function loadCoverBytes(image, { storage, readAsset = readPublicFile } = {}) {
+export async function loadCoverBytes(image, { storage, readAsset = readPublicAsset } = {}) {
   const cover = image.cover;
   if (!cover) throw new Error("event image: this image has no 16:9 cover yet");
   if ("path" in cover) return { contentType: cover.contentType, bytes: Buffer.from(await readAsset(cover.path)) };

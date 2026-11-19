@@ -27,5 +27,6 @@ export function pickTab(requested, date, now = new Date()) {
 export const ACTION_TABS = Object.freeze({
   save: "info", link: "info", unlink: "info", cancel: "info", uncancel: "info",
   social_post: "social", social_video: "social", social_cover: "social", social_channel: "social",
+  linkedin_create: "social",
   report: "post",
 });

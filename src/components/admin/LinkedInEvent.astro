@@ -1,0 +1,195 @@
+---
+// The LinkedIn event on the Social Posts tab (ADR 0012, issue #25). Admin only.
+//   <LinkedInEvent date="2026-11-24" result={createResultOrNull} />
+// `result` is what src/lib/linkedin/linkedin.mjs createLinkedInEvent returned when the
+// page was just POSTed with action=linkedin_create (the page renders it straight
+// away: a dry run changes nothing, so there is no redirect).
+//
+// - The full preview of what would be sent: name, description, times, address, venue
+//   details, external link, cover, visibility, the post commentary, and the payloads.
+// - "Create live event" opens a native <dialog> (/js/admin-linkedin.js) that names the
+//   date, title and visibility, warns this is a REAL public event and a PUBLIC post,
+//   quotes the commentary and, on a dry run, says "Dry run: nothing will be sent". Its
+//   form sends confirm=live, which the server requires.
+//   Without JavaScript the button submits without confirm=live; the server refuses it
+//   (409) and the page shows the same dialog open inline, with the confirm button.
+// - After a dry run: the requests that would have been sent. After a refusal: why.
+import { hasRole } from "../../lib/admin/roles.mjs";
+import { getStorage, isIsoDate } from "../../lib/admin/storage.mjs";
+import { EVENT_ADDRESS, EXTERNAL_URL } from "../../lib/linkedin/rules.mjs";
+import { longDay } from "../../lib/admin/format.mjs";
+
+interface Props { date: string; result?: any }
+const { date, result = null } = Astro.props;
+const allowed = hasRole(Astro.locals, "admin") && isIsoDate(date);
+
+let configured = false;
+let p: any = null;
+if (allowed) {
+  const li = await import("../../lib/linkedin/linkedin.mjs");
+  configured = li.linkedInEnv().enabled;
+  if (configured) {
+    const { pool } = await import("../../lib/admin/db.mjs");
+    p = result?.preview ?? await li.linkedInEventPreview(pool, Astro.locals.user!.id, date);
+  }
+}
+const dryRun = p?.mode !== "live";
+const refusals: { code: string; message: string }[] = result && !result.ok ? result.refusals : (p?.refusals ?? []);
+const needsConfirm = Boolean(result && !result.ok && result.refusals.length === 1 && result.refusals[0].code === "confirm");
+const canCreate = p?.action === "create" && (p.refusals.length === 0);
+
+const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
+const when = p?.spec ? `${longDay(date)}, ${time.format(p.spec.startsAt)} to ${time.format(p.spec.endsAt)}` : "";
+const a = EVENT_ADDRESS;
+const address = `${a.line1}, ${a.city}, ${a.geographicArea} ${a.postalCode}, ${a.country}`;
+
+// The cover: a checked-in file from the site, a stored copy through a presigned GET.
+let coverSrc: string | null = null;
+const cover = p?.image?.cover;
+if (cover) {
+  if ("path" in cover) coverSrc = cover.path;
+  else {
+    const { storage } = getStorage();
+    coverSrc = storage ? storage.presignGet({ key: cover.key }).url : null;
+  }
+}
+const SOURCE: Record<string, string> = { uploaded: "the uploaded Event Image", referenced: "the picked Photo from Event", default: "the BOCC logo default" };
+const STATUS: Record<string, string> = {
+  pending: "Pending: a create was started and its outcome is unknown. Check LinkedIn before doing anything else.",
+  created: "Created on LinkedIn, but the post isn't published yet.",
+  posted: "Posted on LinkedIn.",
+};
+const json = (v: unknown) => JSON.stringify(v, null, 2);
+const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (connect first)";
+---
+{allowed && (
+  <div class="linkedin-event" id="linkedin-event">
+    {!configured ? null : !p ? null : (
+      <>
+        <p class:list={["mode", dryRun ? "mode-dry" : "mode-live"]}>
+          {dryRun
+            ? <>Dry run on this deploy: nothing is sent to LinkedIn (LINKEDIN_LIVE is not set).</>
+            : <>Live: Create live event sends to LinkedIn.</>}
+        </p>
+
+        {p.ledger && (
+          <p class="ledger">
+            <strong>Ledger:</strong> {STATUS[p.ledger.status] ?? p.ledger.status}
+            {p.ledger.eventUrl && <> <a href={p.ledger.eventUrl} rel="noopener noreferrer">LinkedIn event</a></>}
+            {p.ledger.postUrl && <> · <a href={p.ledger.postUrl} rel="noopener noreferrer">post</a></>}
+          </p>
+        )}
+
+        {refusals.length > 0 && (
+          <div class="refusals" role="alert">
+            {!needsConfirm && <p><strong>{p.ledger ? "Create isn't available:" : "Can't create the LinkedIn event:"}</strong></p>}
+            <ul>{refusals.map((r) => <li data-refusal={r.code}>{r.message}</li>)}</ul>
+            {result?.duplicates?.length > 0 && (
+              <ul class="duplicates">
+                {result.duplicates.map((d: any) => <li>{d.name ?? "(no name)"} <span class="muted">(LinkedIn event {d.id})</span></li>)}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {result?.ok && (
+          <div class="result" role="status">
+            <p><strong>Dry run: nothing was sent.</strong> These are the requests that would have been sent, in order.
+              {result.duplicateCheck === "passed"
+                ? " The duplicate check against the BOCC page's LinkedIn events passed."
+                : " The duplicate check was skipped: connect LinkedIn to run it."}</p>
+            {result.image?.warnings?.map((w: string) => <p class="warn">{w}</p>)}
+            <ol class="requests">
+              {result.requests.map((q: any) => (
+                <li>
+                  <code>{q.method} {q.url}</code>
+                  {typeof q.body === "string" ? <p class="muted">{q.body}</p> : <pre>{json(q.body)}</pre>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {p.spec && (
+          <>
+            <h3>Preview</h3>
+            <dl class="preview">
+              <dt>Name</dt><dd>{p.spec.name}</dd>
+              <dt>Description</dt><dd>{p.spec.description}</dd>
+              <dt>When</dt><dd>{when}</dd>
+              <dt>Address</dt><dd>{address}</dd>
+              <dt>Venue details</dt><dd>{p.spec.venueDetails}</dd>
+              <dt>External link</dt><dd><a href={EXTERNAL_URL} rel="noopener noreferrer">{EXTERNAL_URL}</a></dd>
+              <dt>Visibility</dt><dd>LISTED (public, discoverable), organized by the BOCC page</dd>
+              <dt>Cover</dt>
+              <dd>
+                {coverSrc ? <img src={coverSrc} alt="The 16:9 cover" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
+                <span class="muted"> {SOURCE[p.image.source] ?? p.image.source}{cover && "path" in cover ? ` (${cover.path})` : ""}</span>
+              </dd>
+              <dt>Post commentary</dt><dd><blockquote>{p.spec.commentary}</blockquote></dd>
+              <dt>Posted as</dt><dd>{postedAs}</dd>
+            </dl>
+            <details>
+              <summary>Payloads</summary>
+              <p class="muted">Values in angle brackets come from LinkedIn's replies.</p>
+              <h4>Image upload</h4><pre>{json(p.payloads.imageUpload)}</pre>
+              <h4>Event</h4><pre>{json(p.payloads.event)}</pre>
+              <h4>Post</h4><pre>{json(p.payloads.post)}</pre>
+            </details>
+          </>
+        )}
+
+        {canCreate && (
+          <>
+            <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
+              <input type="hidden" name="action" value="linkedin_create">
+              <button type="submit" data-linkedin-open="linkedin-confirm">Create live event</button>
+            </form>
+            <dialog id="linkedin-confirm" aria-labelledby="linkedin-confirm-title" open={needsConfirm}>
+              <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
+                <input type="hidden" name="action" value="linkedin_create">
+                <input type="hidden" name="confirm" value="live">
+                <h3 id="linkedin-confirm-title">Create the LinkedIn event?</h3>
+                {needsConfirm && <p class="muted">Confirm here to go ahead.</p>}
+                {dryRun && <p class="dry"><strong>Dry run: nothing will be sent.</strong></p>}
+                <dl>
+                  <dt>Date</dt><dd>{longDay(date)}</dd>
+                  <dt>Title</dt><dd>{p.spec.name}</dd>
+                  <dt>Visibility</dt><dd>LISTED (public)</dd>
+                </dl>
+                <p>This creates a <strong>REAL public LinkedIn event</strong> as the BOCC page, and a <strong>PUBLIC post from your profile</strong> ({postedAs}) that says:</p>
+                <blockquote>{p.spec.commentary}</blockquote>
+                <div class="buttons">
+                  <button type="submit">{dryRun ? "Run the dry run" : "Yes, create it on LinkedIn"}</button>
+                  <button type="submit" formmethod="dialog" formnovalidate class="secondary">Cancel</button>
+                </div>
+              </form>
+            </dialog>
+            <script is:inline type="module" src="/js/admin-linkedin.js"></script>
+          </>
+        )}
+      </>
+    )}
+  </div>
+)}
+
+<style>
+  .mode { padding: 0.4rem 0.75rem; border-left: 3px solid var(--line); }
+  .mode-live { border-left-color: var(--err); font-weight: 600; }
+  .refusals { border-left: 3px solid var(--err); padding: 0.1rem 0.75rem; }
+  .refusals ul { margin: 0.25rem 0; }
+  .preview { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; }
+  .preview dt { font-weight: 600; }
+  .preview dd { margin: 0; overflow-wrap: anywhere; }
+  .preview img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; }
+  blockquote { margin: 0.25rem 0; padding-left: 0.75rem; border-left: 3px solid var(--line); }
+  pre { overflow-x: auto; padding: 0.5rem; border: 1px solid var(--line); border-radius: 4px; font-size: 0.85rem; }
+  .requests code { overflow-wrap: anywhere; }
+  dialog { max-width: 36rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; }
+  dialog[open]:not(:modal) { position: static; margin: 1rem 0; }
+  dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 1rem; }
+  dialog dt { font-weight: 600; }
+  dialog dd { margin: 0; }
+  .buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .warn { color: var(--err); }
+</style>
