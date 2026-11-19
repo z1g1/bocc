@@ -7,7 +7,8 @@
 //   clearEventImage(actor, storage, date)   -> { changed, eventDate, mediaId, leftovers }
 //       deletes the event's ready event_image row (audited `event_image.clear`, with
 //       its keys) FIRST, then its four objects (as deleteMedia). The event then uses
-//       the BOCC logo. Nothing to clear: { changed: false }, no audit row.
+//       the BOCC logo. Nothing to clear: { changed: false }, no audit row. A picked
+//       photo is only un-referenced (details.referenced: true): the photo stays.
 //   loadCoverBytes(image, { storage, readAsset })  -> { contentType, bytes }
 //       the 16:9 cover's bytes on the server, for the LinkedIn image upload
 //   listPickablePhotos(db, date)            -> the picker (ticket #21): ready, publicly
@@ -133,6 +134,7 @@ export async function pickEventImage(actorUserId, storage, date, mediaId, { log 
   return { changed: true, eventDate: date, mediaId, needsCover: !photo.coverKey, replaced: replaced?.id ?? null, leftovers };
 }
 
+/** Thrown inside a transaction to roll it back when nothing would change (no audit row). */
 const NOTHING = Symbol("nothing");
 
 /**
@@ -143,7 +145,6 @@ const NOTHING = Symbol("nothing");
  */
 export async function clearEventImage(actorUserId, storage, date, { log } = {}) {
   checkDate(date);
-  const NOTHING = Symbol("nothing");
   let row;
   try {
     row = await withAudit(actorUserId, async (client) => {
@@ -152,12 +153,19 @@ export async function clearEventImage(actorUserId, storage, date, { log } = {}) 
         `delete from public.event_media
           where event_date = $1 and kind = 'event_image' and status = 'ready'
           returning id, original_key, display_key, thumb_key, cover_key`, [date]);
+      if (rows.length) return rows[0];
+      // No upload: a picked photo, if any, is only un-referenced.
+      const { rows: [ev] } = await client.query(
+        "select event_image_media_id as id from public.events where event_date = $1", [date]);
       // Throwing rolls back and skips the audit row: nothing changed.
-      if (!rows.length) throw NOTHING;
-      return rows[0];
+      if (!ev?.id) throw NOTHING;
+      await client.query("update public.events set event_image_media_id = null where event_date = $1", [date]);
+      return { id: ev.id, referenced: true };
     }, (r) => ({
       action: "event_image.clear", targetTable: "event_media", targetId: r.id,
-      details: { eventDate: date, mediaId: r.id, keys: rowKeys(r) },
+      details: r.referenced
+        ? { eventDate: date, mediaId: r.id, referenced: true, keys: [] }
+        : { eventDate: date, mediaId: r.id, keys: rowKeys(r) },
     }));
   } catch (err) {
     if (err === NOTHING) return { changed: false, eventDate: date, mediaId: null, leftovers: [] };

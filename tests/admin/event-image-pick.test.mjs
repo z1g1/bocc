@@ -217,3 +217,147 @@ describe("pick a photo as the Event Image", () => {
     await assert.rejects(ei.pickEventImage(actor.id, null, ds[9], old), { status: 400 });
   });
 });
+
+describe("deleting a photo that is an Event Image", () => {
+  test("is refused, naming the events that use it; nothing is deleted or audited", async () => {
+    const [p, d1, d2] = dates(3);
+    const photo = await seedPhoto(p);
+    await ei.pickEventImage(actor.id, null, d2, photo);
+    await ei.pickEventImage(actor.id, null, d1, photo);
+    const deletes = () => owner.query("select count(*)::int as n from audit_log where action = 'media.delete' and target_id = $1", [photo]).then((r) => r.rows[0].n);
+    const objects = [];
+    const fakeStorage = { deleteObject: async ({ key }) => { objects.push(key); } };
+
+    await assert.rejects(media.deleteMedia(actor.id, fakeStorage, photo), (err) => {
+      assert.equal(err.status, 409);
+      assert.deepEqual(err.eventDates, [d1, d2]);
+      assert.equal(err.message, `This photo is the Event Image for ${d1} and ${d2}, so it wasn't deleted. Pick another image for those events first.`);
+      return true;
+    });
+    assert.ok(await row(photo));
+    assert.deepEqual(objects, []);
+    assert.equal(await deletes(), 0);
+  });
+
+  test("an unreferenced photo still deletes as before, its cover object too", async () => {
+    const [p] = dates(1);
+    const photo = await seedPhoto(p, { cover: true });
+    const objects = [];
+    const res = await media.deleteMedia(actor.id, { deleteObject: async ({ key }) => { objects.push(key); } }, photo);
+    assert.equal(res.kind, "social_photo");
+    assert.equal(await row(photo), undefined);
+    assert.ok(objects.includes(`events/${p}/${photo}/cover.jpg`));
+  });
+
+  test("once the event picks something else, the photo deletes", async () => {
+    const [p, d] = dates(2);
+    const a = await seedPhoto(p);
+    const b = await seedPhoto(p);
+    await ei.pickEventImage(actor.id, null, d, a);
+    await ei.pickEventImage(actor.id, null, d, b);
+    await media.deleteMedia(actor.id, { deleteObject: async () => {} }, a);
+    assert.equal(await row(a), undefined);
+  });
+});
+
+describe("switching and the 16:9 cover against MinIO", { skip }, () => {
+  const ORIGINAL = Buffer.from("\x89PNG\r\n\x1a\n original", "binary");
+  const DISPLAY = Buffer.from("\xff\xd8 display", "binary");
+  const THUMB = Buffer.from("\xff\xd8 t", "binary");
+  const FILES = { original: ORIGINAL, display: DISPLAY, thumb: THUMB, cover: COVER };
+  async function upload(date) {
+    const r = await media.startUpload(actor.id, storage(), {
+      eventDate: date, kind: "event_image",
+      original: { contentType: "image/png", size: ORIGINAL.length, width: 2000, height: 2000 },
+      display: { size: DISPLAY.length }, thumb: { size: THUMB.length }, cover: { size: COVER.length },
+    });
+    for (const [v, bytes] of Object.entries(FILES)) {
+      const u = r.uploads[v];
+      assert.equal((await fetch(u.url, { method: u.method, headers: u.headers, body: bytes })).status, 200);
+    }
+    assert.equal((await media.completeUpload(actor.id, storage(), r.id, { db: pool })).status, "ready");
+    return r.id;
+  }
+  // Uploads are limited to today+366: these events are in 2024, the photos in 2077 are
+  // not offered to them (later than the event), so pick a photo seeded in 2024 too.
+  const day2024 = (() => { let n = 0; return () => {
+    const d = new Date(Date.UTC(2024, 6, 2) + (n++) * 86400000 * 3 + Math.floor(Math.random() * 3) * 86400000).toISOString().slice(0, 10);
+    used.add(d);
+    return d;
+  }; })();
+
+  test("uploaded -> picked -> uploaded -> picked -> default", async () => {
+    const d = day2024();
+    const photo = await seedPhoto(d, { cover: true });
+
+    const up = await upload(d);
+    const upRow = await row(up);
+    const picked = await ei.pickEventImage(actor.id, storage(), d, photo);
+    assert.equal(picked.replaced, up, "the upload gives way to the picked photo");
+    assert.equal(await row(up), undefined);
+    for (const k of [upRow.original_key, upRow.cover_key]) assert.equal(await exists(k), false, k);
+    assert.equal((await ei.getEventImage(pool, d)).source, "referenced");
+    assert.equal((await auditsFor(photo)).find((x) => x.action === "event_image.pick").details.replaced, up);
+
+    const up2 = await upload(d);
+    assert.equal(await ref(d), null, "an upload drops the reference");
+    const img = await ei.getEventImage(pool, d);
+    assert.equal(img.source, "uploaded");
+    assert.equal(img.mediaId, up2);
+
+    await ei.pickEventImage(actor.id, storage(), d, photo);
+    assert.equal((await ei.getEventImage(pool, d)).source, "referenced");
+    const cleared = await ei.clearEventImage(actor.id, storage(), d);
+    assert.equal(cleared.changed, true);
+    assert.equal(cleared.mediaId, photo);
+    assert.equal(await ref(d), null);
+    assert.ok(await row(photo), "clearing a picked photo never deletes the photo");
+    assert.equal((await ei.getEventImage(pool, d)).source, "default");
+    const clear = (await auditsFor(photo)).find((x) => x.action === "event_image.clear");
+    assert.deepEqual(clear.details, { eventDate: d, mediaId: photo, referenced: true, keys: [] });
+    assert.equal((await ei.clearEventImage(actor.id, storage(), d)).changed, false);
+  });
+
+  test("a picked photo without a cover gets one: presigned PUT, then complete checks it and sets cover_key (audited)", async () => {
+    const [p, d] = dates(2);
+    const photo = await seedPhoto(p);
+    assert.equal((await ei.pickEventImage(actor.id, storage(), d, photo)).needsCover, true);
+
+    const start = await media.startCover(actor.id, storage(), photo, { size: COVER.length });
+    assert.equal(start.key, `events/${p}/${photo}/cover.jpg`);
+    const early = await media.completeCover(actor.id, storage(), photo, { db: pool });
+    assert.deepEqual(early, { id: photo, status: "pending", problems: ["cover: not uploaded"] });
+    assert.equal((await row(photo)).cover_key, null);
+
+    const res = await fetch(start.upload.url, { method: start.upload.method, headers: start.upload.headers, body: COVER });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await media.completeCover(actor.id, storage(), photo, { db: pool }), { id: photo, status: "ready", coverKey: start.key });
+    assert.equal((await row(photo)).cover_key, start.key);
+
+    const img = await ei.getEventImage(pool, d);
+    assert.deepEqual(img.cover, { key: start.key, contentType: "image/jpeg" });
+    assert.deepEqual((await ei.loadCoverBytes(img, { storage: storage() })).bytes, COVER);
+    const actions = (await auditsFor(photo)).map((x) => x.action);
+    assert.deepEqual(actions.filter((a) => a.startsWith("media.cover")), ["media.cover_upload", "media.cover"]);
+    const done = (await auditsFor(photo)).find((x) => x.action === "media.cover");
+    assert.equal(done.actor_user_id, actor.id);
+    assert.deepEqual(done.details, { eventDate: p, key: start.key });
+
+    // Already has one: no second cover.
+    await assert.rejects(media.startCover(actor.id, storage(), photo, { size: COVER.length }), { status: 400 });
+  });
+
+  test("the cover: a wrong size stays pending; only for ready social photos; size within the cap", async () => {
+    const [p] = dates(1);
+    const photo = await seedPhoto(p);
+    const start = await media.startCover(actor.id, storage(), photo, { size: COVER.length + 1 });
+    const put = await fetch(start.upload.url, { method: "PUT", headers: start.upload.headers, body: COVER });
+    assert.equal(put.ok, false, "the bucket refuses a file of another size than signed");
+    assert.equal((await media.completeCover(actor.id, storage(), photo, { db: pool })).status, "pending");
+    const board = await seedPhoto(p, { kind: "signin_board" });
+    await assert.rejects(media.startCover(actor.id, storage(), board, { size: 10 }), { status: 400 });
+    await assert.rejects(media.startCover(actor.id, storage(), photo, { size: 0 }), { status: 400 });
+    await assert.rejects(media.startCover(actor.id, storage(), photo, { size: media.LIMITS.cover + 1 }), { status: 400 });
+    await assert.rejects(media.startCover(actor.id, storage(), randomUUID(), { size: 10 }), { status: 404 });
+  });
+});
