@@ -381,6 +381,10 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
     }
   }
 
+  if (preview.image.coverOutdated) {
+    // Made under the old centre-crop rule (ticket #40): wait for the event page to remake it.
+    return refuse([{ code: "image", message: `${REFUSALS.image} Its 16:9 version is being remade: open this event's Event Info tab, let it finish, then try again.` }]);
+  }
   let cover;
   try {
     cover = await loadCoverBytes(preview.image, { storage, readAsset });

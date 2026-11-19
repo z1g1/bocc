@@ -5,19 +5,26 @@
 // for the Readiness line).
 //
 // - Two previews with download buttons: the square/original (for Luma) and the 16:9
-//   cover (for the listings entered by hand). Stored files through short-lived
+//   version (the cover, for the listings entered by hand and LinkedIn: the image at
+//   full height centred on the "Just the Beans" background, never cropped, ticket
+//   #40). Stored files through short-lived
 //   presigned GETs (re-signed on every render, downloads with a signed
 //   Content-Disposition); the logo default from the site itself.
 // - Upload (set or change): /js/admin-media.js checks the image (PNG/JPEG, at least
-//   480x270, at most 8 MiB; a warning when it isn't 16:9), makes the display,
-//   thumbnail and 16:9 centre-crop cover copies and PUTs all four to the bucket.
+//   480x270, at most 8 MiB; a warning when it isn't a 1:1 square), shows the composed
+//   16:9 version in the preview, makes the display, thumbnail and 16:9 copies and PUTs
+//   all four to the bucket.
 //   Hidden until that script runs. The new image replaces the old one on complete.
 // - Pick (ticket #21): the recent Photos from Event (event-image.mjs listPickablePhotos)
 //   as thumbnails in a plain form post to /api/admin/media/event-image/pick: the event
 //   then references the photo. When the picked photo has no 16:9 cover copy
-//   (data-needs-cover), /js/admin-media.js makes one first (a centre crop of its display
-//   copy, PUT through /api/admin/media/{id}/cover). Without the script the pick still
-//   works, and the section then offers "Make the 16:9 version" (which needs it).
+//   (data-needs-cover), /js/admin-media.js makes one first (its display copy on the
+//   beans background, PUT through /api/admin/media/{id}/cover). Without the script the
+//   pick still works, and the section then offers "Make the 16:9 version" (which needs it).
+// - A 16:9 version made under the old centre-crop rule (image.coverOutdated, ticket
+//   #40) is remade by the script as the page opens (the make-cover form, data-auto);
+//   an outdated photo in the picker counts as having none. /admin/media/covers/ remakes
+//   every outdated version at once.
 // - Clear: a plain form post to /api/admin/media/event-image/clear (back to the logo;
 //   a picked photo is only un-referenced, never deleted).
 // - Unfinished Event Image uploads over a day old, with a delete button.
@@ -77,9 +84,11 @@ if (allowed && image) {
     const { listPickablePhotos } = await import("../../lib/admin/event-image.mjs");
     pickable = (await listPickablePhotos(pool, date)).map((m: any) => ({
       ...m,
+      // An outdated 16:9 version (old centre-crop rule) counts as none: picking remakes it.
+      coverKey: m.coverOutdated ? null : m.coverKey,
       thumbUrl: storage.presignGet({ key: m.thumbKey }).url,
-      // The script crops the 16:9 cover from the display copy (CORS GET from the bucket).
-      displayUrl: m.coverKey ? null : storage.presignGet({ key: m.displayKey }).url,
+      // The script composes the 16:9 version from the display copy (CORS GET from the bucket).
+      displayUrl: m.coverKey && !m.coverOutdated ? null : storage.presignGet({ key: m.displayKey }).url,
       current: image.source === "referenced" && image.mediaId === m.id,
     }));
   }
@@ -87,8 +96,10 @@ if (allowed && image) {
 const statusId = `event-image-status-${date}`;
 const pickStatusId = `event-image-pick-status-${date}`;
 // A picked photo without its 16:9 copy (picked without the script): offer to make it.
-const referencedNeedsCover = image?.source === "referenced" && !image.cover && storage
-  ? { id: image.mediaId, displayUrl: storage.presignGet({ key: image.display.key }).url } : null;
+// One made under the old rule (uploaded or picked): the script remakes it on open.
+const coverToMake = storage && ((image?.source === "referenced" && !image.cover) || image?.coverOutdated)
+  ? { id: image.mediaId, displayUrl: storage.presignGet({ key: image.display.key }).url, auto: Boolean(image.coverOutdated) } : null;
+const previewId = `event-image-preview-${date}`;
 const warningId = `event-image-warning-${date}`;
 const inputId = `event-image-file-${date}`;
 const fmtTime = (d: Date) =>
@@ -97,7 +108,7 @@ const fmtTime = (d: Date) =>
 {allowed && image && (
   <section class="event-image" id="event-image" aria-labelledby="h-event-image">
     <h2 id="h-event-image">Event Image</h2>
-    <p class="muted">One image for every Online Event Listing this week. The square/original is for Luma; the 16:9 version is for the listings entered by hand.</p>
+    <p class="muted">One image for every Online Event Listing this week. Make it a <strong>1:1 square</strong>: the square/original is for Luma as is. The 16:9 version (for the listings entered by hand and LinkedIn) is made for you: the image at full height, centred on the BOCC "Just the Beans" background, never cropped.</p>
     {notice && <p class="notice" role="status">{notice}</p>}
     <p class="source">
       {isDefault ? "Using the default: the BOCC logo."
@@ -112,8 +123,9 @@ const fmtTime = (d: Date) =>
         {square && <p><a class="button small" href={square.href} download={square.download}>Download square/original</a></p>}
       </figure>
       <figure>
-        {cover ? <img src={cover.src} alt={`Event Image, 16:9 cover, ${date}`} loading="lazy" decoding="async"> : <p class="muted">No 16:9 version yet.</p>}
-        <figcaption>16:9 <span class="muted">(listings entered by hand)</span></figcaption>
+        {cover ? <img src={cover.src} alt={`Event Image, 16:9 version, ${date}`} loading="lazy" decoding="async"> : <p class="muted">No 16:9 version yet.</p>}
+        <figcaption>16:9 <span class="muted">(listings entered by hand, LinkedIn)</span></figcaption>
+        {image.coverOutdated && <p class="muted">This 16:9 version is a centre crop, made under the old rule: it is being remade on the beans background.</p>}
         {cover && <p><a class="button small" href={cover.href} download={cover.download}>Download 16:9</a></p>}
       </figure>
     </div>
@@ -121,18 +133,21 @@ const fmtTime = (d: Date) =>
     {!storage ? <p class="muted" data-media-off>{STORAGE_OFF_MESSAGE}</p> : (
       <>
         <p class="muted" data-media-nojs>Uploading the Event Image needs JavaScript.</p>
-        <form class="media-upload" data-media-upload data-kind="event_image" data-event-date={date} data-status={statusId} data-warning={warningId} hidden>
+        <form class="media-upload" data-media-upload data-kind="event_image" data-event-date={date} data-status={statusId} data-warning={warningId} data-preview={previewId} hidden>
           <input type="hidden" name="kind" value="event_image">
-          <label for={inputId}>{isDefault ? "Upload an Event Image" : "Change the Event Image"} <span class="muted">(PNG or JPEG, at least 480×270, up to 8 MB; 16:9 is best)</span></label>
+          <label for={inputId}>{isDefault ? "Upload an Event Image" : "Change the Event Image"} <span class="muted">(a 1:1 square PNG or JPEG, at least 480×480, up to 8 MB)</span></label>
           <input id={inputId} type="file" name="files" accept="image/jpeg,image/png" required>
           <p class="warning" id={warningId} role="status" aria-live="polite"></p>
+          <figure class="composed">
+            <img id={previewId} alt="The 16:9 version of the chosen image, on the beans background" hidden>
+          </figure>
           <button type="submit">{isDefault ? "Upload Event Image" : "Replace Event Image"}</button>
         </form>
         <p class="media-status" id={statusId} role="status" aria-live="polite"></p>
 
-        {referencedNeedsCover && (
-          <form class="inline" data-make-cover data-media-id={referencedNeedsCover.id} data-display-url={referencedNeedsCover.displayUrl} data-status={pickStatusId} hidden>
-            <button type="submit">Make the 16:9 version</button>
+        {coverToMake && (
+          <form class="inline" data-make-cover data-auto={coverToMake.auto ? "" : undefined} data-media-id={coverToMake.id} data-display-url={coverToMake.displayUrl} data-status={pickStatusId} hidden>
+            <button type="submit">{coverToMake.auto ? "Remake the 16:9 version" : "Make the 16:9 version"}</button>
           </form>
         )}
 
@@ -199,6 +214,8 @@ const fmtTime = (d: Date) =>
   .previews figcaption { margin-top: 0.25rem; font-weight: 600; }
   .previews p { margin: 0.25rem 0; }
   .warning { min-height: 1.2em; color: var(--err); }
+  .composed { margin: 0 0 0.5rem; }
+  .composed img { display: block; max-width: 100%; height: auto; max-height: 12rem; border: 1px solid var(--line); border-radius: 4px; }
   .media-status { min-height: 1.5em; }
   .pick-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
   .pick-grid label { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; cursor: pointer; }

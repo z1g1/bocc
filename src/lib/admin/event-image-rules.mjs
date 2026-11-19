@@ -5,11 +5,12 @@
 //   1. uploaded    the event's own `event_image` row (at most one ready per event)
 //   2. referenced  a publicly usable `social_photo` the event points at (ticket #21 adds
 //                  the reference; until then the caller passes none)
-//   3. default     the square BOCC logo, with a checked-in 16:9 version on brand cream
+//   3. default     the square BOCC logo, with a checked-in 16:9 version: the logo at
+//                  full height on the "Just the Beans" background (ticket #40)
 //
 // The resolved image has the same shape whatever its source, so consumers (the Event
 // Image section, the Social Post cover, the LinkedIn image upload) don't branch on it:
-//   { source, mediaId, eventDate, original, display, thumb, cover }
+//   { source, mediaId, eventDate, original, display, thumb, cover, coverOutdated }
 // where each file is either { key, contentType } (an object in the private bucket:
 // sign it with storage.presignGet, or read it with storage.getObject) or
 // { path, contentType, width, height } (a checked-in file under public/, same origin).
@@ -17,14 +18,16 @@
 // `original` is the square/original image (for Luma), `cover` the 16:9 copy (for the
 // listings entered by hand, and LinkedIn). A referenced photo picked before it had a
 // cover copy has `cover: null`: whoever picks it must make one (it is never silently
-// swapped for the logo's).
+// swapped for the logo's). `coverOutdated`: the cover was made under the old
+// centre-crop rule and is being remade in the browser (migration 20261202120000); it
+// is still shown, but not sent to LinkedIn.
 
 /** @typedef {{ key: string, contentType: string }} StoredFile */
 /** @typedef {{ path: string, contentType: string, width: number, height: number }} AssetFile */
 /**
  * @typedef {{ source: "uploaded"|"referenced"|"default", mediaId: string|null, eventDate: string|null,
  *   original: StoredFile|AssetFile, display: StoredFile|AssetFile, thumb: StoredFile|AssetFile,
- *   cover: StoredFile|AssetFile|null }} EventImage
+ *   cover: StoredFile|AssetFile|null, coverOutdated: boolean }} EventImage
  */
 
 const SQUARE_LOGO = Object.freeze({
@@ -37,14 +40,14 @@ const WIDE_LOGO = Object.freeze({
 /** @type {Readonly<EventImage>} */
 export const DEFAULT_EVENT_IMAGE = Object.freeze({
   source: "default", mediaId: null, eventDate: null,
-  original: SQUARE_LOGO, display: SQUARE_LOGO, thumb: SQUARE_LOGO, cover: WIDE_LOGO,
+  original: SQUARE_LOGO, display: SQUARE_LOGO, thumb: SQUARE_LOGO, cover: WIDE_LOGO, coverOutdated: false,
 });
 
 const COPY = "image/jpeg";
 
 /**
  * @param {{ id: string, eventDate: string, status: string, originalKey: string, displayKey: string,
- *   thumbKey: string, coverKey?: string|null, contentType: string }} row  an event_media row (camelCase)
+ *   thumbKey: string, coverKey?: string|null, coverOutdated?: boolean, contentType: string }} row  an event_media row (camelCase)
  * @param {"uploaded"|"referenced"} source
  * @returns {EventImage}
  */
@@ -57,6 +60,7 @@ function fromRow(row, source) {
     display: { key: row.displayKey, contentType: COPY },
     thumb: { key: row.thumbKey, contentType: COPY },
     cover: row.coverKey ? { key: row.coverKey, contentType: COPY } : null,
+    coverOutdated: Boolean(row.coverKey && row.coverOutdated),
   };
 }
 

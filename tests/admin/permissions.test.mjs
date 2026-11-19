@@ -41,6 +41,7 @@ describe("migrations", () => {
       "20261128120000_event_image_reference.sql",
       "20261129120000_linkedin_events.sql",
       "20261130120000_linkedin_events_post_claim.sql",
+      "20261202120000_event_media_cover_outdated.sql",
     ]);
   });
 
