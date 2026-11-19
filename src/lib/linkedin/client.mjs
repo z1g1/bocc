@@ -49,6 +49,7 @@ const USER_MESSAGES = {
   expired: "LinkedIn says the connection is invalid or expired. Reconnect LinkedIn and try again.",
   page_role: "LinkedIn refused. Your account must be an ADMINISTRATOR or CONTENT_ADMINISTRATOR of the BOCC page, and the app needs its LinkedIn products.",
   validation: "LinkedIn rejected the request as invalid.",
+  hidden_post: "LinkedIn rejected the post as a hidden member post (it treats those as sponsored content). The event post must be a public post on your main feed.",
   refused: "The app refused to send this request to LinkedIn.",
   uncertain: "LinkedIn didn't answer clearly. The item may or may not exist on LinkedIn: check there before retrying.",
   unknown: "LinkedIn failed. Try again later.",
@@ -57,7 +58,7 @@ const USER_MESSAGES = {
 /** A failed LinkedIn call, mapped to a domain error the page can explain. */
 export class LinkedInError extends Error {
   /**
-   * @param {"expired"|"page_role"|"validation"|"refused"|"uncertain"|"unknown"} kind
+   * @param {"expired"|"page_role"|"validation"|"hidden_post"|"refused"|"uncertain"|"unknown"} kind
    * @param {string} message  for logs: no token, code or secret
    * @param {{ status?: number|null, detail?: string|null }} [extra]
    */
@@ -100,6 +101,10 @@ export function parseJson(text) {
 
 const KIND_BY_STATUS = (status) =>
   status === 401 ? "expired" : status === 403 ? "page_role" : status === 400 || status === 422 ? "validation" : "unknown";
+
+// LinkedIn refuses hidden member posts (feedDistribution NONE) as sponsored content
+// (tools/linkedin-events/README.md, "Verified behaviour"). Only on the post call.
+const HIDDEN_POST = /sponsored|feedDistribution/i;
 
 /**
  * @param {{ clientId: string, clientSecret: string }} config
@@ -144,8 +149,9 @@ export function createLinkedInClient({ clientId, clientSecret }, { fetch: doFetc
       }
       const text = await readCapped(res);
       if (!res.ok) {
-        const kind = KIND_BY_STATUS(res.status);
         const detail = detailOf(text, token);
+        let kind = KIND_BY_STATUS(res.status);
+        if (op === "create_post" && res.status >= 400 && res.status < 500 && kind !== "expired" && HIDDEN_POST.test(detail)) kind = "hidden_post";
         throw new LinkedInError(kind, `linkedin ${op} answered HTTP ${res.status}${detail ? `: ${detail}` : ""}`, { status: res.status, detail });
       }
       return { status: res.status, headers: res.headers, text };

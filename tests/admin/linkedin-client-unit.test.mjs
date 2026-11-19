@@ -216,3 +216,22 @@ describe("errors are mapped to domain errors", () => {
     });
   }
 });
+
+describe("a hidden member post (#26)", () => {
+  it("a 4xx on the post naming sponsored content or feedDistribution -> hidden_post", async () => {
+    for (const message of ["Sponsored content posts can't be created by members", "Invalid feedDistribution NONE for a member post"]) {
+      const fetch = fakeFetch(json(422, { message }));
+      await assert.rejects(client(fetch).createPost(TOKEN, {}), (err) => {
+        assert.equal(err.kind, "hidden_post");
+        assert.match(err.userMessage, /hidden/i);
+        assert.match(err.userMessage, /public/i);
+        return true;
+      });
+    }
+  });
+
+  it("the same words on another call stay a validation error", async () => {
+    const fetch = fakeFetch(json(422, { message: "Sponsored content" }));
+    await assert.rejects(client(fetch).createEvent(TOKEN, {}), (err) => err.kind === "validation");
+  });
+});
