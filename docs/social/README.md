@@ -15,6 +15,12 @@ never posts anything itself. The old API plan
 | Thursday 9 AM ET (10 AM in summer) | the app | A Netlify scheduled function checks the coming Tuesday. If there is no post, the post isn't ready, or a channel isn't `scheduled`/`live`, Zack gets an **ntfy push** whose link opens `/admin/social/next/`. Otherwise nothing is sent |
 | Monday about 7:20 AM ET | Modron's Claude in Chrome task | Opens `/admin/social/verify/`, opens each post, marks it `live` or `failed`, posts the Luma link as the first comment on Instagram and TikTok, and records that it did |
 
+**Holiday break:** there is no meeting on any Tuesday from December 22 through January 4, so
+those weeks have no work order. The Wednesday task gets the first week after the break and the
+Thursday check stays quiet. To meet on one of those Tuesdays anyway, open
+`/admin/events/<date>/` and save it: a saved row makes it a normal week
+([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 7).
+
 The prompts for the two Chrome tasks, and what to do when one reports a problem, are in
 [CHROME_TASKS.md](CHROME_TASKS.md). Caption rules, in code (`src/lib/admin/social-rules.mjs`):
 - Facebook, Threads and LinkedIn get the caption plus "RSVP: <Luma link>".

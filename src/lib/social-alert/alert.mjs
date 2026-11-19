@@ -6,8 +6,9 @@
 //   nextTuesday(today)                 the Tuesday strictly after `today` (Eastern date)
 //   socialAlert({ order, siteUrl })    the work order (social-rules.mjs buildWorkOrder,
 //                                      or null when there is no events row) -> an alert,
-//                                      or null when everything is fine or the event is
-//                                      cancelled
+//                                      or null when everything is fine, the event is
+//                                      cancelled, or `date` is a holiday-week Tuesday
+//                                      with no events row (isHolidayWeek)
 //   alertSiteUrl({ deployContext, siteUrl, env })   the origin the Click link opens
 //   readNtfyConfig(env)                { topic, server } | { problem } | null (unset)
 //   sendNtfy(alert, config, { fetch }) POST JSON to the server root; 5 s timeout; errors
@@ -20,6 +21,9 @@
 // can't leak it.
 
 import { CHANNELS, CHANNEL_KEYS } from "../admin/social-rules.mjs";
+import { isHolidayWeek } from "../holiday-weeks.mjs";
+
+export { isHolidayWeek };
 
 const TZ = "America/New_York";
 
@@ -38,7 +42,11 @@ const ymdFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric",
 /** Today's date in Eastern time, YYYY-MM-DD. */
 export const easternToday = (now = new Date()) => ymdFmt.format(now);
 
-/** The Tuesday strictly after `today` (YYYY-MM-DD): from a Thursday, five days on. */
+/**
+ * The Tuesday strictly after `today` (YYYY-MM-DD): from a Thursday, five days on. Holiday
+ * weeks are NOT skipped here: the check looks at that Tuesday and socialAlert() stays
+ * quiet when it is in the break and has no row.
+ */
 export function nextTuesday(today) {
   if (typeof today !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error("nextTuesday: date must be YYYY-MM-DD");
   const d = new Date(`${today}T00:00:00Z`);
@@ -98,11 +106,14 @@ export const contextAllowed = (deployContext) => deployContext !== "deploy-previ
  * @param {{ order: null | { date: string, exists: boolean, eventStatus: string, ready: boolean,
  *             problems: Array<{ message: string }>, channels: Array<{ channel: string, label?: string, status: string|null }> },
  *           date: string, siteUrl?: string|null }} s
- *   order null = no events row for `date` (treated like a scheduled event with no post)
+ *   order null = no events row for `date`: a scheduled event with no post, except in the
+ *   holiday break (Dec 22 to Jan 4), where a Tuesday without a row isn't a meeting. A row
+ *   on a holiday date (the override) is checked like any other week.
  * @returns {null | { title: string, message: string, priority: "high", tags: string[], click: string|null }}
  */
 export function socialAlert({ order, date, siteUrl = null }) {
   if (order && order.eventStatus !== "scheduled") return null; // cancelled (or already held)
+  if (!order && isHolidayWeek(date)) return null; // holiday break, no meeting
   const exists = Boolean(order?.exists);
   const problems = exists ? order.problems ?? [] : [];
   const notReady = !exists || !order.ready || problems.length > 0;

@@ -58,14 +58,16 @@
 // The social role's pages pick their post with:
 //   findNext(db, { now, today })    the EARLIEST upcoming event (event_date >= today
 //       Eastern; every Tuesday counts, with or without an events row; cancelled ones
-//       don't) whose publish time (the default one without a post) is still ahead and
+//       don't, and neither does a Tuesday in the holiday break, Dec 22 to Jan 4, unless
+//       it has a scheduled row: ../holiday-weeks.mjs) whose publish time (the default one without a post) is still ahead and
 //       that still has work: no post, not ready, or a channel pending. It never skips
 //       a stuck week for a later one; a week moves on once none of its channels is
 //       pending. { state: "ready", order } when that post is actionable, otherwise
 //       { state: "nothing", reason, message, date, problems, upcoming } with reason
 //       no_post | not_ready | problems, about that same week.
 //   findVerify(db, { now, today })  the post (of an event that isn't cancelled) whose
-//       publish_at passed most recently, up to and including its event day:
+//       publish_at passed most recently, up to and including its event day (a post
+//       always has its events row, so a holiday-week post is the override and counts):
 //       { state: "verify", order, todo, allDone } or { state: "nothing", message, nextPublish }.
 //
 // Errors: ValidationError (400; .errors is { field: message }), ConflictError (409)
@@ -74,6 +76,7 @@
 import { withAudit } from "./db.mjs";
 import { ConflictError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
 import { isUuid } from "./attendees.mjs";
+import { isHolidayWeek } from "../holiday-weeks.mjs";
 import {
   CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, STATUSES, TRANSITIONS, buildWorkOrder, canTransition,
   defaultPublishAt, defaultTexts, easternToUtc, isChannel, normaliseHashtags, postUrlProblem, publishAtProblem,
@@ -489,7 +492,12 @@ const addDays = (date, n) => {
 export async function findNext(db, { now = new Date(), today = todayEastern(now) } = {}) {
   // Every upcoming events row with its post (a post always has its events row:
   // lockPost creates it). Rows are made on demand, so a Tuesday without one is still
-  // an event (scheduled, no post yet).
+  // an event (scheduled, no post yet), EXCEPT in the holiday break (Dec 22 to Jan 4,
+  // ../holiday-weeks.mjs): a holiday Tuesday without a row doesn't exist and is
+  // skipped like a cancelled one. A row always counts (unless cancelled), holiday or
+  // not: a scheduled row on a holiday date is the deliberate override for an unusual
+  // year. Skipping only ever drops a holiday Tuesday, so the earliest NORMAL week with
+  // work is still never skipped for a later one.
   const { rows } = await db.query(
     `select e.event_date::text as date, e.status, p.event_date is not null as "hasPost", p.ready,
             p.publish_at as "publishAt",
@@ -503,7 +511,7 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   const first = nextTuesday(today);
   const last = rows.length && rows.at(-1).date > first ? rows.at(-1).date : first;
   const dates = new Set(rows.map((r) => r.date));
-  for (let d = first; d <= last; d = addDays(d, 7)) dates.add(d);
+  for (let d = first; d <= last; d = addDays(d, 7)) if (!isHolidayWeek(d)) dates.add(d);
   const events = [...dates].sort().map((d) => byDate.get(d) ?? { date: d, status: "scheduled", hasPost: false })
     .filter((r) => r.status !== "cancelled");
 
@@ -516,9 +524,10 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   // channel of it is done (scheduled, live or failed), the next week's turn comes.
   let target = events.find((r) => open(r) && (!r.hasPost || !r.ready || r.pending > 0));
   if (!target) {
-    // Every listed week is done or past its publish time: the first Tuesday after them.
+    // Every listed week is done or past its publish time: the first Tuesday after them
+    // (nextTuesday skips the holiday break; so does this loop).
     let d = nextTuesday(addDays(last, 1));
-    while (defaultPublishAt(d).getTime() <= now.getTime()) d = addDays(d, 7);
+    while (isHolidayWeek(d) || defaultPublishAt(d).getTime() <= now.getTime()) d = addDays(d, 7);
     target = { date: d, hasPost: false };
   }
   const wait = "Later weeks wait until this one is scheduled.";

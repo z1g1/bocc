@@ -286,6 +286,11 @@ describe("events module", () => {
     assert.equal(ev.todayEastern(new Date("2026-07-01T03:59:00Z")), "2026-06-30", "EDT is UTC-4");
     assert.equal(ev.nextTuesday("2026-11-17"), "2026-11-17");
     assert.equal(ev.nextTuesday("2026-11-18"), "2026-11-24");
+    // The holiday break (Dec 22 to Jan 4, src/lib/holiday-weeks.mjs) is skipped.
+    assert.equal(ev.nextTuesday("2026-12-15"), "2026-12-15");
+    assert.equal(ev.nextTuesday("2026-12-16"), "2027-01-05");
+    assert.equal(ev.nextTuesday("2026-12-29"), "2027-01-05");
+    assert.equal(ev.nextTuesday("2027-12-22"), "2028-01-11", "2028-01-04 is a Tuesday on the break's last day");
 
     const [a, b, c, d] = [pastDate(), pastDate(), pastDate(), pastDate()];
     await ev.saveEvent(actor.id, a, { status: "scheduled" });      // past, scheduled -> missing

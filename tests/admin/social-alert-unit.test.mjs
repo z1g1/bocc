@@ -14,13 +14,13 @@ const DATE = "2026-11-24";
 const SITE = "https://716coffee.club";
 
 /** A work order from the real buildWorkOrder(). */
-function order({ exists = true, ready = true, statuses = {}, eventStatus = "scheduled", luma = "https://luma.com/x", video = true, baseCaption = "Coffee Tuesday" } = {}) {
+function order({ date = DATE, exists = true, ready = true, statuses = {}, eventStatus = "scheduled", luma = "https://luma.com/x", video = true, baseCaption = "Coffee Tuesday" } = {}) {
   const channels = Object.fromEntries(CHANNEL_KEYS.map((c) => [c, {
     caption: null, firstComment: null, status: statuses[c] ?? "scheduled", postUrl: null,
     verifiedAt: null, commentPostedAt: null, notes: null,
   }]));
   return buildWorkOrder({
-    date: DATE,
+    date,
     event: { status: eventStatus, exists: true },
     post: exists ? { videoMediaId: video ? "v" : null, coverNote: null, baseCaption, extraHashtags: [], publishAt: new Date("2026-11-23T12:00:00Z"), ready, channels } : null,
     lumaUrl: luma,
@@ -72,6 +72,24 @@ describe("socialAlert", () => {
   test("no events row is treated as a scheduled event with no post", () => {
     const a = socialAlert({ order: null, date: DATE, siteUrl: SITE });
     assert.equal(a.title, "BOCC social: no post for Tue Nov 24");
+  });
+
+  test("holiday break (Dec 22 to Jan 4): no events row, no alert", () => {
+    for (const d of ["2026-12-22", "2026-12-29", "2028-01-04"]) assert.equal(socialAlert({ order: null, date: d, siteUrl: SITE }), null, d);
+  });
+
+  test("the weeks either side of the break still alert without a row", () => {
+    assert.equal(socialAlert({ order: null, date: "2026-12-15", siteUrl: SITE }).title, "BOCC social: no post for Tue Dec 15");
+    assert.equal(socialAlert({ order: null, date: "2027-01-05", siteUrl: SITE }).title, "BOCC social: no post for Tue Jan 5");
+  });
+
+  test("a scheduled row on a holiday date is the override: checked like any week", () => {
+    const d = "2026-12-22";
+    assert.equal(socialAlert({ order: order({ date: d, exists: false }), date: d, siteUrl: SITE }).title, "BOCC social: no post for Tue Dec 22");
+    assert.equal(socialAlert({ order: order({ date: d, statuses: { tiktok: "pending" } }), date: d, siteUrl: SITE }).title,
+      "BOCC social: 1 of 5 channels not scheduled for Tue Dec 22");
+    assert.equal(socialAlert({ order: order({ date: d }), date: d, siteUrl: SITE }), null, "all scheduled");
+    assert.equal(socialAlert({ order: order({ date: d, eventStatus: "cancelled" }), date: d, siteUrl: SITE }), null, "cancelled");
   });
 
   test("a post not marked ready lists its problems and every pending channel", () => {
@@ -273,6 +291,40 @@ describe("runSocialCheck (database read replaced)", () => {
       env, context: { deploy: { context: "branch-deploy" }, site: { url: SITE } }, now: THURSDAY, fetch: f, readOrder: async () => null,
     }));
     assert.equal(JSON.parse(f.calls[0].init.body).click, "https://dev--bocc-backend.netlify.app/admin/social/next");
+  });
+
+  test("a holiday week: reads the row, finds none, sends nothing and logs why", async () => {
+    for (const [thursday, tuesday] of [["2026-12-17T14:00:00Z", "2026-12-22"], ["2026-12-24T14:00:00Z", "2026-12-29"]]) {
+      const f = fakeFetch();
+      const seen = [];
+      const { result, lines } = await captureLogs(() => runSocialCheck({
+        env, context: prod, now: new Date(thursday), fetch: f, readOrder: async (d) => { seen.push(d); return null; },
+      }));
+      assert.deepEqual(seen, [tuesday]);
+      assert.deepEqual(result, { outcome: "ok", date: tuesday });
+      assert.equal(f.calls.length, 0);
+      assert.match(lines.join("\n"), new RegExp(`${tuesday}: skipped as a holiday week \\(no meeting December 22 to January 4\\); no alert`));
+      assert.match(lines.join("\n"), /"level":"info"/);
+    }
+  });
+
+  test("a holiday week with a saved row (the override) alerts as usual", async () => {
+    const f = fakeFetch();
+    const { result } = await captureLogs(() => runSocialCheck({
+      env, context: prod, now: new Date("2026-12-17T14:00:00Z"), fetch: f,
+      readOrder: async (d) => order({ date: d, exists: false }),
+    }));
+    assert.equal(result.outcome, "sent");
+    assert.equal(JSON.parse(f.calls[0].init.body).title, "BOCC social: no post for Tue Dec 22");
+  });
+
+  test("the first week after the break alerts without a row", async () => {
+    const f = fakeFetch();
+    const { result } = await captureLogs(() => runSocialCheck({
+      env, context: prod, now: new Date("2026-12-31T14:00:00Z"), fetch: f, readOrder: async () => null,
+    }));
+    assert.equal(result.outcome, "sent");
+    assert.equal(result.date, "2027-01-05");
   });
 
   test("topic unset: logs and stops before reading anything", async () => {

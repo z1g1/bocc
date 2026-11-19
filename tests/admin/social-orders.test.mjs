@@ -4,8 +4,8 @@
 //      allowlist (roles.mjs mayReach, guard.mjs), the nav links
 //   2. src/lib/admin/social.mjs as admin_app: setChannelResult (audited, transitions,
 //      URL checks, verified_at / comment_posted_at, no-ops), findNext's states (no
-//      post, not ready, problems, ready; never skipping a stuck week; cancelled weeks) and findVerify's, with an injected
-//      clock in far-future years (2091-2095) so other tests' posts don't interfere
+//      post, not ready, problems, ready; never skipping a stuck week; cancelled weeks; the holiday break and its override) and findVerify's, with an injected
+//      clock in far-future years (2091-2097) so other tests' posts don't interfere
 //   3. over HTTP (astro dev, the real clock): /admin/social/next/ and /verify/ and
 //      /api/admin/social/*: roles (social reaches only these), Origin, PRG, refused
 //      saves, the agent-facing markup, and no personal data on any of them
@@ -388,6 +388,51 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     r = await so.findNext(pool, { now: afterPublish });
     assert.equal(r.date, D3);
     assert.notEqual(r.order?.date, D2, "a post whose publish time passed is not offered for scheduling");
+  });
+
+  test("next: the holiday break (Dec 22 to Jan 4) is skipped without a row, 2026", async () => {
+    // No rows in this range (other tests' real-clock posts start at the coming Tuesday).
+    const r = await so.findNext(pool, { now: at("2026-12-16") }); // Wednesday after 12/15
+    assert.equal(r.date ?? r.order?.date, "2027-01-05", "12/22 and 12/29 don't exist");
+    assert.ok(!r.upcoming.some((u) => u.date === "2026-12-22" || u.date === "2026-12-29"));
+    // 12/15's publish time has passed: on to the first week after the break, not 12/22.
+    const r2 = await so.findNext(pool, { now: at("2026-12-16"), today: "2026-12-14" });
+    assert.equal(r2.date ?? r2.order?.date, "2027-01-05");
+  });
+
+  test("next: holiday weeks are skipped, a scheduled row on one is the override, normal weeks never skipped", async () => {
+    // 2096: Tuesdays 12/18 (normal), 12/25 and 1/1 (holiday break), 1/8 and 1/15 (normal).
+    const now = at("2096-12-12"); // a Wednesday
+    const D = "2096-12-18", H1 = "2096-12-25", H2 = "2097-01-01", N1 = "2097-01-08", N2 = "2097-01-15";
+    let r = await so.findNext(pool, { now });
+    assert.equal(r.date, D, "the normal week before the break is unchanged");
+
+    // D done: every listed week is done, so the fallback's first Tuesday after it, past the break.
+    await readyPost(D);
+    for (const c of CHANNELS) await so.setChannelResult(actor.id, D, c, { status: "scheduled" }, { now });
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "no_post");
+    assert.equal(r.date, N1, "12/25 and 1/1 skipped");
+
+    // A ready later week never jumps the first normal week after the break.
+    await readyPost(N2);
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "no_post");
+    assert.equal(r.date, N1);
+    assert.ok(!r.upcoming.some((u) => u.date === H1 || u.date === H2));
+
+    // The override: a deliberately saved (scheduled) row on a holiday date is a real event.
+    await so.savePost(actor.id, H1, { baseCaption: "Holiday coffee" });
+    assert.equal((await owner.query(`select status from events where event_date = $1`, [H1])).rows[0].status, "scheduled");
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "not_ready");
+    assert.equal(r.date, H1, "a scheduled holiday row counts");
+    assert.deepEqual(r.upcoming.map((u) => u.date), [D, H1, N2], "the override is listed with the other posts");
+
+    // Cancelled, it is skipped again (like any cancelled week).
+    await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [H1]);
+    r = await so.findNext(pool, { now });
+    assert.equal(r.date, N1);
   });
 
   test("verify skips a cancelled event", async () => {

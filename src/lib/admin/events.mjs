@@ -39,6 +39,7 @@
 
 import { withAudit } from "./db.mjs";
 import { parseDate } from "./checkins.mjs";
+import { isHolidayWeek } from "../holiday-weeks.mjs";
 
 export { parseDate };
 
@@ -78,10 +79,17 @@ export function todayEastern(now = new Date()) {
   return ymdFmt.format(now);
 }
 
-/** The first Tuesday on or after `today` (YYYY-MM-DD), for "open next Tuesday" links. */
+/**
+ * The first meeting Tuesday on or after `today` (YYYY-MM-DD), for "Open next Tuesday"
+ * links and social.mjs findNext. Tuesdays in the holiday break (../holiday-weeks.mjs,
+ * December 22 to January 4) are skipped: from 2026-12-16 this is 2027-01-05. A saved
+ * row on a holiday date (the override) is not this function's business: callers that
+ * read rows count them themselves.
+ */
 export function nextTuesday(today) {
   const d = new Date(`${today}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + ((2 - d.getUTCDay() + 7) % 7));
+  while (isHolidayWeek(d.toISOString().slice(0, 10))) d.setUTCDate(d.getUTCDate() + 7);
   return d.toISOString().slice(0, 10);
 }
 

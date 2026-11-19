@@ -84,6 +84,19 @@ accounts at risk under the platforms' terms.
      trigger it with the Functions page's **Run now** button.
 6. **Modron logs in with a `social` account** (ADR 0008) using a 30-day sliding session. If the
    session expires, the task stops and reports it. It never enters a password.
+7. *Added 2026-11-19 (Zack):* **The holiday break.** BOCC never meets on a Tuesday from
+   December 22 through January 4 inclusive (the Christmas and New Year weeks), every year.
+   Those Tuesdays aren't events: nobody cancels them and they have no `events` rows. The range
+   is one constant, `HOLIDAY_BREAK` in `src/lib/holiday-weeks.mjs` (`isHolidayWeek(date)`).
+   - The Wednesday pick (`findNext`) skips them like cancelled weeks, so the first normal week
+     after the break is next. A normal week is still never skipped.
+   - The Thursday check sends nothing for them and logs "skipped as a holiday week".
+   - "Open next Tuesday" in the admin skips them. The public `/events/<date>/` page for one says
+     "No meeting this week (holiday break)" (still a 404, `noindex`).
+   - **Override:** a row someone deliberately saves for a holiday date (opening
+     `/admin/events/<date>/` directly and saving anything) is respected. A `scheduled` row on a
+     holiday date is a real event everywhere, and a cancelled one stays cancelled. Use this for
+     an unusual year.
 
 ## Consequences
 

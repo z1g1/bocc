@@ -26,8 +26,9 @@ import pg from "pg";
 import { toAdminPgConfig } from "../auth/pg-config.mjs";
 import { buildWorkOrder, CHANNEL_KEYS } from "../admin/social-rules.mjs";
 import {
-  alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, readNtfyConfig, sendNtfy, socialAlert,
+  alertSiteUrl, contextAllowed, easternToday, failureAlert, isHolidayWeek, nextTuesday, readNtfyConfig, sendNtfy, socialAlert,
 } from "./alert.mjs";
+import { HOLIDAY_BREAK_LABEL } from "../holiday-weeks.mjs";
 import { instrumentPg, log as logLine, redact, span } from "../telemetry.mjs";
 
 const log = (msg) => logLine("info", `[social-check] ${msg}`);
@@ -139,7 +140,12 @@ async function check({ env = process.env, context = undefined, now = new Date(),
 
   const alert = socialAlert({ order, date, siteUrl });
   if (!alert) {
-    log(`${date}: ${order && order.eventStatus !== "scheduled" ? `event is ${order.eventStatus}` : "every channel is scheduled or live"}; no alert`);
+    // Still read the row first: a saved row on a holiday date is the override and is
+    // checked like any other week.
+    const why = !order && isHolidayWeek(date) ? `skipped as a holiday week (no meeting ${HOLIDAY_BREAK_LABEL})`
+      : order && order.eventStatus !== "scheduled" ? `event is ${order.eventStatus}`
+      : "every channel is scheduled or live";
+    log(`${date}: ${why}; no alert`);
     return { outcome: "ok", date };
   }
   try {

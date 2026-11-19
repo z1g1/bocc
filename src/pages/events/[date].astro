@@ -7,6 +7,10 @@
 //   not a real date                 404 "Out of Coffee", no-store (never queries Neon)
 //   no events row                   404 "Out of Coffee", CDN 5 min, tagged (a new event's
 //                                   first save purges it)
+//   no row, a Tuesday in the        404 "No meeting this week (holiday break)", noindex,
+//   holiday break (Dec 22-Jan 4)    the same caching and tag. A saved row on that date
+//                                   (the override, src/lib/holiday-weeks.mjs) gets the
+//                                   normal views below
 //   scheduled, today or later       the RSVP page: Luma embed from the luma link's
 //                                   external_id, RSVP button to its URL (no luma link:
 //                                   the Luma calendar). Other listings only as JSON-LD sameAs
@@ -28,6 +32,7 @@ import OutOfCoffee from "../../components/OutOfCoffee.astro";
 import { data, site } from "../../lib/data";
 import { eventPage, longDate, parseIsoDate, todayIso } from "../../lib/events";
 import { getSiteEvent } from "../../lib/site/db.mjs";
+import { HOLIDAY_BREAK_LABEL, isHolidayWeek } from "../../lib/holiday-weeks.mjs";
 import { LIST_TAG, eventTag, logSiteFailure, setPublicHeaders } from "../../lib/site/http.mjs";
 
 const ep = data("event_page");
@@ -36,7 +41,7 @@ const date = Astro.params.date ?? "";
 const path = `/events/${date}/`;
 const headers = Astro.response.headers;
 
-let view: "bad-date" | "not-found" | "unavailable" | "upcoming" | "cancelled" | "past";
+let view: "bad-date" | "not-found" | "holiday" | "unavailable" | "upcoming" | "cancelled" | "past";
 let ev: Awaited<ReturnType<typeof getSiteEvent>> = null;
 const today = todayIso();
 
@@ -45,7 +50,8 @@ if (!parseIsoDate(date)) {
 } else {
   try {
     ev = await getSiteEvent(date, today);
-    view = !ev ? "not-found" : ev.status === "cancelled" ? "cancelled" : date < today ? "past" : "upcoming";
+    const holidayTuesday = new Date(`${date}T12:00:00Z`).getUTCDay() === 2 && isHolidayWeek(date);
+    view = !ev ? (holidayTuesday ? "holiday" : "not-found") : ev.status === "cancelled" ? "cancelled" : date < today ? "past" : "upcoming";
   } catch (err) {
     logSiteFailure(`events/${date}`, err);
     view = "unavailable";
@@ -55,7 +61,7 @@ if (!parseIsoDate(date)) {
 if (view === "bad-date") {
   Astro.response.status = 404;
   setPublicHeaders(headers, "no-store");
-} else if (view === "not-found") {
+} else if (view === "not-found" || view === "holiday") {
   Astro.response.status = 404;
   setPublicHeaders(headers, "unknown-date", { tag: eventTag(date) });
 } else if (view === "unavailable") {
@@ -93,6 +99,19 @@ const where =
 {view === "bad-date" || view === "not-found" ? (
   <Default title="Out of coffee" path="/404.html">
     <OutOfCoffee />
+  </Default>
+) : view === "holiday" ? (
+  <Default title={`No meeting: ${longDate(date)}`} path={path} noindex>
+    <PageHero
+      eyebrow={longDate(date)}
+      heading="No meeting this week (holiday break)"
+      summary={`Buffalo Open Coffee Club takes the Christmas and New Year weeks off (${HOLIDAY_BREAK_LABEL}). See you at the first Tuesday after the break.`}
+    >
+      <div class="page-hero__cta" slot="cta">
+        <a class="btn btn--primary btn--lg" href={e.registration_url}>See upcoming dates<Icon name="arrow" size="18" /></a>
+        <a class="btn btn--ghost-gold btn--lg" href="/about/">About BOCC</a>
+      </div>
+    </PageHero>
   </Default>
 ) : view === "unavailable" ? (
   <Default title="Back in a minute" path={path} noindex>
