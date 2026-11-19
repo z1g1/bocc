@@ -5,7 +5,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, NTFY_MESSAGE_MAX, NTFY_TITLE_MAX, ntfyBody, readNtfyConfig, sendNtfy, socialAlert,
+  alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, NTFY_MESSAGE_MAX, NTFY_TITLE_MAX, ntfyBody, linkedinExpiryAlerts, readNtfyConfig, sendNtfy, socialAlert,
 } from "../../src/lib/social-alert/alert.mjs";
 import { runSocialCheck } from "../../src/lib/social-alert/run.mjs";
 import { buildWorkOrder, CHANNEL_KEYS } from "../../src/lib/admin/social-rules.mjs";
@@ -124,6 +124,55 @@ describe("socialAlert", () => {
     const a = failureAlert({ date: DATE, siteUrl: SITE });
     assert.equal(a.title, "BOCC social: the Thursday check failed (Tue Nov 24)");
     assert.equal(a.click, "https://716coffee.club/admin/social/next");
+  });
+});
+
+describe("linkedinExpiryAlerts", () => {
+  const now = new Date("2026-11-19T14:00:00Z");
+  const at = (days) => new Date(now.getTime() + days * 86_400_000);
+
+  test("no connection: no alert", () => {
+    assert.deepEqual(linkedinExpiryAlerts({ connections: [], now, siteUrl: SITE }), []);
+  });
+  test("10 days or more left: no alert", () => {
+    assert.deepEqual(linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(10) }], now, siteUrl: SITE }), []);
+  });
+  test("under 10 days: names whose connection it is and sends them to /admin/account/", () => {
+    const [a, ...rest] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(3.2) }], now, siteUrl: SITE });
+    assert.equal(rest.length, 0);
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection expires in 3 days");
+    assert.match(a.message, /Zack Glick's LinkedIn connection expires on Sunday, November 22, 2026 \(in 3 days\)\./);
+    assert.match(a.message, /Reconnect at \/admin\/account\/ before Tuesday's LinkedIn event has to be created\./);
+    assert.equal(a.click, "https://716coffee.club/admin/account/");
+    assert.equal(a.priority, "high");
+    assert.deepEqual(a.tags, ["warning"]);
+  });
+  test("under a day left: \"in less than a day\"", () => {
+    const [a] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(0.5) }], now, siteUrl: SITE });
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection expires in less than a day");
+  });
+  test("one day left: singular", () => {
+    const [a] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(1.2) }], now, siteUrl: SITE });
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection expires in 1 day");
+  });
+  test("expired: says so", () => {
+    const [a] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: "2026-11-01T12:00:00Z" }], now, siteUrl: SITE });
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection has expired");
+    assert.match(a.message, /expired on Sunday, November 1, 2026\./);
+    assert.match(a.message, /Reconnect at \/admin\/account\//);
+  });
+  test("one alert per connection that is due, in the order given", () => {
+    const alerts = linkedinExpiryAlerts({ connections: [
+      { name: "Ann", expiresAt: at(2) }, { name: "Bob", expiresAt: at(40) }, { name: "Cy", expiresAt: at(-1) },
+    ], now, siteUrl: SITE });
+    assert.deepEqual(alerts.map((a) => a.title), [
+      "BOCC LinkedIn: Ann's connection expires in 2 days", "BOCC LinkedIn: Cy's connection has expired",
+    ]);
+  });
+  test("a missing name still reads; no site URL: no Click link", () => {
+    const [a] = linkedinExpiryAlerts({ connections: [{ name: null, expiresAt: at(2) }], now, siteUrl: null });
+    assert.equal(a.title, "BOCC LinkedIn: an Admin's connection expires in 2 days");
+    assert.equal(a.click, null);
   });
 });
 
