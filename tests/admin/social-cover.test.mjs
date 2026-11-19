@@ -194,7 +194,9 @@ describe("social cover (admin_app)", () => {
 });
 
 // ── 3. Over HTTP ────────────────────────────────────────────────────────────
-describe("the Cover image block over HTTP", { timeout: 300_000 }, () => {
+// Needs MinIO: the photo choices are only offered when media storage is set up.
+const skip = process.env.STORAGE_ENDPOINT ? false : "MinIO not running (STORAGE_ENDPOINT unset)";
+describe("the Cover image block over HTTP", { timeout: 300_000, skip }, () => {
   let server, admin, social;
   const root = fileURLToPath(new URL("../../", import.meta.url));
 
