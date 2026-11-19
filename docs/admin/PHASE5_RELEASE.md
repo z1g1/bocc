@@ -121,7 +121,7 @@ The Click link uses existing variables: Netlify's own `URL` / site URL, and `BET
          - tapping it opens `/admin/social/next` on **dev**--bocc-backend, not 716coffee.club
 
          The function log has `[social-check] <date>: alert sent (…)` and no topic.
-   - [ ] Un-ready the post and Run now again. The push says "post not ready". Mark it ready
+   - [ ] Set the post's status back to To do and Run now again. The push says "post not ready". Set it to Ready for Posting
          again.
 6. [ ] **Modron's `social` account on staging.** In `/admin/users/`, create a user for Modron
    with the **social** role only. Modron sets the password and passkey there.
@@ -145,7 +145,7 @@ The Click link uses existing variables: Netlify's own `URL` / site URL, and `BET
      you're happy with the dry run.
    - [ ] **Signed out:** in a fresh profile with no session, the task stops at `/login/` and
          reports "Signed out", without typing anything.
-   - [ ] **Nothing ready:** un-ready the post. The Wednesday task stops and quotes the reason.
+   - [ ] **Nothing ready:** set the post's status back to To do. The Wednesday task stops and quotes the reason.
    - [ ] **Wednesday run:** schedules each pending channel and saves `scheduled` plus the URL
          where one exists. Watch the first run live. Settle the open questions:
          - Threads web scheduling (ADR 0011 decision 3)

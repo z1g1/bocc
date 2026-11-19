@@ -3,7 +3,7 @@
 // requireRole(locals, "admin") and, for changes, checkOrigin; after a change it purges
 // the public page (src/lib/site/purge.mjs). Parameterized SQL only, as admin_app
 // (SELECT/INSERT/UPDATE/DELETE on event_links, migration 20261121120000).
-// The URL and id rules, and the readiness checklist, are in ./event-links-rules.mjs.
+// The URL and id rules, and the Readiness section (readiness()), are in ./event-links-rules.mjs.
 //
 // Reads (take `db`, the pool or a client, first):
 //   getLinks(db, date)            -> { luma: { url, externalId, updatedAt } | null, eventbrite: …, … }

@@ -135,7 +135,8 @@ export const LISTINGS_TOTAL = PLATFORM_KEYS.length + 1;
  */
 export const listingsDone = (event, platformsListed) => platformsListed + (hasPublicPage(event) ? 1 : 0);
 
-const LINKEDIN_SECTION = "?tab=info#h-linkedin";
+// Channel statuses that count as done. The source is social-rules.mjs
+// POSTED_CHANNEL_STATUSES; this module takes no imports (see the header), so keep in step.
 const CHANNEL_DONE = ["scheduled", "live"];
 
 /**
@@ -151,16 +152,17 @@ const CHANNEL_DONE = ["scheduled", "live"];
  *   Social Posts: <status>
  *     The Social Post status label (To do, Ready for Posting, Posted, Error), or "not set
  *     up yet". Under it: the problems that keep it from the Chrome tasks (not once
- *     Posted), then one line per channel.
+ *     Posted), then one line per channel. Ticked only when Posted, or Ready for Posting
+ *     with no problems; Error and To do never are.
  *
  * @param {{ date: string, status: string, exists?: boolean }} event
  * @param {Record<string, { url: string, externalId: string|null } | null | undefined>} links  by platform
- * @param {null | { exists: boolean, status: string, statusLabel: string, actionable: boolean,
+ * @param {null | { exists: boolean, status: string, statusLabel: string,
  *          problems: Array<{ message: string }>, channels: Array<{ channel: string, label: string, status: string|null }> }} [social]
  *   the social work order (src/lib/admin/social.mjs getWorkOrder); null/omitted = none yet
  * @param {{ eventImage?: { source: "uploaded"|"referenced"|"default" },
- *   linkedIn?: { eventUrl?: string|null, drift: null | { message: string },
- *     cancel: null | { due: boolean, message: string } } }} [extra]
+ *   linkedIn?: { eventUrl?: string|null, drift: null | { message: string, href: string },
+ *     cancel: null | { due: boolean, message: string, href: string } } }} [extra]
  *   eventImage: the resolved Event Image (src/lib/admin/event-image-rules.mjs);
  *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#25/#27). "LinkedIn event posted"
  *   is not listed for a cancelled event (the cancel line covers it).
@@ -187,8 +189,8 @@ export function readiness(event, links = {}, social = null, { eventImage, linked
       ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: linkedIn.eventUrl }
       : { key: "linkedin_posted", label: "LinkedIn event posted", ok: false, note: "not posted yet (LinkedIn event, Event Info tab)" });
   }
-  if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: LINKEDIN_SECTION });
-  if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: LINKEDIN_SECTION });
+  if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: linkedIn.drift.href });
+  if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: linkedIn.cancel.href });
 
   const exists = Boolean(social?.exists);
   const channels = exists ? social.channels ?? [] : [];
@@ -214,7 +216,8 @@ export function readiness(event, links = {}, social = null, { eventImage, linked
     social: {
       exists, status,
       label: `Social Posts: ${exists ? social.statusLabel : "not set up yet"}`,
-      ok: status === "posted" || Boolean(exists && social.actionable),
+      // A tick only for Posted, or Ready for Posting with no problems (never Error or To do).
+      ok: status === "posted" || (status === "ready" && social.problems.length === 0),
       scheduled: channels.filter((c) => CHANNEL_DONE.includes(c.status)).length,
       total: channels.length,
       items: socialItems,

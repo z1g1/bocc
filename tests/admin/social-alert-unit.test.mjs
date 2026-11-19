@@ -115,11 +115,17 @@ describe("socialAlert", () => {
     assert.equal(a.title, "BOCC social: 1 of 5 channels not scheduled for Tue Nov 24");
   });
 
-  test("Error: not ready, says a channel failed, and lists it", () => {
+  test("Error alerts like an offered post (as before #39): channels not scheduled, naming the failed one", () => {
     const a = socialAlert({ order: order({ status: "error", statuses: { tiktok: "failed" } }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
-    assert.match(a.message, /The post's status is Error: a channel failed\. Fix it on \/admin\/events\/2026-11-24\/\./);
+    assert.equal(a.title, "BOCC social: 1 of 5 channels not scheduled for Tue Nov 24");
+    assert.match(a.message, /The post's status is Error: TikTok failed\. Fix it on \/admin\/events\/2026-11-24\/\./);
     assert.match(a.message, /Not scheduled yet:\n- TikTok: failed$/);
+  });
+
+  test("Error with problems is still not ready", () => {
+    const a = socialAlert({ order: order({ status: "error", luma: null, statuses: { tiktok: "failed" } }), date: DATE, siteUrl: SITE });
+    assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
+    assert.match(a.message, /- Add the Luma listing/);
   });
 
   test("the title is ASCII (it travels as an HTTP header)", () => {

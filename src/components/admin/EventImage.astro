@@ -11,7 +11,8 @@
 //   presigned GETs (re-signed on every render, downloads with a signed
 //   Content-Disposition); the logo default from the site itself.
 // - Upload (set or change): /js/admin-media.js checks the image (PNG/JPEG, at least
-//   480x270, at most 8 MiB; a warning when it isn't a 1:1 square), shows the composed
+//   480x270, at most 8 MiB, as media.mjs and the label say; a 1:1 square is asked for,
+//   but one that isn't only gets a warning), shows the composed
 //   16:9 version in the preview, makes the display, thumbnail and 16:9 copies and PUTs
 //   all four to the bucket.
 //   Hidden until that script runs. The new image replaces the old one on complete.
@@ -135,7 +136,7 @@ const fmtTime = (d: Date) =>
         <p class="muted" data-media-nojs>Uploading the Event Image needs JavaScript.</p>
         <form class="media-upload" data-media-upload data-kind="event_image" data-event-date={date} data-status={statusId} data-warning={warningId} data-preview={previewId} hidden>
           <input type="hidden" name="kind" value="event_image">
-          <label for={inputId}>{isDefault ? "Upload an Event Image" : "Change the Event Image"} <span class="muted">(a 1:1 square PNG or JPEG, at least 480×480, up to 8 MB)</span></label>
+          <label for={inputId}>{isDefault ? "Upload an Event Image" : "Change the Event Image"} <span class="muted">(a 1:1 square PNG or JPEG, at least 480×270, up to 8 MB; one that isn't square only gets a warning)</span></label>
           <input id={inputId} type="file" name="files" accept="image/jpeg,image/png" required>
           <p class="warning" id={warningId} role="status" aria-live="polite"></p>
           <figure class="composed">

@@ -97,6 +97,8 @@ const MEDIA_NOTICES: Record<string, string> = {
   "video-deleted-partial": "Video deleted. Its file couldn't be removed from storage; it is logged for cleanup.",
 };
 const mediaNotice = MEDIA_NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+// The intro's facts come from the rules: the channels and the Ready for Posting label.
+const channelList = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(Object.values(rules.CHANNELS));
 const fmtTime = (d: Date) =>
   new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
 ---
@@ -104,8 +106,8 @@ const fmtTime = (d: Date) =>
   <section aria-labelledby="h-social" id="social" class="social">
     <h2 id="h-social">Social post</h2>
     <p class="muted" id="social-intro">
-      The weekly promo video, posted on Facebook, Instagram, Threads, TikTok, and LinkedIn page is done by work order.<br>
-      It is only posted when the status is set to 'Ready for Posting'<br>
+      The weekly promo video, posted on {channelList} is done by work order.<br>
+      It is only posted when the status is set to '{rules.POST_STATUS_LABELS.ready}'<br>
       Automated posting requires a logged in AI Agent with the Social role and a scheduled task to look for posts
     </p>
     <p class="social-state">

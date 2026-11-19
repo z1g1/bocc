@@ -31,7 +31,9 @@
 //   error   Error              a channel failed (set automatically)
 // An Admin sets any of them; only Ready for Posting is checked. Error stays offered
 // (OFFERED_STATUSES) so the Wednesday task can carry on after one channel fails and a
-// failed channel can be scheduled again.
+// failed channel can be scheduled again. Posted is never offered: an Admin who sets it by
+// hand ends the Chrome tasks' work on the post even with channels still pending
+// (social.mjs findNext skips it). Intended: it is the Admin's "done, stop".
 
 /** Channels in work-order order (the Wednesday task's order), with their labels. */
 export const CHANNELS = Object.freeze({
@@ -328,7 +330,7 @@ export function resolveSocialCover({ override = null, eventImage }) {
  * The whole work order for one event, calculated (nothing here is stored).
  * @param {{ date: string, event: { status: string, exists?: boolean },
  *           post: null | { videoMediaId: string|null, coverNote: string|null, baseCaption: string|null,
- *                          extraHashtags: string[], publishAt: Date, ready: boolean, updatedAt?: Date,
+ *                          extraHashtags: string[], publishAt: Date, status: string, updatedAt?: Date,
  *                          channels: Record<string, { caption: string|null, firstComment: string|null, status: string,
  *                            postUrl: string|null, verifiedAt: Date|null, commentPostedAt: Date|null, notes: string|null }> },
  *           lumaUrl: string|null, video: null | { id: string, kind: string, status: string, contentType: string, sizeBytes: number },

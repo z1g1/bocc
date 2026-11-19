@@ -286,6 +286,9 @@ describe("remaking over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(page, /full height/);
     assert.match(page, /Just the Beans/);
     assert.match(page, /1:1 square/);
+    // The upload hint states the minimum the checks enforce (checkEventImage: 480x270).
+    assert.match(page, /at least 480×270/);
+    assert.doesNotMatch(page, /480×480/);
     assert.match(page, /<form[^>]*data-media-upload[^>]*data-preview="[^"]+"/);
   });
 
