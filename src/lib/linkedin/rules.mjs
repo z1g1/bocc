@@ -136,7 +136,7 @@ const FOOD_HALL = {
 /** Every reason the app refuses a LinkedIn action: code -> the page's message. */
 export const REFUSALS = Object.freeze({
   past: "The event date has passed: LinkedIn events are only created and published for upcoming dates.",
-  cancelled: "This event is cancelled. Un-cancel it before creating or publishing the LinkedIn event.",
+  cancelled: "This event is cancelled. Set its status back to Scheduled before creating or publishing the LinkedIn event.",
   location_other: 'The location is "Other": there is no LinkedIn wording for it yet, so the app won\'t publish directions. Set Lobby or Food hall.',
   no_connection: "Connect your LinkedIn account first.",
   expired: "Your LinkedIn connection has expired. Reconnect LinkedIn first.",

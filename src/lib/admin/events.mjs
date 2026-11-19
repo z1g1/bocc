@@ -13,9 +13,11 @@
 //
 // Writes (each change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }):
-//   saveEvent(actor, date, input)      event.update        status (scheduled/held) + location
-//   cancelEvent(actor, date, input)    event.cancel        reason, other text, announced
-//   uncancelEvent(actor, date)         event.uncancel      back to scheduled, cancel fields cleared
+//   saveEvent(actor, date, input)      status + location, and the cancel fields when the
+//                                      status is cancelled. Audit action: event.cancel when
+//                                      the event is (or stays) cancelled with a changed
+//                                      status or reason, event.uncancel when it leaves
+//                                      cancelled, event.update otherwise.
 //   submitReport(actor, date, input)   event_report.submit (new) / event_report.update (edit);
 //                                      the event moves to `held` in the same transaction
 // The first save of any kind creates the events row (details.created = true): there is
@@ -26,9 +28,10 @@
 //     today (Eastern); today itself is allowed, since the report is filed after the event.
 //   - Cancelling is refused once a report exists (the event was held). Cancelling ahead
 //     of time, or re-saving a cancelled event's reason/announced flag, is allowed.
-//   - The details form sets only `scheduled` or `held`; `cancelled` goes through the
-//     cancel flow, and a cancelled event keeps its status there (un-cancel first).
-//     `scheduled` is refused while a report exists, and `held` on a date after today.
+//   - One form sets the status (scheduled, held or cancelled) and the location together.
+//     Cancelled needs a reason; leaving cancelled (to scheduled or held) clears the cancel
+//     fields in the same UPDATE, as the CHECKs require. `scheduled` and `cancelled` are
+//     refused while a report exists, and `held` on a date after today.
 //   - The check-in count is calculated here and never stored. It is not attendance: not
 //     everyone checks in.
 //   - Editing an imported report (source google_form/pre_form) makes it source = 'admin'
@@ -234,22 +237,26 @@ function validateLocation(input, errors) {
   return { location, locationOther };
 }
 
-/** @returns {{ status: "scheduled"|"held"|null, location, locationOther }} status null = keep */
+/**
+ * @returns {{ status: "scheduled"|"held"|"cancelled"|null, location, locationOther,
+ *   cancel: { reason, reasonOther, announced } | null }}  status null = keep; cancel only
+ *   when the status is cancelled (the cancel fields are ignored otherwise)
+ */
 export function validateEventInput(input) {
   const errors = {};
   const rawStatus = str(input?.status).trim();
   let status = null;
   if (rawStatus !== "") {
-    if (rawStatus === "scheduled" || rawStatus === "held") status = rawStatus;
-    else errors.status = "Status must be scheduled or held (use the cancel form to cancel).";
+    if (STATUSES.includes(rawStatus)) status = rawStatus;
+    else errors.status = "Choose Scheduled, Held or Cancelled.";
   }
   const loc = validateLocation(input, errors);
+  const cancel = status === "cancelled" ? validateCancel(input, errors) : null;
   if (Object.keys(errors).length) throw new ValidationError(errors);
-  return { status, ...loc };
+  return { status, ...loc, cancel };
 }
 
-export function validateCancelInput(input) {
-  const errors = {};
+function validateCancel(input, errors) {
   const reason = str(input?.cancelReason).trim();
   let reasonOther = null;
   if (!(reason in CANCEL_REASONS)) {
@@ -260,7 +267,6 @@ export function validateCancelInput(input) {
     else if (reasonOther.length > LIMITS.cancelReasonOther) errors.cancelReasonOther = `At most ${LIMITS.cancelReasonOther} characters.`;
   }
   const announced = ["on", "true", "1", "yes"].includes(str(input?.cancelAnnounced).trim().toLowerCase());
-  if (Object.keys(errors).length) throw new ValidationError(errors);
   return { reason, reasonOther, announced };
 }
 
@@ -350,9 +356,13 @@ async function audited(actorUserId, date, table, fn) {
   }
 }
 
+const CANCEL_FIELDS = ["cancel_reason", "cancel_reason_other", "cancel_announced"];
+
 /**
- * Status (scheduled/held) and location. Creates the event on its first save.
- * `held` is refused for a date after today (Eastern), like a report.
+ * Status (scheduled, held or cancelled), location and, for cancelled, the reason and
+ * announced flag: one UPDATE. Creates the event on its first save.
+ * `held` is refused for a date after today (Eastern), like a report; `scheduled` and
+ * `cancelled` once a report exists (the event was held).
  * @param {{ today?: string }} [opts]  "today" (Eastern); tests pass it
  */
 export async function saveEvent(actorUserId, date, input, { today = todayEastern() } = {}) {
@@ -363,61 +373,36 @@ export async function saveEvent(actorUserId, date, input, { today = todayEastern
   }
   return audited(actorUserId, date, "events", async (client) => {
     const { created, row } = await lockEvent(client, date);
-    let status = row.status;
-    if (v.status !== null && v.status !== row.status) {
-      if (row.status === "cancelled") throw new ConflictError({ status: "This event is cancelled. Un-cancel it first." });
-      if (v.status === "scheduled" && (await hasReport(client, date))) {
-        throw new ConflictError({ status: "This event has a report, so it was held." });
-      }
-      status = v.status;
+    const status = v.status ?? row.status;
+    // A report means it was held: no way back to scheduled, and no cancelling. (A
+    // cancelled event can't have a report, so only a change of status needs the check.)
+    if (status !== row.status && status !== "held" && (await hasReport(client, date))) {
+      throw new ConflictError({
+        status: status === "cancelled"
+          ? "This event has a report, so it was held and can't be cancelled."
+          : "This event has a report, so it was held.",
+      });
     }
-    const after = { status, location: v.location, location_other: v.locationOther };
-    const d = diff(row, after);
-    if (!created && d.changed.length === 0) throw NOOP;
-    if (d.changed.length) {
-      await client.query(
-        `update public.events set status = $2, location = $3, location_other = $4 where event_date = $1::date`,
-        [date, status, v.location, v.locationOther]);
-    }
-    return { action: "event.update", details: { created, before: d.before, after: d.after } };
-  });
-}
-
-/** Cancel (or update a cancelled event's reason / announced flag). */
-export async function cancelEvent(actorUserId, date, input) {
-  checkDate(date);
-  const v = validateCancelInput(input);
-  return audited(actorUserId, date, "events", async (client) => {
-    const { created, row } = await lockEvent(client, date);
-    if (await hasReport(client, date)) {
-      throw new ConflictError({ cancelReason: "This event has a report, so it was held and can't be cancelled." });
-    }
-    const after = { status: "cancelled", cancel_reason: v.reason, cancel_reason_other: v.reasonOther, cancel_announced: v.announced };
+    // Cancel fields: the posted ones when cancelling, kept when a cancelled event is
+    // saved without a status, cleared otherwise.
+    const cancel = status !== "cancelled"
+      ? { cancel_reason: null, cancel_reason_other: null, cancel_announced: false }
+      : v.cancel
+        ? { cancel_reason: v.cancel.reason, cancel_reason_other: v.cancel.reasonOther, cancel_announced: v.cancel.announced }
+        : { cancel_reason: row.cancel_reason, cancel_reason_other: row.cancel_reason_other, cancel_announced: row.cancel_announced };
+    const after = { status, location: v.location, location_other: v.locationOther, ...cancel };
     const d = diff(row, after);
     if (!created && d.changed.length === 0) throw NOOP;
     await client.query(
       `update public.events
-          set status = 'cancelled', cancel_reason = $2, cancel_reason_other = $3, cancel_announced = $4
+          set status = $2, location = $3, location_other = $4,
+              cancel_reason = $5, cancel_reason_other = $6, cancel_announced = $7
         where event_date = $1::date`,
-      [date, v.reason, v.reasonOther, v.announced]);
-    return { action: "event.cancel", details: { created, before: d.before, after: d.after } };
-  });
-}
-
-/** Back to scheduled; the CHECKs require clearing all three cancel fields in the same UPDATE. */
-export async function uncancelEvent(actorUserId, date) {
-  checkDate(date);
-  return audited(actorUserId, date, "events", async (client) => {
-    const { rows } = await client.query(
-      `select status, cancel_reason, cancel_reason_other, cancel_announced
-         from public.events where event_date = $1::date for update`, [date]);
-    if (rows[0]?.status !== "cancelled") throw NOOP;
-    await client.query(
-      `update public.events
-          set status = 'scheduled', cancel_reason = null, cancel_reason_other = null, cancel_announced = false
-        where event_date = $1::date`, [date]);
-    const { status, ...cancel } = rows[0];
-    return { action: "event.uncancel", details: { before: { status, ...cancel }, after: { status: "scheduled" } } };
+      [date, status, v.location, v.locationOther, cancel.cancel_reason, cancel.cancel_reason_other, cancel.cancel_announced]);
+    const action = row.status === "cancelled" && status !== "cancelled" ? "event.uncancel"
+      : status === "cancelled" && (created || d.changed.some((k) => k === "status" || CANCEL_FIELDS.includes(k))) ? "event.cancel"
+      : "event.update";
+    return { action, details: { created, before: d.before, after: d.after } };
   });
 }
 
@@ -432,7 +417,7 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
   return audited(actorUserId, date, "event_reports", async (client) => {
     const { created, row } = await lockEvent(client, date);
     if (row.status === "cancelled") {
-      throw new ConflictError({ date: "This event is cancelled. Un-cancel it before filing a report." });
+      throw new ConflictError({ date: "This event is cancelled. Set its status to Held (Event Info tab) before filing a report." });
     }
     const { rows } = await client.query(
       `select gives_asks_count, notes, bling_given, bling_details, source, submitted_by

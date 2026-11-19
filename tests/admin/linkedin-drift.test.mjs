@@ -80,7 +80,7 @@ async function seedEventImage(date) {
      values ($1, 'event_image', $2, $3, $4, $5, 'image/png', 10, 'ready')`,
     [date, ...["original.png", "display.jpg", "thumb.jpg", "cover.jpg"].map((f) => `events/${date}/${id}/${f}`)]);
 }
-const cancel = (user, date) => ev.cancelEvent(user.id, date, { cancelReason: "weather" });
+const cancel = (user, date) => ev.saveEvent(user.id, date, { status: "cancelled", cancelReason: "weather" });
 const ackAudits = (date) => owner.query(
   `select actor_user_id, target_id, details from audit_log
     where action = 'linkedin_event.cancel_ack' and details->>'eventDate' = $1`, [date]).then((r) => r.rows);
@@ -189,7 +189,7 @@ describe("drift notice, cancel item and Done on LinkedIn over HTTP", { timeout: 
   const done = (date, who = admin, opts = {}) =>
     req(`/admin/events/${date}/`, { cookie: who.cookie, method: "POST", form: { action: "linkedin_cancel_done" }, ...opts });
   const readinessOf = (html) => html.slice(html.indexOf('id="h-ready"'), html.indexOf('aria-label="Event page tabs"'));
-  const cancelOf = (html) => html.slice(html.indexOf('id="h-cancel"'));
+  const cancelOf = (html) => html.slice(html.indexOf('id="linkedin-cancel"'));
 
   test("unchanged: no drift notice or LinkedIn items; changed: the notice in Readiness and the LinkedIn section", async () => {
     const date = await postedDate(poster);
@@ -232,7 +232,7 @@ describe("drift notice, cancel item and Done on LinkedIn over HTTP", { timeout: 
 
     const res = await done(date);
     assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), `/admin/events/${date}/?tab=info&notice=linkedin_cancel_done#cancel`);
+    assert.equal(res.headers.get("location"), `/admin/events/${date}/?tab=info&notice=linkedin_cancel_done#linkedin-cancel`);
     assert.equal((await row(date)).cancelled_on_linkedin_by, admin.user.id);
     assert.equal((await ackAudits(date)).length, 1);
 
