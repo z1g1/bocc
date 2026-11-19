@@ -5,7 +5,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_EVENT_IMAGE, resolveEventImage } from "../../src/lib/admin/event-image-rules.mjs";
+import { DEFAULT_EVENT_IMAGE, inUseMessage, resolveEventImage } from "../../src/lib/admin/event-image-rules.mjs";
 import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 
 const uploaded = {
@@ -89,5 +89,15 @@ describe("Readiness: the Event Image line", () => {
   });
   test("no line when the caller doesn't pass the image (other pages)", () => {
     assert.equal(readiness(event, {}, null).items.find((i) => i.key === "event_image"), undefined);
+  });
+});
+
+describe("the delete refusal's message names the events using the photo", () => {
+  test("one, two and three events", () => {
+    assert.equal(inUseMessage(["2026-11-24"]),
+      "This photo is the Event Image for 2026-11-24, so it wasn't deleted. Pick another image for that event first.");
+    assert.equal(inUseMessage(["2026-11-24", "2026-12-01"]),
+      "This photo is the Event Image for 2026-11-24 and 2026-12-01, so it wasn't deleted. Pick another image for those events first.");
+    assert.match(inUseMessage(["2026-11-24", "2026-12-01", "2026-12-08"]), /for 2026-11-24, 2026-12-01 and 2026-12-08,/);
   });
 });
