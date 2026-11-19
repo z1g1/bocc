@@ -4,13 +4,18 @@
 //      listing), a failure injected at each step and the state it leaves, Publish-retry,
 //      allow-retry, and the plain-language error messages
 //   2. over HTTP (astro dev, with LINKEDIN_LIVE=1 in this process only): the create,
-//      Publish event and allow-retry forms and what the section shows in each state
+//      Publish event and allow-retry forms and what the section shows in each state,
+//      and a week imported from the CLI ledger (#28) shown as Posted, create refused
 // Dates: Tuesdays from 2073, starting at a random week so a rerun on a kept database
 // doesn't collide (no other file uses 2073-2075).
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomInt } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OWNER_URL, connect, unique, useAdminEnv } from "./helpers.mjs";
 import { createFakeLinkedInClient, LinkedInError } from "./fake-linkedin.mjs";
@@ -20,6 +25,7 @@ const port = await new Promise((resolve, reject) => {
   s.on("error", reject);
 });
 const BASE = `http://localhost:${port}`;
+const IMPORT_SCRIPT = fileURLToPath(new URL("../../backend/scripts/import-linkedin-ledger.js", import.meta.url));
 useAdminEnv();
 process.env.BETTER_AUTH_URL = BASE;
 process.env.ASTRO_TELEMETRY_DISABLED = "1";
@@ -424,6 +430,42 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
 
     // Nothing pending any more: refused.
     assert.equal((await post(date, "linkedin_allow_retry", admin)).status, 409);
+  });
+
+  test("a week imported from the CLI ledger shows Posted with its links, and create is refused (#28)", async () => {
+    const date = await nextDate();
+    const eventId = "7249812613549670499";
+    const eventUrl = `https://www.linkedin.com/events/${eventId}/`;
+    const postUrn = "urn:li:ugcPost:7511865991627468899";
+    const dir = mkdtempSync(join(tmpdir(), "bocc-ledger-http-"));
+    try {
+      const file = join(dir, "ledger.json");
+      writeFileSync(file, JSON.stringify({ events: { [date]: {
+        status: "posted", name: "Buffalo Open Coffee Club for 1/3", attempted_at: "2072-12-01T16:00:00+00:00",
+        created_at: "2072-12-01T16:00:01+00:00", event_id: eventId, url: eventUrl, post_urn: postUrn, posted_at: "2072-12-01T16:00:02+00:00",
+      } } }, null, 2));
+      const r = spawnSync(process.execPath, [IMPORT_SCRIPT, "--ledger", file, "--apply"], {
+        env: { PATH: process.env.PATH, DATABASE_URL: OWNER_URL, DB_CA_CERT: readFileSync(process.env.DB_CA_CERT_FILE, "utf8") }, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+
+    const html = await page(date);
+    assert.match(html, /data-ledger="posted"/);
+    assert.ok(html.includes("Posted on LinkedIn."));
+    assert.ok(html.includes(`href="${eventUrl}"`), "links the event");
+    assert.ok(html.includes(`href="https://www.linkedin.com/feed/update/${postUrn}/"`), "links the post");
+    assert.doesNotMatch(html, /name="action" value="linkedin_(create|publish|allow_retry)"/);
+
+    const before = fake.ops().length;
+    const res = await post(date, "linkedin_create", admin, { confirm: "live" });
+    assert.equal(res.status, 409);
+    const refusedHtml = await res.text();
+    assert.match(refusedHtml, /data-refusal="ledger"/);
+    assert.ok(refusedHtml.includes("The ledger already has a LinkedIn event for this date"));
+    assert.deepEqual(fake.ops().slice(before), [], "nothing sent to LinkedIn");
+    assert.equal((await active(date)).length, 1);
   });
 
   test("Publish event without a created row, or without confirm=live, is refused (409) and sends nothing", async () => {
