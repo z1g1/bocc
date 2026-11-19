@@ -367,10 +367,10 @@ describe("the Event Image section and its clear form over HTTP", { skip, timeout
     assert.ok(await row(id), "nothing was cleared");
   });
 
-  test("an upcoming event's Readiness shows the Event Image line", async () => {
+  test("an upcoming event's Readiness says Default Cover Image while the logo is in use", async () => {
     const d = new Date(Date.now() + 20 * 86400000).toISOString().slice(0, 10);
     const page = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
-    assert.match(page, /Event Image(<[^>]*>|\s)*\(not yet\)|Event Image[\s\S]{0,200}default: the BOCC logo/);
+    assert.match(page, /Online Event Listings \d\/5 \(Default Cover Image\)/);
   });
 
   test("the browser scripts are served as JavaScript", async () => {

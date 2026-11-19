@@ -20,7 +20,7 @@ const isSocial = hasRole(Astro.locals, "social");
 
 // Admin-only events block (plan Phase 3): the next events and the "report missing"
 // count, with "today" the Eastern calendar day; listings at a glance (Phase 4).
-let events: { upcoming: any[]; missing: number; nextTue: string; links: Map<string, any>; total: number } | null = null;
+let events: { upcoming: any[]; missing: number; nextTue: string; links: Map<string, any> } | null = null;
 if (isAdmin) {
   const { pool } = await import("../../lib/admin/db.mjs");
   const ev = await import("../../lib/admin/events.mjs");
@@ -31,7 +31,7 @@ if (isAdmin) {
   ]);
   const el = await import("../../lib/admin/event-links.mjs");
   const links = await el.linkSummaries(pool, upcoming.map((e: any) => e.date));
-  events = { upcoming, missing, nextTue: ev.nextTuesday(today), links, total: el.PLATFORM_KEYS.length };
+  events = { upcoming, missing, nextTue: ev.nextTuesday(today), links };
 }
 const statusText = (s: string) => (s === "cancelled" ? "cancelled" : s === "held" ? "held" : "scheduled");
 ---
@@ -45,7 +45,7 @@ const statusText = (s: string) => (s === "cancelled" ? "cancelled" : s === "held
         <p><a class="missing" href="/admin/events/?missing=1"><strong>{events.missing} report{events.missing === 1 ? "" : "s"} missing</strong></a></p>
       )}
       {events.upcoming.length > 0
-        ? <ul>{events.upcoming.map((e) => <li>Next: <a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a> <span class="muted">{statusText(e.status)}</span> <ReadyTag info={events!.links.get(e.date)} total={events!.total} /></li>)}</ul>
+        ? <ul>{events.upcoming.map((e) => <li>Next: <a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a> <span class="muted">{statusText(e.status)}</span> <ReadyTag info={events!.links.get(e.date)} event={e} /></li>)}</ul>
         : <p class="muted">No upcoming events saved. <a href={`/admin/events/${events.nextTue}/`}>Open next Tuesday ({longDay(events.nextTue)})</a></p>}
     </section>
   )}

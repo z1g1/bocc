@@ -191,29 +191,37 @@ describe("ready and the work order", () => {
     assert.ok(w.channels.every((c) => c.status === null && c.caption === null));
   });
 
-  test("the readiness checklist: one line until set up, then ready + one line per channel", () => {
+  test("Readiness: Social Posts: <status>, or not set up yet; the problems and channels under it", () => {
     const ev = { date: "2026-11-24", status: "scheduled" };
     const none = readiness(ev, {});
-    assert.deepEqual(none.items.filter((i) => i.key.startsWith("social")).map((i) => [i.key, i.label, i.ok]), [["social", "social post", false]]);
-    assert.deepEqual(none.social, { exists: false, ready: false, scheduled: 0, total: 0 });
+    assert.deepEqual([none.social.label, none.social.ok, none.social.items], ["Social Posts: not set up yet", false, []]);
 
     const p = stored();
     p.channels.facebook.status = "scheduled";
     p.channels.instagram.status = "live";
     p.channels.tiktok.status = "failed";
-    const w = r.buildWorkOrder({ date: ev.date, event: ev, post: p, lumaUrl: LUMA, video });
-    const s = readiness(ev, {}, w);
-    assert.deepEqual(s.items.filter((i) => i.key.startsWith("social")).map((i) => [i.key, i.label, i.ok]), [
-      ["social", "social post ready", true],
+    const at = (status, post = p, lumaUrl = LUMA) =>
+      readiness(ev, {}, r.buildWorkOrder({ date: ev.date, event: ev, post: { ...post, status }, lumaUrl, video })).social;
+    assert.deepEqual(["todo", "ready", "posted", "error"].map((s) => at(s).label),
+      ["Social Posts: To do", "Social Posts: Ready for Posting", "Social Posts: Posted", "Social Posts: Error"]);
+    const ready = at("ready");
+    assert.deepEqual(ready.items.map((i) => [i.key, i.label, i.ok]), [
       ["social_facebook", "Facebook: scheduled", true],
       ["social_instagram", "Instagram: live", true],
       ["social_threads", "Threads: pending", false],
       ["social_tiktok", "TikTok: failed", false],
       ["social_linkedin_page", "LinkedIn page: pending", false],
     ]);
-    assert.deepEqual(s.social, { exists: true, ready: true, scheduled: 2, total: 5 });
-    const notReady = readiness(ev, {}, r.buildWorkOrder({ date: ev.date, event: ev, post: stored(), lumaUrl: null, video }));
-    assert.match(notReady.items.find((i) => i.key === "social").note, /Luma listing/);
+    assert.deepEqual([ready.ok, ready.scheduled, ready.total], [true, 2, 5]);
+    assert.equal(at("todo").ok, false);
+    // The problems are listed (no "not marked ready" line any more)...
+    const noLuma = at("todo", stored(), null);
+    assert.match(noLuma.items[0].label, /Luma listing/);
+    assert.ok(!JSON.stringify(noLuma).includes("not marked ready"));
+    // ...but not once Posted: a Posted post is done.
+    const posted = at("posted", stored(), null);
+    assert.equal(posted.ok, true);
+    assert.ok(posted.items.every((i) => i.key.startsWith("social_") && !i.key.startsWith("social_problem")), "channels only");
   });
 });
 

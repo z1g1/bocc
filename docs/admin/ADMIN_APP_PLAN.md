@@ -508,6 +508,13 @@ work (to save deploy credits); everything is verified on staging first.
       for Admins (#23: `/api/admin/linkedin/{connect,callback,disconnect}`, the LinkedIn client
       adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
       production and staging callback URLs
+- [x] The Readiness section (#42): an H2 with two bullets, "Online Event Listings x/5
+      (Default Cover Image | Custom Cover Image)" counting the four listings and the public
+      page (the Luma embed id is no longer an item; the brackets follow the Event Image's
+      source), the missing parts and the LinkedIn lines under it (drift and cancel pointing at
+      the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
+      status, or "not set up yet"), its problems (not once Posted) and channels under it. The
+      events list and home tag became "x/5 listings" with the same count
 - [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
       Image; it is made Tuesday afternoon for the next week's event, alongside the other
       online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
