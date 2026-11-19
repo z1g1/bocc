@@ -461,6 +461,33 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.equal(await listing(date), EVENT_URL);
   });
 
+  test("Publish event confirms in a dialog like create: PUBLIC post, the commentary; without confirm=live 409 shown inline", async () => {
+    const date = await nextDate();
+    await seedEvent(date, { location: "food_hall" });
+    fake.fail("createPost", new LinkedInError("unknown", "500"));
+    assert.equal((await post(date, "linkedin_create", admin, { confirm: "live" })).status, 502);
+    const before = fake.ops().length;
+
+    const html = await page(date);
+    // The button's own form carries no confirm=live: only the dialog's form does.
+    const button = html.match(/<form[^>]*>(?:(?!<\/form>)[\s\S])*data-linkedin-open="linkedin-publish-confirm"[\s\S]*?<\/form>/);
+    assert.ok(button, "the Publish event button opens the dialog");
+    assert.doesNotMatch(button[0], /name="confirm"/);
+    const dialog = html.match(/<dialog[^>]*id="linkedin-publish-confirm"[\s\S]*?<\/dialog>/);
+    assert.ok(dialog, "the publish dialog is on the page");
+    assert.match(dialog[0], /<input type="hidden" name="confirm" value="live"/);
+    assert.ok(dialog[0].includes("PUBLIC post from your profile"));
+    assert.ok(dialog[0].includes("Seneca One Food hall"), "quotes the commentary");
+    assert.match(html, /<script[^>]*src="\/js\/admin-linkedin\.js"/);
+
+    const res = await post(date, "linkedin_publish", admin);
+    assert.equal(res.status, 409);
+    const refused = await res.text();
+    assert.match(refused, /<dialog[^>]*id="linkedin-publish-confirm"[^>]*open/);
+    assert.deepEqual(fake.ops().slice(before), [], "nothing sent");
+    assert.equal((await ledger(date))[0].status, "created");
+  });
+
   test("an unknown create outcome: the page says to check LinkedIn and offers allow-retry, which retires the row", async () => {
     const date = await nextDate();
     await seedEvent(date);
