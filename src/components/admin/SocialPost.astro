@@ -15,7 +15,9 @@
 //   unless overridden with a publicly usable Photo from Event (social.mjs
 //   listCoverChoices; action social_cover, mediaId "" = back to the Event Image).
 // - The post form: base caption, TikTok's extra hashtags, cover note, publish time
-//   (an Eastern datetime-local; shown in Eastern and UTC), and the ready toggle.
+//   (an Eastern datetime-local; shown in Eastern and UTC), and the status dropdown
+//   (ticket #39: To do / Ready for Posting / Posted / Error, rules.POST_STATUSES;
+//   Posted and Error are also set by the social role's channel updates).
 // - One form per channel: its status (set by the social role's pages), the caption and
 //   first-comment overrides with the code default shown, and the final text.
 import { hasRole } from "../../lib/admin/roles.mjs";
@@ -77,7 +79,7 @@ const pv = from("social_post") ?? {
   extraHashtags: order.extraHashtags.join(" "),
   coverNote: order.coverNote ?? "",
   publishAt: order.publishAtDisplay.local,
-  ready: order.ready ? "on" : "",
+  status: order.status,
 };
 const pe = errFor("social_post");
 const videoErr = errFor("social_video");
@@ -103,18 +105,19 @@ const fmtTime = (d: Date) =>
 {allowed && (
   <section aria-labelledby="h-social" id="social" class="social">
     <h2 id="h-social">Social post</h2>
-    <p class="muted">
-      The weekly promo video, posted on {Object.values(rules.CHANNELS).join(", ")} by the Chrome tasks
-      from the work order (ADR 0011). The app never posts. Luma is the only link the posts use.
+    <p class="muted" id="social-intro">
+      The weekly promo video, posted on Facebook, Instagram, Threads, TikTok, and LinkedIn page is done by work order.<br>
+      It is only posted when the status is set to 'Ready for Posting'<br>
+      Automated posting requires a logged in AI Agent with the Social role and a scheduled task to look for posts
     </p>
     <p class="social-state">
       {!order.exists
         ? <span class="muted">Not set up yet: the first save below creates it.</span>
         : order.actionable
-          ? <strong class="ok">Ready: in the work order.</strong>
+          ? <strong class="ok">{order.statusLabel}: in the work order.</strong>
           : order.ready
-            ? <strong class="todo">Marked ready, but not in the work order until this is fixed:</strong>
-            : <span>Not marked ready.</span>}
+            ? <strong class="todo">{order.statusLabel}, but not in the work order until this is fixed:</strong>
+            : <span>Status: {order.statusLabel}.</span>}
     </p>
     {order.problems.length > 0 && (order.ready || order.exists) && (
       <ul class="problems">{order.problems.map((p: any) => <li>{p.message}</li>)}</ul>
@@ -266,8 +269,12 @@ const fmtTime = (d: Date) =>
       </p>
       {pe.publishAt && <p class="error" role="alert">{pe.publishAt}</p>}
 
-      <label class="check"><input type="checkbox" name="ready" value="on" checked={pv.ready === "on"}> Ready: put it in the work order</label>
-      {pe.ready && <p class="error" role="alert">{pe.ready}</p>}
+      <label for="social-status">Status <span class="muted">(Posted and Error are also set from the channel updates)</span></label>
+      <select id="social-status" name="status" aria-invalid={pe.status ? "true" : undefined}
+        aria-describedby={pe.status ? "status-error" : undefined}>
+        {rules.POST_STATUSES.map((s) => <option value={s} selected={pv.status === s}>{rules.POST_STATUS_LABELS[s]}</option>)}
+      </select>
+      {pe.status && <p class="error" role="alert" id="status-error">{pe.status}</p>}
       <button type="submit">Save social post</button>
     </form>
 

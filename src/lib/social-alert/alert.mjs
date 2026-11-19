@@ -24,7 +24,7 @@
 // the secret, so the Netlify runtime's fetch tracing (which records full outgoing URLs)
 // can't leak it.
 
-import { CHANNELS, CHANNEL_KEYS } from "../admin/social-rules.mjs";
+import { CHANNELS, CHANNEL_KEYS, POST_STATUS_LABELS } from "../admin/social-rules.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
 import { expiryAlertDue, expiryLevel } from "../linkedin/rules.mjs";
 
@@ -34,6 +34,8 @@ const TZ = "America/New_York";
 
 /** Channel statuses that need no nudge on Thursday. */
 export const DONE_STATUSES = Object.freeze(["scheduled", "live"]);
+/** Post statuses the check counts as ready (ticket #39): what the old `ready` flag meant here. */
+export const READY_POST_STATUSES = Object.freeze(["ready", "posted"]);
 
 export const NTFY_DEFAULT_SERVER = "https://ntfy.sh";
 export const NTFY_TIMEOUT_MS = 5000;
@@ -108,7 +110,7 @@ export function alertSiteUrl({ deployContext, siteUrl, env = {} }) {
 export const contextAllowed = (deployContext) => deployContext !== "deploy-preview";
 
 /**
- * @param {{ order: null | { date: string, exists: boolean, eventStatus: string, ready: boolean,
+ * @param {{ order: null | { date: string, exists: boolean, eventStatus: string, status: string, statusLabel: string,
  *             problems: Array<{ message: string }>, channels: Array<{ channel: string, label?: string, status: string|null }> },
  *           date: string, siteUrl?: string|null }} s
  *   order null = no events row for `date`: a scheduled event with no post, except in the
@@ -121,7 +123,8 @@ export function socialAlert({ order, date, siteUrl = null }) {
   if (!order && isHolidayWeek(date)) return null; // holiday break, no meeting
   const exists = Boolean(order?.exists);
   const problems = exists ? order.problems ?? [] : [];
-  const notReady = !exists || !order.ready || problems.length > 0;
+  const ready = exists && READY_POST_STATUSES.includes(order.status);
+  const notReady = !ready || problems.length > 0;
   const channels = exists
     ? order.channels.filter((c) => !DONE_STATUSES.includes(c.status))
     : CHANNEL_KEYS.map((channel) => ({ channel, label: CHANNELS[channel], status: null }));
@@ -135,11 +138,13 @@ export function socialAlert({ order, date, siteUrl = null }) {
 
   const lines = [`Event: ${longDate(date)}.`];
   if (!exists) {
-    lines.push(`There is no social post yet. Upload the promo video and caption on /admin/events/${date}/ and mark it ready.`);
-  } else if (!order.ready) {
-    lines.push(`The post isn't marked ready, so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
+    lines.push(`There is no social post yet. Upload the promo video and caption on /admin/events/${date}/ and set it to ${POST_STATUS_LABELS.ready}.`);
+  } else if (order.status === "error") {
+    lines.push(`The post's status is ${POST_STATUS_LABELS.error}: a channel failed. Fix it on /admin/events/${date}/.`);
+  } else if (!ready) {
+    lines.push(`The post isn't set to ${POST_STATUS_LABELS.ready} (it is ${order.statusLabel}), so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
   } else if (problems.length) {
-    lines.push("The post is marked ready, but something changed since:");
+    lines.push(`The post is ${order.statusLabel}, but something changed since:`);
   }
   for (const p of problems) lines.push(`- ${p.message}`);
   if (channels.length) {

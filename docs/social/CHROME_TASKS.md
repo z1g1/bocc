@@ -169,7 +169,7 @@ Steps:
      the BOCC admin. Modron needs to sign in by hand." Don't try to sign in.
    - If the page shows "Nothing to verify" (section id="nothing"), stop. Report the reason text
      (id="nothing-reason"). Do nothing else.
-   - If it says the post was not marked ready, carry on, but say so in your report.
+   - If it says the post is To do (not Ready for Posting), carry on, but say so in your report.
 2. Read the "To do" section. Then, for each channel section in page order (Facebook, Instagram,
    Threads, TikTok, LinkedIn page):
    a. If it has a post URL, open it in a new tab. If it has none, find the post on the BOCC
@@ -190,15 +190,31 @@ Steps:
    otherwise list, per channel, its status, whether the first comment is posted, and any notes.
 ```
 
+## Post status
+
+The Social post's **Status** (ticket #39) decides whether the tasks see the post at all. The
+prompts don't change: the tasks only save channel statuses, and the post status follows.
+
+| Status | Meaning | Set by |
+|---|---|---|
+| **To do** | being prepared; `/admin/social/next/` shows "Nothing ready" (reason `not_ready`) | an Admin (the default) |
+| **Ready for Posting** | the work order is offered to the Wednesday task | an Admin, only when nothing blocks it |
+| **Posted** | every channel is `scheduled` or `live`; never handed out again | automatically, when a task's channel save leaves every channel `scheduled`/`live`; an Admin can also set it |
+| **Error** | a channel failed | automatically, when a task saves a channel as `failed`; an Admin can also set it. Still offered, so the Wednesday task carries on with the other channels and a failed channel can be scheduled again (then the post becomes Posted) |
+
+Each automatic change is audited as `social_post.status` under the `social` user.
+
 ## When a task reports a problem
 
 - **Signed out:** Modron signs in by hand once in that Chrome profile, then re-runs the task.
-- **Nothing ready:** fix what it lists on `/admin/events/<date>/` and mark the post ready.
+- **Nothing ready:** fix what it lists on `/admin/events/<date>/` and set the post's Status to
+  Ready for Posting.
   Then run the Wednesday task again by hand (any day before Monday morning). The page is
   always about the earliest upcoming week that still has work: a later week's post that is
   ready waits until that week is done (or its Monday publish time passes, or it is cancelled).
-- **A channel failed:** the notes say why. Schedule that channel by hand, then set its status on
-  `/admin/social/next/`.
+- **A channel failed:** the notes say why, and the post is **Error**. Schedule that channel by
+  hand, then set its status on `/admin/social/next/` (the post becomes Posted once no channel is
+  pending or failed).
 - **The Thursday ntfy push** fires if a channel isn't `scheduled` or `live` by Thursday morning.
   It is the backstop for a Wednesday run that never happened, for example because the machine
   was asleep.

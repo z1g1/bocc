@@ -198,7 +198,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "save", location: "basement" }, "info"],
       [future, { action: "link", platform: "luma", url: "https://evil.example/x" }, "info"],
       [future, { action: "save", status: "cancelled", cancelReason: "" }, "info"],
-      [future, { action: "social_post", baseCaption: "x", ready: "on" }, "social"],
+      [future, { action: "social_post", baseCaption: "x", status: "ready" }, "social"],
       [future, { action: "social_video", videoMediaId: "nope" }, "social"],
       [past, { action: "report", givesAsksCount: "-1", blingGiven: "" }, "post"],
     ];

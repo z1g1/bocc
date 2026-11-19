@@ -168,10 +168,10 @@ describe("social cover (admin_app)", () => {
     const d = date();
     await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-cover", externalId: "" });
     await so.setCover(actor.id, d, await insertMedia(d));
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", ready: "on" }),
-      (e) => e.errors.ready === "Not ready yet: Upload the promo video.");
+    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" }),
+      (e) => e.errors.status === "Not ready yet: Upload the promo video.");
     await so.setVideo(actor.id, d, await insertMedia(d, { kind: "promo_video" }));
-    assert.deepEqual((await so.savePost(actor.id, d, { baseCaption: "Coffee", ready: "on" })).changed, true);
+    assert.deepEqual((await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" })).changed, true);
   });
 
   test("deleting the override photo returns the cover to the Event Image", async () => {
