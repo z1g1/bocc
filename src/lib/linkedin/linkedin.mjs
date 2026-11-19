@@ -24,8 +24,13 @@
 //   publishRetry(userId, date, { confirm })             -> the same shapes; a `created` row only: posts, never re-creates
 //   allowRetry(userId, date)                            -> { ok: true } | { ok: false, refusals }
 //     retires a `pending` row (admin_app has no DELETE on linkedin_events), audited.
+// Drift and cancellation (#27; flagged, never synced: API sync is #14):
+//   linkedInFollowUpFor(db, date, { event, eventImage }) -> rules.mjs linkedInFollowUp:
+//                                                            { eventUrl, drift, cancel }
+//   markCancelledOnLinkedIn(userId, date)              -> { changed } ("Done on LinkedIn");
+//     ConflictError ({ linkedin }) unless the event is cancelled and its row posted
 // Audit actions (target linkedin_events, the row id; details.eventDate):
-//   linkedin_event.pending, .created, .posted ({ retry }), .retire
+//   linkedin_event.pending, .created, .posted ({ retry }), .retire, .cancel_ack
 // Every function takes the injected `client` and `config` options, so tests swap in
 // tests/admin/fake-linkedin.mjs.
 //
@@ -48,10 +53,10 @@ import { API_BASE, LinkedInError, authorizationUrl, linkedInClient } from "./cli
 import { readLinkedInEnv } from "./env.mjs";
 import {
   ORGANIZER_URN, REFUSALS, allowedActions, buildEventPayload, buildEventSpec, buildImageUploadPayload,
-  buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, missingScopes, postUrl,
+  buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
 } from "./rules.mjs";
 import { normaliseLinkUrl } from "../admin/event-links-rules.mjs";
-import { getEvent } from "../admin/events.mjs";
+import { ConflictError, getEvent } from "../admin/events.mjs";
 import { getEventImage, loadCoverBytes } from "../admin/event-image.mjs";
 
 /** The state cookie, scoped to the LinkedIn routes. */
@@ -579,5 +584,55 @@ export async function allowRetry(userId, date, { now = new Date() } = {}) {
   } catch (err) {
     if (err !== NOOP) throw err;
     return { ok: false, refusals: [{ code: "not_pending", message: REFUSALS.not_pending }] };
+  }
+}
+
+
+// ── Drift and cancellation (#27) ───────────────────────────────────────────
+
+/**
+ * What LinkedIn needs by hand for one date (rules.mjs linkedInFollowUp). Needs no
+ * LinkedIn configuration: it only reads the ledger. Pass the event and Event Image when
+ * the caller already has them.
+ * @param {{ query: Function }} db
+ * @param {string} date
+ * @param {{ event?: { status: string, location: string|null }, eventImage?: any }} [have]
+ */
+export async function linkedInFollowUpFor(db, date, { event, eventImage } = {}) {
+  const [ledger, e, image] = await Promise.all([
+    activeLedgerRow(db, date), event ?? getEvent(db, date), eventImage ?? getEventImage(db, date),
+  ]);
+  return linkedInFollowUp({ ledger, event: e, eventImage: image });
+}
+
+/**
+ * "Done on LinkedIn": the Admin cancelled the LinkedIn event by hand. Records who and
+ * when on the posted row (audited); a second tick changes nothing.
+ * @param {string} userId
+ * @param {string} date
+ * @param {{ now?: Date }} [opts]
+ * @returns {Promise<{ changed: boolean }>}
+ * @throws {ConflictError} errors.linkedin, unless the event is cancelled and its row posted
+ */
+export async function markCancelledOnLinkedIn(userId, date, { now = new Date() } = {}) {
+  try {
+    await withAudit(userId, async (c) => {
+      const { rows } = await c.query(
+        `select l.id, l.status, l.cancelled_on_linkedin_at, e.status as event_status
+           from public.linkedin_events l join public.events e using (event_date)
+          where l.event_date = $1 and l.status <> 'retired' for update of l`, [date]);
+      const r = rows[0];
+      if (r?.status !== "posted") throw new ConflictError({ linkedin: "This event was never posted on LinkedIn, so there is nothing to cancel there." });
+      if (r.event_status !== "cancelled") throw new ConflictError({ linkedin: "The event isn't cancelled: cancel it first." });
+      if (r.cancelled_on_linkedin_at) throw NOOP;
+      await c.query(
+        `update public.linkedin_events set cancelled_on_linkedin_at = $2, cancelled_on_linkedin_by = $3 where id = $1`,
+        [r.id, now, userId]);
+      return { id: r.id };
+    }, ledgerAudit("linkedin_event.cancel_ack", date));
+    return { changed: true };
+  } catch (err) {
+    if (err === NOOP) return { changed: false };
+    throw err;
   }
 }
