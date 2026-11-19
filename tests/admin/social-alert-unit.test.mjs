@@ -309,11 +309,13 @@ describe("runSocialCheck (database read replaced)", () => {
     console.log = console.info = console.error = (...a) => lines.push(a.join(" "));
     try { return { result: await fn(), lines }; } finally { Object.assign(console, { log, info, error }); }
   }
+  /** runSocialCheck with no LinkedIn connections unless a test says otherwise. */
+  const run = (opts) => runSocialCheck({ readConnections: async () => [], ...opts });
 
   test("checks next Tuesday and sends nothing when all is well", async () => {
     const f = fakeFetch();
     const seen = [];
-    const { result, lines } = await captureLogs(() => runSocialCheck({
+    const { result, lines } = await captureLogs(() => run({
       env, context: prod, now: THURSDAY, fetch: f, readOrder: async (d) => { seen.push(d); return order(); },
     }));
     assert.deepEqual(seen, ["2026-11-24"]);
@@ -324,7 +326,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("sends the alert, with the production Click link, and never logs the topic", async () => {
     const f = fakeFetch();
-    const { result, lines } = await captureLogs(() => runSocialCheck({
+    const { result, lines } = await captureLogs(() => run({
       env, context: prod, now: THURSDAY, fetch: f, readOrder: async () => order({ statuses: { linkedin_page: "pending" } }),
     }));
     assert.equal(result.outcome, "sent");
@@ -336,7 +338,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("on the branch deploy the Click link is the staging host", async () => {
     const f = fakeFetch();
-    await captureLogs(() => runSocialCheck({
+    await captureLogs(() => run({
       env, context: { deploy: { context: "branch-deploy" }, site: { url: SITE } }, now: THURSDAY, fetch: f, readOrder: async () => null,
     }));
     assert.equal(JSON.parse(f.calls[0].init.body).click, "https://dev--bocc-backend.netlify.app/admin/social/next");
@@ -346,11 +348,11 @@ describe("runSocialCheck (database read replaced)", () => {
     for (const [thursday, tuesday] of [["2026-12-17T14:00:00Z", "2026-12-22"], ["2026-12-24T14:00:00Z", "2026-12-29"]]) {
       const f = fakeFetch();
       const seen = [];
-      const { result, lines } = await captureLogs(() => runSocialCheck({
+      const { result, lines } = await captureLogs(() => run({
         env, context: prod, now: new Date(thursday), fetch: f, readOrder: async (d) => { seen.push(d); return null; },
       }));
       assert.deepEqual(seen, [tuesday]);
-      assert.deepEqual(result, { outcome: "ok", date: tuesday });
+      assert.deepEqual(result, { outcome: "ok", date: tuesday, linkedin: { outcome: "ok", alerts: [] } });
       assert.equal(f.calls.length, 0);
       assert.match(lines.join("\n"), new RegExp(`${tuesday}: skipped as a holiday week \\(no meeting December 22 to January 4\\); no alert`));
       assert.match(lines.join("\n"), /"level":"info"/);
@@ -359,7 +361,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("a holiday week with a saved row (the override) alerts as usual", async () => {
     const f = fakeFetch();
-    const { result } = await captureLogs(() => runSocialCheck({
+    const { result } = await captureLogs(() => run({
       env, context: prod, now: new Date("2026-12-17T14:00:00Z"), fetch: f,
       readOrder: async (d) => order({ date: d, exists: false }),
     }));
@@ -369,7 +371,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("the first week after the break alerts without a row", async () => {
     const f = fakeFetch();
-    const { result } = await captureLogs(() => runSocialCheck({
+    const { result } = await captureLogs(() => run({
       env, context: prod, now: new Date("2026-12-31T14:00:00Z"), fetch: f, readOrder: async () => null,
     }));
     assert.equal(result.outcome, "sent");
@@ -378,7 +380,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("topic unset: logs and stops before reading anything", async () => {
     let read = false;
-    const { result, lines } = await captureLogs(() => runSocialCheck({
+    const { result, lines } = await captureLogs(() => run({
       env: { URL: SITE }, context: prod, now: THURSDAY, fetch: fakeFetch(), readOrder: async () => { read = true; return null; },
     }));
     assert.equal(result.outcome, "skipped");
@@ -388,7 +390,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("a deploy preview is skipped", async () => {
     const f = fakeFetch();
-    const { result } = await captureLogs(() => runSocialCheck({
+    const { result } = await captureLogs(() => run({
       env, context: { deploy: { context: "deploy-preview" } }, now: THURSDAY, fetch: f, readOrder: async () => null,
     }));
     assert.equal(result.outcome, "skipped");
@@ -397,7 +399,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("a database failure sends the failure alert and redacts connection strings", async () => {
     const f = fakeFetch();
-    const { result, lines } = await captureLogs(() => runSocialCheck({
+    const { result, lines } = await captureLogs(() => run({
       env, context: prod, now: THURSDAY, fetch: f,
       readOrder: async () => { throw new Error("connect failed postgresql://social_checker:pw@host/neondb"); },
     }));
@@ -408,7 +410,7 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("an ntfy failure is logged, not thrown", async () => {
     const f = fakeFetch(() => new Response("", { status: 500 }));
-    const { result, lines } = await captureLogs(() => runSocialCheck({
+    const { result, lines } = await captureLogs(() => run({
       env, context: prod, now: THURSDAY, fetch: f, readOrder: async () => null,
     }));
     assert.equal(result.outcome, "failed");
@@ -417,8 +419,104 @@ describe("runSocialCheck (database read replaced)", () => {
 
   test("no database URL: the failure alert, naming the variable", async () => {
     const f = fakeFetch();
-    const { result, lines } = await captureLogs(() => runSocialCheck({ env, context: prod, now: THURSDAY, fetch: f }));
+    const { result, lines } = await captureLogs(() => run({ env, context: prod, now: THURSDAY, fetch: f }));
     assert.equal(result.outcome, "failed");
     assert.match(lines.join("\n"), /SOCIAL_CHECK_DB_URL is not set/);
+  });
+});
+
+describe("runSocialCheck: the LinkedIn connection expiry (#24)", () => {
+  const THURSDAY = new Date("2026-11-19T14:00:00Z");
+  const env = { SOCIAL_ALERT_NTFY_TOPIC: "bocc-secret-topic", URL: SITE };
+  const prod = { deploy: { context: "production" }, site: { url: SITE } };
+  const inDays = (d) => new Date(THURSDAY.getTime() + d * 86_400_000);
+  const zack = (days) => ({ name: "Zack Glick", expiresAt: inDays(days) });
+
+  async function captureLogs(fn) {
+    const lines = [];
+    const { log, info, error } = console;
+    console.log = console.info = console.error = (...a) => lines.push(a.join(" "));
+    try { return { result: await fn(), lines }; } finally { Object.assign(console, { log, info, error }); }
+  }
+  const run = (opts) => runSocialCheck({ env, context: prod, now: THURSDAY, readOrder: async () => order(), ...opts });
+
+  test("no connection: quiet", async () => {
+    const f = fakeFetch();
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [] }));
+    assert.equal(result.outcome, "ok");
+    assert.deepEqual(result.linkedin, { outcome: "ok", alerts: [] });
+    assert.equal(f.calls.length, 0);
+    assert.match(lines.join("\n"), /linkedin: no connection; no alert/);
+  });
+
+  test("10 days or more left: quiet", async () => {
+    const f = fakeFetch();
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [zack(10)] }));
+    assert.equal(result.outcome, "ok");
+    assert.equal(f.calls.length, 0);
+    assert.match(lines.join("\n"), /linkedin: 1 connection, none expiring within 10 days; no alert/);
+  });
+
+  test("under 10 days: alerts even when the social post is fine, and logs no name or topic", async () => {
+    const f = fakeFetch();
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [zack(4)] }));
+    assert.equal(result.outcome, "sent");
+    assert.equal(result.linkedin.outcome, "sent");
+    assert.equal(f.calls.length, 1);
+    const body = JSON.parse(f.calls[0].init.body);
+    assert.equal(body.title, "BOCC LinkedIn: Zack Glick's connection expires in 4 days");
+    assert.equal(body.click, "https://716coffee.club/admin/account/");
+    const logs = lines.join("\n");
+    assert.match(logs, /linkedin: 1 expiry alert sent/);
+    assert.doesNotMatch(logs, /bocc-secret-topic|Zack/);
+  });
+
+  test("expired, alongside a social alert: two pushes, social first", async () => {
+    const f = fakeFetch();
+    const { result } = await captureLogs(() => run({
+      fetch: f, readOrder: async () => null, readConnections: async () => [zack(-2)],
+    }));
+    assert.equal(result.outcome, "sent");
+    assert.deepEqual(f.calls.map((c) => JSON.parse(c.init.body).title),
+      ["BOCC social: no post for Tue Nov 24", "BOCC LinkedIn: Zack Glick's connection has expired"]);
+  });
+
+  test("the LinkedIn read failing still runs the social check, then sends its own failure alert", async () => {
+    const f = fakeFetch();
+    const { result, lines } = await captureLogs(() => run({
+      fetch: f, readConnections: async () => { throw new Error("permission denied for table linkedin_connections postgresql://social_checker:pw@host/db"); },
+    }));
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.linkedin.outcome, "failed");
+    assert.equal(f.calls.length, 1);
+    assert.match(JSON.parse(f.calls[0].init.body).title, /BOCC LinkedIn: the Thursday check couldn't read the connection/);
+    assert.doesNotMatch(lines.join("\n"), /pw@host/);
+  });
+
+  test("the social read failing doesn't stop the LinkedIn check", async () => {
+    const f = fakeFetch();
+    const { result } = await captureLogs(() => run({
+      fetch: f, readOrder: async () => { throw new Error("boom"); }, readConnections: async () => [zack(1)],
+    }));
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.linkedin.outcome, "sent");
+    assert.deepEqual(f.calls.map((c) => JSON.parse(c.init.body).title.split(":")[0]), ["BOCC social", "BOCC LinkedIn"]);
+  });
+
+  test("an ntfy failure on the LinkedIn alert is logged, not thrown", async () => {
+    const f = fakeFetch(() => new Response("", { status: 500 }));
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [zack(2)] }));
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.linkedin.outcome, "failed");
+    assert.match(lines.join("\n"), /linkedin: expiry alert not sent: ntfy publish answered HTTP 500/);
+  });
+
+  test("no database URL: one failure alert for the whole run, not two", async () => {
+    const f = fakeFetch();
+    const { result } = await captureLogs(() => runSocialCheck({ env, context: prod, now: THURSDAY, fetch: f }));
+    assert.equal(result.outcome, "failed");
+    assert.equal(result.linkedin.outcome, "failed");
+    assert.equal(f.calls.length, 1);
+    assert.match(JSON.parse(f.calls[0].init.body).title, /BOCC social: the Thursday check failed/);
   });
 });

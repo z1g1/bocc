@@ -168,6 +168,18 @@ export function failureAlert({ date, siteUrl = null }) {
   };
 }
 
+/** The alert for a check that couldn't read the LinkedIn connections. */
+export function linkedinFailureAlert({ siteUrl = null } = {}) {
+  const origin = originOf(siteUrl);
+  return {
+    title: "BOCC LinkedIn: the Thursday check couldn't read the connection",
+    message: "The check couldn't read the LinkedIn connection's expiry (see Netlify -> Logs -> Functions -> social-check). Check /admin/account/ by hand.",
+    priority: "high",
+    tags: ["warning"],
+    click: origin ? `${origin}/admin/account/` : null,
+  };
+}
+
 /** "Sunday, November 22, 2026" for an instant, in Eastern time. */
 const easternLongDate = (at) => new Date(at).toLocaleDateString("en-US", {
   timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric",
