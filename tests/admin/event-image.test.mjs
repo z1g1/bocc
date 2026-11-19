@@ -49,9 +49,12 @@ async function freshDate() {
   for (;;) {
     const d = new Date(Date.UTC(2024, 0, 1) + Math.floor(Math.random() * 365) * 86400000).toISOString().slice(0, 10);
     const { rowCount } = await owner.query("select 1 from events where event_date = $1", [d]);
-    if (rowCount === 0) return d;
+    if (rowCount === 0 && !used.has(d)) { used.add(d); return d; }
   }
 }
+// The uploads create `scheduled` events in the past, which would show as "report
+// missing" and crowd other files' dates off the 25-row past list: removed in after().
+const used = new Set();
 const body = (eventDate, over = {}) => ({
   eventDate, kind: "event_image",
   original: { contentType: "image/png", size: ORIGINAL.length, width: 2000, height: 2000 },
@@ -80,7 +83,13 @@ before(async () => {
   owner = await connect(OWNER_URL);
   actor = await createUser({ email: `${unique("eiactor")}@example.com`, name: "Event Image Actor", password: PASSWORD });
 });
-after(async () => { await owner?.end(); await pool.end(); });
+after(async () => {
+  const dates = [...used];
+  await owner?.query("delete from event_media where event_date = any($1::date[])", [dates]);
+  await owner?.query("delete from events where event_date = any($1::date[])", [dates]);
+  await owner?.end();
+  await pool.end();
+});
 
 // ── 1. Schema ───────────────────────────────────────────────────────────────
 describe("schema: event_image kind and cover copy", () => {

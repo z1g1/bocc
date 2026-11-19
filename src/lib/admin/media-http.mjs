@@ -65,16 +65,20 @@ export async function readJson(request) {
  * @param {string} eventDate  YYYY-MM-DD, from the database row
  * @param {string} notice
  * @param {Record<string, unknown>} body
- * @param {"event-media"|"social"} [anchor]  the section to land on (social: the promo video)
+ * @param {"event-media"|"social"|"event-image"} [anchor]  the section to land on
+ *   (social: the promo video, on Social Posts; event-image: the Event Image, on Event Info)
  */
 export function formOrJson(form, eventDate, notice, body, anchor = "event-media") {
   if (!form) return json(200, body);
   if (!isIsoDate(eventDate)) throw new Error("formOrJson: eventDate must be YYYY-MM-DD");
-  if (anchor !== "event-media" && anchor !== "social") throw new Error("formOrJson: unknown anchor");
-  const tab = anchor === "social" ? "social" : "post";
+  if (!Object.hasOwn(ANCHOR_TABS, anchor)) throw new Error("formOrJson: unknown anchor");
+  const tab = ANCHOR_TABS[anchor];
   const location = `/admin/events/${eventDate}/?tab=${tab}&media=${encodeURIComponent(notice)}#${anchor}`;
   return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
+
+/** The event page tab each redirect anchor lives on (ADR 0012 decision 1). */
+const ANCHOR_TABS = Object.freeze({ "event-media": "post", social: "social", "event-image": "info" });
 
 /** Read the body of a gallery action: a form post, or JSON from the upload script. */
 export async function readFormOrJson(request) {

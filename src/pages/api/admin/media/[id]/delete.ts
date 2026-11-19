@@ -17,6 +17,10 @@ export const POST: APIRoute = (ctx) =>
     const { form } = await readFormOrJson(request);
     const { deleteMedia } = await import("../../../../../lib/admin/media.mjs");
     const result = await deleteMedia(user.id, storage, String(ctx.params.id));
+    if (result.kind === "event_image") {
+      // An unfinished Event Image upload (the section's "Unfinished uploads").
+      return formOrJson(form, result.eventDate, result.leftovers.length ? "deleted-partial" : "deleted", result, "event-image");
+    }
     if (result.kind === "promo_video") {
       return formOrJson(form, result.eventDate, result.leftovers.length ? "video-deleted-partial" : "video-deleted", result, "social");
     }

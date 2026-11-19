@@ -1,7 +1,8 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
 // The Readiness checklist (Phase 4) sits above three tabs (ADR 0012 decision 1):
-//   ?tab=info    Event Info: status and location, the Online Event Listings, cancel
+//   ?tab=info    Event Info: status and location, the Online Event Listings, the Event
+//                Image (EventImage, ADR 0012 decision 3), cancel
 //   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
@@ -23,6 +24,7 @@
 // doesn't show them) (src/lib/site/purge.mjs). It is awaited so it runs before the function ends, but
 // it never throws, and a failure is caught here: the save is already committed.
 import Admin from "../../../layouts/Admin.astro";
+import EventImage from "../../../components/admin/EventImage.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
 import SocialPost from "../../../components/admin/SocialPost.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
@@ -40,6 +42,7 @@ const { user, roles = [] } = Astro.locals;
 const ev = await import("../../../lib/admin/events.mjs");
 const el = await import("../../../lib/admin/event-links.mjs");
 const so = await import("../../../lib/admin/social.mjs");
+const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
 
 const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
@@ -114,10 +117,12 @@ if (Astro.request.method === "POST") {
 }
 
 const { pool } = await import("../../../lib/admin/db.mjs");
-const [event, links, social] = await Promise.all([ev.getEvent(pool, date), el.getLinks(pool, date), so.getWorkOrder(pool, date)]);
+const [event, links, social, eventImage] = await Promise.all([
+  ev.getEvent(pool, date), el.getLinks(pool, date), so.getWorkOrder(pool, date), eim.getEventImage(pool, date),
+]);
 const today = ev.todayEastern();
 const upcoming = date >= today;
-const ready = el.readiness(event, links, social);
+const ready = el.readiness(event, links, social, { eventImage });
 const isFuture = date > today;
 const missing = ev.isReportMissing(event, today);
 const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
@@ -262,6 +267,8 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
       );
     })}
   </section>
+
+  <EventImage date={date} image={eventImage} />
 
   <section aria-labelledby="h-cancel">
     <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
