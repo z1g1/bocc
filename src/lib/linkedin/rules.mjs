@@ -144,7 +144,8 @@ export const REFUSALS = Object.freeze({
   confirm: "Not confirmed: use the Create live event button and confirm in the dialog.",
   duplicate: "LinkedIn already lists a BOCC event with the same name or on the same day.",
   image: "The cover image can't be sent to LinkedIn.",
-  live_unavailable: "Live LinkedIn create isn't switched on in this build yet. Nothing was sent.",
+  not_created: "Publish event only retries the post of an event that was created on LinkedIn and not posted yet.",
+  not_pending: "Allow retry only clears a pending create (one whose outcome is unknown).",
 });
 
 const refusal = (code, message = REFUSALS[code]) => ({ code, message });
@@ -328,4 +329,15 @@ export function buildPostPayload(authorUrn, eventId, commentary) {
     lifecycleState: "PUBLISHED",
     isReshareDisabledByAuthor: false,
   };
+}
+
+/** The LinkedIn event's page (events.py): its vanity name when usable, else its id. */
+export function eventUrl(id, vanityName = null) {
+  const slug = typeof vanityName === "string" && /^[A-Za-z0-9-]+$/.test(vanityName) ? vanityName : String(id);
+  return `https://www.linkedin.com/events/${slug}/`;
+}
+
+/** The member post's page (events.py). */
+export function postUrl(postUrn) {
+  return `https://www.linkedin.com/feed/update/${postUrn}/`;
 }

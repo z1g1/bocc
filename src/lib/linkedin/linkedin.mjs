@@ -12,11 +12,22 @@
 //   linkedInEventPreview(db, userId, date)                -> { mode, action, refusals, ledger, connection, image, spec, payloads }
 //   createLinkedInEvent(userId, date, { confirm })        -> { ok: true, mode: "dry_run", requests, image, duplicateCheck }
 //                                                            | { ok: false, refusals, preview }
-//   The dry run sends nothing and writes no ledger row; live is refused until #26.
-// #26 adds the live create sequence (sendSequence with ledger transitions),
-// publishRetry, allowRetry (retires a pending row: admin_app has no DELETE on
-// linkedin_events) and markCancelledOnLinkedIn, taking the same injected `client`
-// and `config` options so tests swap in tests/admin/fake-linkedin.mjs.
+//   The dry run sends nothing and writes no ledger row.
+// The live sequence and recovery (#26):
+//   createLinkedInEvent, live (LINKEDIN_LIVE=1)          -> { ok: true, mode: "live", status: "posted", ledger, preview }
+//                                                            | { ok: false, mode: "live", status, failure, refusals: [], preview }
+//     commits the ledger row `pending` (audited) BEFORE anything is sent, then uploads
+//     the cover, creates the event, moves the row to `created` (audited), creates the
+//     member post and moves the row to `posted` (audited) with the event's
+//     `linkedin_event` listing filled in the same transaction (event_link.set). A
+//     failure leaves the last committed state; `failure` says which step and why.
+//   publishRetry(userId, date, { confirm })             -> the same shapes; a `created` row only: posts, never re-creates
+//   allowRetry(userId, date)                            -> { ok: true } | { ok: false, refusals }
+//     retires a `pending` row (admin_app has no DELETE on linkedin_events), audited.
+// Audit actions (target linkedin_events, the row id; details.eventDate):
+//   linkedin_event.pending, .created, .posted ({ retry }), .retire
+// Every function takes the injected `client` and `config` options, so tests swap in
+// tests/admin/fake-linkedin.mjs.
 //
 // Every function takes optional { config, client, baseURL, now } for tests; by default
 // config comes from the env (src/lib/linkedin/env.mjs, fail fast), the client from
@@ -30,15 +41,16 @@
 // token, code or state in an audit row, log line or span attribute.
 
 import { adminEnv } from "../auth/auth.mjs";
-import { pool, withAudit } from "../admin/db.mjs";
+import { pool, withAudit, writeAudit } from "../admin/db.mjs";
 import { describeError, log } from "../telemetry.mjs";
 import { decryptToken, encryptToken, signState, STATE_TTL_SECONDS, verifyState } from "./crypto.mjs";
 import { API_BASE, LinkedInError, authorizationUrl, linkedInClient } from "./client.mjs";
 import { readLinkedInEnv } from "./env.mjs";
 import {
   ORGANIZER_URN, REFUSALS, allowedActions, buildEventPayload, buildEventSpec, buildImageUploadPayload,
-  buildPostPayload, checkCoverImage, createRefusals, expiryLevel, findDuplicates, missingScopes,
+  buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, missingScopes, postUrl,
 } from "./rules.mjs";
+import { normaliseLinkUrl } from "../admin/event-links-rules.mjs";
 import { getEvent } from "../admin/events.mjs";
 import { getEventImage, loadCoverBytes } from "../admin/event-image.mjs";
 
@@ -324,7 +336,7 @@ export async function linkedInEventPreview(db, userId, date, { config, now = new
  * Eastern day). The cover's bytes are read and checked. Then:
  *   dry run (no LINKEDIN_LIVE): the requests that would be sent; nothing is sent to
  *     LinkedIn and no ledger row or audit row is written
- *   live: refused with live_unavailable until #26 wires the live sequence
+ *   live: the ledger-guarded sequence (liveSequence)
  * @param {string} userId
  * @param {string} date
  * @param {{ confirm?: unknown }} request
@@ -369,10 +381,202 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
   const image = checkCoverImage(cover.bytes);
   if (!image.ok) return refuse([{ code: "image", message: `${REFUSALS.image} ${image.errors.join(" ")}` }], { image });
 
-  if (cfg.live) return refuse([{ code: "live_unavailable", message: REFUSALS.live_unavailable }], { image, duplicateCheck });
+  if (cfg.live) {
+    return liveSequence({ userId, date, token, li, spec, memberUrn: connection.memberUrn, cover, image, eventImage: preview.image, cfg, now, duplicateCheck });
+  }
 
   const recorder = recordingClient();
   await sendSequence(recorder, token, { spec, memberUrn: connection?.memberUrn ?? PLACEHOLDERS.member, cover });
   return { ok: true, mode: "dry_run", duplicateCheck, image, requests: recorder.requests, preview };
 }
 
+
+// ── The live sequence and its recovery (#26) ───────────────────────────────────
+
+/** The ledger row's audit entry. */
+const ledgerAudit = (action, date, details = {}) => (row) => ({
+  action, targetTable: "linkedin_events", targetId: row.id, details: { eventDate: date, ...details },
+});
+
+/** Kinds of LinkedIn error after which nothing exists on LinkedIn: it said no. */
+const DEFINITE_NO = new Set(["expired", "page_role", "validation", "hidden_post", "refused"]);
+
+/**
+ * What the page says about a failed step.
+ * @param {"image_init"|"image_upload"|"create"|"post"} step
+ * @param {unknown} err
+ * @returns {{ step: string, kind: string, message: string, nothingCreated: boolean }}
+ */
+function failureOf(step, err) {
+  const known = err instanceof LinkedInError;
+  const kind = known ? err.kind : "unknown";
+  log("error", `linkedin ${step} failed: ${describeError(err)}`, { step, kind });
+  let message = known ? err.userMessage : new LinkedInError("unknown", "").userMessage;
+  if (kind === "validation" && err.detail) message = `${message} LinkedIn said: ${err.detail}`;
+  const nothingCreated = step === "image_init" || step === "image_upload" || (step === "create" && DEFINITE_NO.has(kind));
+  return { step, kind, message, nothingCreated };
+}
+
+/** Move a `created` row to `posted` and fill the event's linkedin_event listing, one transaction. */
+async function markPosted(userId, date, row, postUrn, { now, retry }) {
+  const listingUrl = normaliseLinkUrl("linkedin_event", row.eventUrl);
+  await withAudit(userId, async (c) => {
+    const { rowCount } = await c.query(
+      `update public.linkedin_events set status = 'posted', post_urn = $2, post_url = $3, posted_at = $4
+        where id = $1 and status = 'created'`, [row.id, postUrn, postUrl(postUrn), now]);
+    if (rowCount !== 1) throw new Error("linkedin ledger: the row is no longer `created`");
+    const { rows } = await c.query(
+      `select url, external_id from public.event_links where event_date = $1::date and platform = 'linkedin_event' for update`, [date]);
+    const before = rows[0] ?? null;
+    if (before?.url !== listingUrl) {
+      await c.query(
+        `insert into public.event_links (event_date, platform, url, external_id) values ($1::date, 'linkedin_event', $2, null)
+         on conflict (event_date, platform) do update set url = excluded.url, external_id = null`, [date, listingUrl]);
+      await writeAudit(c, userId, {
+        action: "event_link.set", targetTable: "event_links", targetId: date,
+        details: { platform: "linkedin_event", created: false, before, after: { url: listingUrl, external_id: null }, from: "linkedin_event.posted" },
+      });
+    }
+    return row;
+  }, ledgerAudit("linkedin_event.posted", date, { postUrn, retry }));
+}
+
+/** A failed live step's result: the row as now committed, and why. */
+async function failed(userId, date, cfg, now, step, err, extra = {}) {
+  const preview = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
+  return { ok: false, mode: "live", status: preview.ledger?.status ?? null, failure: failureOf(step, err), refusals: [], preview, ...extra };
+}
+
+/** Posted: the result the page shows. */
+async function succeeded(userId, date, cfg, now, extra = {}) {
+  const preview = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
+  return { ok: true, mode: "live", status: "posted", ledger: preview.ledger, preview, ...extra };
+}
+
+/**
+ * The live create: pending (committed first), upload, create, created, post, posted.
+ * Never retried automatically: a failure stops at the last committed state.
+ */
+async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, image, eventImage, cfg, now, duplicateCheck }) {
+  const c = eventImage.cover;
+  let row;
+  try {
+    row = await withAudit(userId, async (client) => {
+      const { rows } = await client.query(
+        `insert into public.linkedin_events
+           (event_date, status, name, commentary, location, image_source, image_ref, image_media_id, created_by, attempted_at)
+         values ($1, 'pending', $2, $3, $4, $5, $6, $7, $8, $9)
+         on conflict (event_date) where status <> 'retired' do nothing
+         returning id`,
+        [date, spec.name, spec.commentary, spec.location, eventImage.source, "path" in c ? c.path : c.key, eventImage.mediaId, userId, now]);
+      if (!rows[0]) throw NOOP;
+      return { id: rows[0].id };
+    }, ledgerAudit("linkedin_event.pending", date, { name: spec.name, location: spec.location, imageSource: eventImage.source }));
+  } catch (err) {
+    if (err !== NOOP) throw err;
+    // A second tab or a double click got there first.
+    const again = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
+    return { ok: false, mode: "live", refusals: [{ code: "ledger", message: REFUSALS.ledger }], preview: again };
+  }
+
+  const extra = { image, duplicateCheck };
+  let step = "image_init";
+  let created, url;
+  try {
+    const upload = await li.initializeImageUpload(token, memberUrn);
+    step = "image_upload";
+    await li.uploadImage(token, upload.uploadUrl, cover.bytes, cover.contentType);
+    step = "create";
+    created = await li.createEvent(token, buildEventPayload(spec, upload.assetUrn));
+    url = eventUrl(created.id, created.vanityName);
+    await withAudit(userId, async (client) => {
+      const { rowCount } = await client.query(
+        `update public.linkedin_events
+            set status = 'created', linkedin_event_id = $2, event_url = $3, event_created_at = $4, image_asset_urn = $5
+          where id = $1 and status = 'pending'`, [row.id, created.id, url, now, upload.assetUrn]);
+      if (rowCount !== 1) throw new Error("linkedin ledger: the row is no longer `pending`");
+      return row;
+    }, ledgerAudit("linkedin_event.created", date, { linkedinEventId: created.id, eventUrl: url }));
+  } catch (err) {
+    // Whatever LinkedIn did, the row is still `pending`: the page says to check LinkedIn.
+    return failed(userId, date, cfg, now, step, err, extra);
+  }
+
+  const createdRow = { id: row.id, linkedinEventId: created.id, eventUrl: url, commentary: spec.commentary };
+  return postAndMark({ userId, date, token, li, memberUrn, row: createdRow, cfg, now, retry: false, extra });
+}
+
+/** Create the member post for a `created` row, then mark it posted. */
+async function postAndMark({ userId, date, token, li, memberUrn, row, cfg, now, retry, extra = {} }) {
+  let posted;
+  try {
+    posted = await li.createPost(token, buildPostPayload(memberUrn, row.linkedinEventId, row.commentary));
+  } catch (err) {
+    return failed(userId, date, cfg, now, "post", err, extra);
+  }
+  try {
+    await markPosted(userId, date, row, posted.postUrn, { now, retry });
+  } catch (err) {
+    // The post is out but the ledger still says `created`: say so, rather than invite a second post.
+    log("error", `linkedin ledger: posted but not recorded: ${describeError(err)}`, { date });
+    const why = new LinkedInError("uncertain", "linkedin: the post was sent but the ledger update failed");
+    return failed(userId, date, cfg, now, "post", why, { ...extra, postUrl: postUrl(posted.postUrn) });
+  }
+  return succeeded(userId, date, cfg, now, extra);
+}
+
+/**
+ * Publish event: retry only the member post of a `created` row (LinkedIn hides an
+ * unposted event and can't delete it, so the event is never created twice).
+ * Dry run: the post request that would be sent; nothing is sent or written.
+ * @param {string} userId
+ * @param {string} date
+ * @param {{ confirm?: unknown }} request  confirm=live, as on the create
+ * @param {{ config?: any, client?: any, now?: Date }} [opts]
+ */
+export async function publishRetry(userId, date, { confirm }, { config, client, now = new Date() } = {}) {
+  const cfg = requireConfig(config);
+  const preview = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
+  const refuse = (codes) => ({ ok: false, mode: preview.mode, refusals: codes.map((code) => ({ code, message: REFUSALS[code] })), preview });
+  const { ledger, connection } = preview;
+  const codes = [];
+  if (confirm !== "live") codes.push("confirm");
+  if (ledger?.status !== "created") codes.push("not_created");
+  if (cfg.live && !connection) codes.push("no_connection");
+  else if (cfg.live && connection.level === "red") codes.push("expired");
+  if (codes.length) return refuse(codes);
+
+  const memberUrn = connection?.memberUrn ?? PLACEHOLDERS.member;
+  if (!cfg.live) {
+    const recorder = recordingClient();
+    await recorder.createPost(null, buildPostPayload(memberUrn, ledger.linkedinEventId, ledger.commentary));
+    return { ok: true, mode: "dry_run", requests: recorder.requests, preview };
+  }
+  const token = await accessToken(pool, userId, { config: cfg, now });
+  const li = client ?? linkedInClient(cfg);
+  return postAndMark({ userId, date, token, li, memberUrn, row: ledger, cfg, now, retry: true });
+}
+
+/**
+ * "I checked: nothing was created, allow retry": retire the date's `pending` row
+ * (audited), which frees the date for a new create. Only a pending row.
+ * @param {string} userId
+ * @param {string} date
+ * @param {{ now?: Date }} [opts]
+ * @returns {Promise<{ ok: true } | { ok: false, refusals: { code: string, message: string }[] }>}
+ */
+export async function allowRetry(userId, date, { now = new Date() } = {}) {
+  try {
+    await withAudit(userId, async (c) => {
+      const { rows } = await c.query(
+        `update public.linkedin_events set status = 'retired', retired_at = $2, retired_by = $3
+          where event_date = $1 and status = 'pending' returning id`, [date, now, userId]);
+      if (!rows[0]) throw NOOP;
+      return rows[0];
+    }, ledgerAudit("linkedin_event.retire", date));
+    return { ok: true };
+  } catch (err) {
+    if (err !== NOOP) throw err;
+    return { ok: false, refusals: [{ code: "not_pending", message: REFUSALS.not_pending }] };
+  }
+}
