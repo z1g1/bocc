@@ -114,6 +114,94 @@ describe("payloads", () => {
   });
 });
 
+describe("findDuplicates: same name (new or old CLI style) or same Eastern day", () => {
+  const { spec } = rules.buildEventSpec({ date: "2026-10-06", location: "lobby" });
+  const li = (id, name, startsAt) => ({ id, name: { localized: { en_US: name } }, startsAt });
+  const OTHER_DAY = Date.parse("2026-10-13T11:30:00Z");
+
+  it("matches the new name, case-insensitively", () => {
+    const e = li("1", "buffalo open coffee club for OCTOBER 6TH", OTHER_DAY);
+    assert.deepEqual(rules.findDuplicates([e], spec).map((x) => x.id), ["1"]);
+  });
+  it("matches the CLI's old 10/6 name", () => {
+    const e = li("2", "Buffalo Open Coffee Club for 10/6", OTHER_DAY);
+    assert.deepEqual(rules.findDuplicates([e], spec).map((x) => x.id), ["2"]);
+  });
+  it("matches anything on the same Eastern day, whatever its name or hour", () => {
+    // 2026-10-06 23:30 EDT is 03:30Z on the 7th: still the 6th in Buffalo.
+    const late = li("3", "Something else", Date.parse("2026-10-07T03:30:00Z"));
+    const early = li("4", "Another", Date.parse("2026-10-06T04:30:00Z"));
+    assert.deepEqual(rules.findDuplicates([late, early], spec).map((x) => x.id), ["3", "4"]);
+  });
+  it("ignores other names on other days, and the day before in Eastern time", () => {
+    const dayBefore = li("5", "x", Date.parse("2026-10-06T03:30:00Z")); // 23:30 on the 5th, EDT
+    const other = li("6", "Buffalo Open Coffee Club for 10/13", OTHER_DAY);
+    assert.deepEqual(rules.findDuplicates([dayBefore, other, { id: "7" }], spec), []);
+  });
+});
+
+/** The start of a PNG: signature and IHDR with the given size (the checks read only that). */
+function png(width, height, pad = 0) {
+  const b = Buffer.alloc(33 + pad);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0);
+  b.writeUInt32BE(13, 8);
+  b.write("IHDR", 12, "latin1");
+  b.writeUInt32BE(width, 16);
+  b.writeUInt32BE(height, 20);
+  return b;
+}
+/** A JPEG: SOI, an APP0 segment, then SOF0 with the size. */
+function jpeg(width, height) {
+  const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x10, ...Buffer.from("JFIF\0"), 1, 1, 0, 0, 1, 0, 1, 0, 0]);
+  const sof = Buffer.alloc(19);
+  sof.set([0xff, 0xc0, 0x00, 0x11, 0x08]);
+  sof.writeUInt16BE(height, 5);
+  sof.writeUInt16BE(width, 7);
+  return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, sof]);
+}
+
+describe("checkCoverImage: PNG/JPEG by magic bytes, 480x270 minimum, 8 MiB cap, 16:9 warning", () => {
+  it("a 1920x1080 PNG passes with no warning", () => {
+    assert.deepEqual(rules.checkCoverImage(png(1920, 1080)), { ok: true, contentType: "image/png", width: 1920, height: 1080, bytes: 33, errors: [], warnings: [] });
+  });
+  it("a JPEG is read from its SOF segment", () => {
+    const r = rules.checkCoverImage(jpeg(1280, 720));
+    assert.equal(r.ok, true);
+    assert.equal(r.contentType, "image/jpeg");
+    assert.deepEqual([r.width, r.height], [1280, 720]);
+  });
+  it("refuses anything else, whatever it claims to be", () => {
+    const r = rules.checkCoverImage(Buffer.from("GIF89a........"));
+    assert.equal(r.ok, false);
+    assert.match(r.errors[0], /PNG or JPEG/);
+  });
+  it("refuses smaller than 480x270", () => {
+    const r = rules.checkCoverImage(png(479, 270));
+    assert.equal(r.ok, false);
+    assert.match(r.errors.join(" "), /480×270/);
+  });
+  it("refuses over 8 MiB", () => {
+    const r = rules.checkCoverImage(png(1920, 1080, 8 * 1024 * 1024));
+    assert.equal(r.ok, false);
+    assert.match(r.errors.join(" "), /8 MiB/);
+  });
+  it("refuses more than 36,152,320 pixels", () => {
+    assert.equal(rules.checkCoverImage(png(8000, 4600)).ok, false);
+  });
+  it("the checked-in 16:9 logo default passes with no warning", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const bytes = await readFile(new URL("../../public/assets/images/brand/bocc-logo-wide-16x9.png", import.meta.url));
+    const r = rules.checkCoverImage(bytes);
+    assert.deepEqual([r.ok, r.width, r.height, r.warnings], [true, 1920, 1080, []]);
+  });
+  it("warns, but passes, when the ratio is more than 5% off 16:9 (the CLI's 2:1 default)", () => {
+    const r = rules.checkCoverImage(png(1280, 640));
+    assert.equal(r.ok, true);
+    assert.match(r.warnings[0], /16:9/);
+    assert.deepEqual(rules.checkCoverImage(png(1300, 720)).warnings, []);
+  });
+});
+
 describe("eventWindow: Tuesday 7:30-9:00 America/New_York as UTC epoch ms", () => {
   it("matches the CLI fixture for 2026-10-06 (EDT)", () => {
     assert.deepEqual(rules.eventWindow("2026-10-06"), { startsAt: 1791286200000, endsAt: 1791291600000 });

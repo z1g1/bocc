@@ -179,6 +179,81 @@ export function buildEventPayload(spec, backgroundAssetUrn) {
   };
 }
 
+/**
+ * The organizer's LinkedIn events that would duplicate `spec`: the same name (ours, or
+ * the CLI's "for 10/6" form), compared case-insensitively, or anything starting on the
+ * same Eastern calendar day (events.py find_duplicates).
+ * @param {object[]} elements  listOrganizerEvents' raw elements
+ * @param {EventSpec} spec
+ */
+export function findDuplicates(elements, spec) {
+  const names = new Set([eventName(spec.date), legacyEventName(spec.date)].map((n) => n.toLowerCase()));
+  return elements.filter((e) => {
+    const name = e?.name?.localized?.en_US;
+    if (typeof name === "string" && names.has(name.trim().toLowerCase())) return true;
+    const starts = Number(e?.startsAt);
+    return Number.isFinite(starts) && easternDay(starts) === spec.date;
+  });
+}
+
+// LinkedIn's image limits (the CLI's images.py), checked on the bytes the server sends.
+export const COVER_LIMITS = Object.freeze({
+  maxBytes: 8 * 1024 * 1024, minWidth: 480, minHeight: 270, maxPixels: 36_152_320, ratio: 16 / 9, ratioTolerance: 0.05,
+});
+
+/** Width and height from a PNG's IHDR or a JPEG's SOF segment; null if unreadable. */
+function sniffImage(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (b.length >= 24 && PNG.every((x, i) => b[i] === x)) {
+    return { contentType: "image/png", width: dv.getUint32(16), height: dv.getUint32(20) };
+  }
+  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) return { contentType: "image/jpeg", width: 0, height: 0 };
+      const marker = b[i + 1];
+      if (marker === 0xff) { i += 1; continue; }
+      const len = dv.getUint16(i + 2);
+      // SOF0..SOF15, except DHT (C4), JPG (C8) and DAC (CC).
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        return { contentType: "image/jpeg", width: dv.getUint16(i + 7), height: dv.getUint16(i + 5) };
+      }
+      i += 2 + len;
+    }
+    return { contentType: "image/jpeg", width: 0, height: 0 };
+  }
+  return null;
+}
+
+/**
+ * Can these bytes be LinkedIn's event cover? Errors refuse the create; a warning (not
+ * 16:9, so LinkedIn crops it) is shown on the page.
+ * @param {Uint8Array} bytes
+ * @returns {{ ok: boolean, contentType: string|null, width: number|null, height: number|null, bytes: number,
+ *   errors: string[], warnings: string[] }}
+ */
+export function checkCoverImage(bytes) {
+  const L = COVER_LIMITS;
+  const size = bytes.length;
+  const info = sniffImage(bytes);
+  const errors = [];
+  const warnings = [];
+  if (!info) {
+    errors.push("The cover must be a PNG or JPEG image.");
+    return { ok: false, contentType: null, width: null, height: null, bytes: size, errors, warnings };
+  }
+  const { contentType, width, height } = info;
+  if (size > L.maxBytes) errors.push("The cover is larger than 8 MiB.");
+  if (width < L.minWidth || height < L.minHeight) errors.push(`The cover is ${width}×${height}: it must be at least 480×270.`);
+  else if (width * height > L.maxPixels) errors.push(`The cover is ${width}×${height}: over LinkedIn's 36,152,320-pixel limit.`);
+  if (height > 0 && Math.abs(width / height / L.ratio - 1) > L.ratioTolerance) {
+    warnings.push(`The cover is ${width}×${height}, not 16:9: LinkedIn will crop it.`);
+  }
+  return { ok: errors.length === 0, contentType, width, height, bytes: size, errors, warnings };
+}
+
 /** POST /rest/images?action=initializeUpload body: the member owns the image. */
 export function buildImageUploadPayload(ownerUrn) {
   return { initializeUploadRequest: { owner: ownerUrn } };
