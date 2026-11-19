@@ -108,6 +108,13 @@ describe("publish time", () => {
     assert.equal(iso("2026-10-27"), "2026-10-26T11:00:00.000Z"); // the week before: still EDT
   });
 
+  test("the default's hint names the rule and that Monday's date, across DST (#41)", () => {
+    assert.equal(r.publishAtDefaultHint("2026-11-24"), "the Monday before the event, 7:00 AM Eastern (Mon, Nov 23)");
+    assert.equal(r.publishAtDefaultHint("2026-11-03"), "the Monday before the event, 7:00 AM Eastern (Mon, Nov 2)", "the day after clocks fall back");
+    assert.equal(r.publishAtDefaultHint("2026-03-10"), "the Monday before the event, 7:00 AM Eastern (Mon, Mar 9)", "the day after clocks spring forward");
+    assert.equal(r.publishAtDefaultHint("2027-01-05"), "the Monday before the event, 7:00 AM Eastern (Mon, Jan 4)");
+  });
+
   test("Eastern wall clock -> UTC: skipped hour refused, repeated hour is the first (EDT)", () => {
     assert.equal(r.easternToUtc("2026-11-23T07:00").toISOString(), "2026-11-23T12:00:00.000Z");
     assert.equal(r.easternToUtc("2026-06-01T23:59").toISOString(), "2026-06-02T03:59:00.000Z");
