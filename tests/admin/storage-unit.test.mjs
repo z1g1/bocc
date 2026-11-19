@@ -117,6 +117,36 @@ describe("SigV4 header signing (server-side requests)", () => {
     assert.notEqual(calls[0].init.headers.authorization, calls[1].init.headers.authorization, "the method is signed");
   });
 
+  test("getObject reads the bytes with a header-signed GET (no query), null when missing", async () => {
+    const calls = [];
+    const body = Buffer.from("cover bytes");
+    const fetch = async (url, init) => {
+      calls.push({ url, init });
+      return calls.length === 1
+        ? new Response(body, { status: 200, headers: { "content-type": "image/jpeg" } })
+        : new Response("no", { status: 404 });
+    };
+    const s = createStorage(readStorageEnv(neonEnv).config, { now: awsClock, fetch });
+    const key = "events/2026-11-24/0b6f6a43-3c5e-4f0e-9a51-7b3c2f9d1e20/cover.jpg";
+    assert.deepEqual(await s.getObject({ key }), { contentType: "image/jpeg", bytes: body });
+    assert.equal(await s.getObject({ key }), null);
+    for (const { url, init } of calls) {
+      assert.equal(init.method, "GET");
+      assert.equal(url, `${neonEnv.STORAGE_ENDPOINT}/bocc-media/${key}`);
+      assert.doesNotMatch(url, /X-Amz-|Signature/i);
+      assert.match(init.headers.authorization, /^AWS4-HMAC-SHA256 /);
+    }
+  });
+
+  test("getObject refuses an object over its byte cap, and any other failure", async () => {
+    const big = createStorage(readStorageEnv(neonEnv).config, {
+      now: awsClock, fetch: async () => new Response(Buffer.alloc(11), { status: 200, headers: { "content-length": "11" } }),
+    });
+    await assert.rejects(big.getObject({ key: "a/b.jpg", maxBytes: 10 }), /too large/);
+    const broken = createStorage(readStorageEnv(neonEnv).config, { now: awsClock, fetch: async () => new Response("x", { status: 500 }) });
+    await assert.rejects(broken.getObject({ key: "a/b.jpg" }), /GET failed with 500/);
+  });
+
   test("refuses bad keys", () => {
     const s = createStorage(aws, { now: awsClock });
     for (const key of [null, "", "../a", "a?b"]) {
@@ -165,6 +195,7 @@ describe("media keys", () => {
   test("built only from server-controlled parts", () => {
     assert.equal(mediaKey("2026-11-24", id, "original", "jpg"), `events/2026-11-24/${id}/original.jpg`);
     assert.equal(mediaKey("2026-11-24", id, "thumb", "jpg"), `events/2026-11-24/${id}/thumb.jpg`);
+    assert.equal(mediaKey("2026-11-24", id, "cover", "jpg"), `events/2026-11-24/${id}/cover.jpg`);
   });
   test("refuses anything else", () => {
     assert.throws(() => mediaKey("2026-02-30", id, "original", "jpg"), /eventDate/);
