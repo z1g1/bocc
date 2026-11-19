@@ -1,4 +1,4 @@
--- Migration 0013 — social_checker reads LinkedIn connection expiry for the Thursday
+-- Migration 0014 — social_checker reads LinkedIn connection expiry for the Thursday
 -- check (ADR 0012, issue #24).
 --
 -- Applied by backend/scripts/migrate.js in ONE transaction; plain grants, so it also

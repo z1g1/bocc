@@ -10,7 +10,7 @@
 //
 // A second, independent check (ADR 0012, issue #24) reads each LinkedIn connection's
 // expiry and its user's name (SELECT (user_id, expires_at) on linkedin_connections and
-// (id, name) on auth."user"; migration 20261125120000_social_checker_linkedin.sql,
+// (id, name) on auth."user"; migration 20261126120000_social_checker_linkedin.sql,
 // never the token) and pushes a "reconnect at /admin/account/" alert for each one with
 // under 10 days left or expired. Each check runs and alerts on its own: a failure in one
 // never stops the other. The run's outcome is the worse of the two ("failed" > "sent" >

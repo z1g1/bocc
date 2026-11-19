@@ -4,7 +4,7 @@
 //      and nothing else; it can't write anything
 //   2. readWorkOrder() as social_checker, on rows seeded by the owner, and
 //      runSocialCheck() end to end with SOCIAL_CHECK_DB_URL and a fake ntfy
-//   3. the LinkedIn expiry check (#24, migration 20261125120000_social_checker_linkedin.sql):
+//   3. the LinkedIn expiry check (#24, migration 20261126120000_social_checker_linkedin.sql):
 //      social_checker reads only user_id and expires_at of linkedin_connections (and id,
 //      name of auth."user"), never the token; the alert fires under 10 days or expired
 // The pure rules are in social-alert-unit.test.mjs.

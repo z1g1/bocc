@@ -512,7 +512,7 @@ work (to save deploy credits); everything is verified on staging first.
 - [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
       or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
       independent check in `src/lib/social-alert/run.mjs`; migration
-      `20261125120000_social_checker_linkedin.sql` gives `social_checker` only
+      `20261126120000_social_checker_linkedin.sql` gives `social_checker` only
       `linkedin_connections (user_id, expires_at)` and `auth."user" (id, name)`)
 - [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
       environments), `LINKEDIN_LIVE=1` (production only)

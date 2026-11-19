@@ -44,7 +44,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
 | `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`) |
-| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too) |
+| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its `cover_key`, migration `20261125120000_event_image.sql`, no new grant) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed) |
 | `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
@@ -64,7 +64,7 @@ else is granted on them: `checkin_writer` and `public` get nothing, and Supabase
 no `site_reader` grant. `linkedin_connections` (Phase 6) is granted to `admin_app` only:
 `site_reader` and `checkin_writer` get nothing; `social_checker` gets a column grant on
 `user_id` and `expires_at` only, for the Thursday expiry alert (migration
-`20261125120000_social_checker_linkedin.sql`), never the token. The database holds only ciphertext; the key
+`20261126120000_social_checker_linkedin.sql`), never the token. The database holds only ciphertext; the key
 is in Netlify env, never in Postgres.
 
 ### site_reader
@@ -411,7 +411,7 @@ Run as `social_checker` once `20261123120000_social_checker.sql` is applied, ins
       `select original_key from event_media limit 1` → permission denied
 - [ ] `select 1 from attendees limit 1` / `from event_reports` → permission denied
 - [ ] `update social_post_channels set status = status` → permission denied
-- [ ] once `20261125120000_social_checker_linkedin.sql` is applied:
+- [ ] once `20261126120000_social_checker_linkedin.sql` is applied:
       `select user_id, expires_at from linkedin_connections` → succeeds;
       `select token_ciphertext from linkedin_connections` → permission denied;
       `select id, name from auth."user"` → succeeds; `select email from auth."user"` →
