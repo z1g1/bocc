@@ -47,6 +47,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed) |
+| `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -60,7 +61,10 @@ The Phase 3 tables (`events`, `event_reports`, `event_media`) have no RLS, like 
 else is granted on them: `checkin_writer` and `public` get nothing, and Supabase-style `anon` /
 `authenticated` roles are revoked if they exist. `event_links` (Phase 4) is the same, plus
 `site_reader`'s SELECT. `social_posts` and `social_post_channels` (Phase 5) are the same, with
-no `site_reader` grant.
+no `site_reader` grant. `linkedin_connections` (Phase 6) is granted to `admin_app` only:
+`site_reader`, `checkin_writer` and `social_checker` get nothing (the Thursday expiry alert
+adds a column grant for `social_checker` later). The database holds only ciphertext; the key
+is in Netlify env, never in Postgres.
 
 ### site_reader
 
@@ -133,6 +137,10 @@ is an optional override; a malformed value fails closed.
 | `SOCIAL_CHECK_DB_URL` | Netlify (required for the Thursday social check) | pooled `social_checker` URL, its own value per context, secret. If it is missing, the check logs the problem and pushes a "check failed" alert. Read only by `src/lib/social-alert/run.mjs` |
 | `SOCIAL_ALERT_NTFY_TOPIC` | Netlify (optional; no alerts without it) | the private ntfy topic the Thursday check publishes to. **Secret**: anyone who knows it can read and post to it. Use a long random name (e.g. `bocc-` + `openssl rand -hex 16`), a different one per context. Never logged. Unset: the check logs and stops |
 | `SOCIAL_ALERT_NTFY_SERVER` | Netlify (optional) | ntfy server, default `https://ntfy.sh`; https only. Not secret |
+| `LINKEDIN_CLIENT_ID` | Netlify (both contexts; LinkedIn is off without the three) | the existing LinkedIn app's client id. Not secret |
+| `LINKEDIN_CLIENT_SECRET` | Netlify (both contexts) | the LinkedIn app's client secret. **Secret**; sent only in the token request's body |
+| `LINKEDIN_TOKEN_KEY` | Netlify (both contexts) | `openssl rand -hex 32` (or base64 of 32 bytes), a **different value per context**. **Secret**. Encrypts the stored LinkedIn tokens and signs the OAuth `state` cookie. Changing it makes every stored connection unreadable: everyone reconnects |
+| `LINKEDIN_LIVE` | Netlify (**Production only**) | `1` lets the app call LinkedIn's write endpoints; unset everywhere else (dry run, ADR 0012 decision 5). Any other value fails fast |
 
 | `STORAGE_ENDPOINT` | Netlify (optional; media is off without it) | the branch's S3 endpoint, see "Storage". Not secret |
 | `STORAGE_BUCKET` | Netlify (optional) | `bocc-media`. Not secret |
@@ -145,6 +153,14 @@ The four admin variables are read only by on-demand admin routes and the `create
 (`src/lib/auth/env.mjs` fails fast listing every missing one). The static build and the
 check-in function need none of them. Locally they live in the gitignored `.env.admin` (mode
 600), read by `npm run dev:admin` and `npm run create-admin`.
+
+The `LINKEDIN_*` variables are read by `src/lib/linkedin/env.mjs` at first use. With none set,
+LinkedIn is simply off (the page says so). A partial or invalid set fails fast, listing every
+problem by name, never by value. The OAuth redirect URL is `${BETTER_AUTH_URL}/api/admin/linkedin/callback`:
+add `https://716coffee.club/api/admin/linkedin/callback` and
+`https://dev--bocc-backend.netlify.app/api/admin/linkedin/callback` (and
+`http://localhost:4321/api/admin/linkedin/callback` for local testing) to the LinkedIn app's
+Authorized redirect URLs.
 
 **Netlify contexts.** Free plans can't narrow a variable's scopes or give the `dev` branch its
 own value (Netlify reserves `dev` as a keyword). So each admin variable gets a **Production**

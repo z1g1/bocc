@@ -14,6 +14,7 @@
 //   event_links         SELECT, INSERT, UPDATE, DELETE (migration 20261121120000_event_links_site_reader.sql)
 //   social_posts,
 //   social_post_channels SELECT, INSERT, UPDATE (migration 20261122120000_social_posts.sql)
+//   linkedin_connections SELECT, INSERT, UPDATE, DELETE (migration 20261124120000_linkedin_connections.sql)
 //   auth.*              Better Auth's tables
 // Anything else is refused by Postgres, whatever the app code says.
 //
