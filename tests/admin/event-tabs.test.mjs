@@ -136,6 +136,21 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     }
   });
 
+  test("the title and the tabs are pinned to the top on scroll; Readiness is not (#36)", async () => {
+    const d = futureDate();
+    for (const tab of ["info", "social", "post"]) {
+      const html = await page(`/admin/events/${d}/?tab=${tab}`);
+      assert.match(html, /<h1\b[^>]*class="[^"]*\bpinned\b[^"]*"[^>]*>/, `${tab}: the title is pinned`);
+      assert.match(html, /<nav\b[^>]*aria-label="Event page tabs"[^>]*class="[^"]*\bpinned\b|<nav\b[^>]*class="[^"]*\bpinned\b[^"]*"[^>]*aria-label="Event page tabs"/, `${tab}: the tabs are pinned`);
+      assert.doesNotMatch(html, /<section\b[^>]*class="[^"]*\bpinned\b[^"]*"[^>]*aria-labelledby="h-ready"|<section\b[^>]*aria-labelledby="h-ready"[^>]*class="[^"]*\bpinned\b/, `${tab}: Readiness scrolls`);
+    }
+    // The page's own CSS: sticky with a solid background, and anchor jumps clear the bar.
+    const css = (await page(`/admin/events/${d}/?tab=social`)).replace(/\s+/g, "");
+    assert.match(css, /\.pinned(\[[^\]]*\])*\{[^}]*position:sticky/, "the pinned elements are sticky");
+    assert.match(css, /\.pinned(\[[^\]]*\])*\{[^}]*background:var\(--bg\)/, "with the page background, not see-through");
+    assert.match(css, /html\{[^}]*scroll-padding-top:/, "anchor jumps land below the pinned bar");
+  });
+
   test("no tab, or an unknown one: Event Info for a future date, Post Event for a past one", async () => {
     const future = futureDate();
     const past = pastDate();
