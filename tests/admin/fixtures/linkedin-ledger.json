@@ -1,0 +1,40 @@
+{
+  "events": {
+    "2064-01-01": {
+      "attempted_at": "2063-12-27T15:58:12.104233+00:00",
+      "created_at": "2063-12-27T15:58:14.551902+00:00",
+      "event_id": "7249812613549670401",
+      "name": "Buffalo Open Coffee Club for 1/1",
+      "post_urn": "urn:li:ugcPost:7511865991627468801",
+      "posted_at": "2063-12-27T15:58:15.900118+00:00",
+      "status": "posted",
+      "url": "https://www.linkedin.com/events/buffaloopencoffeeclubfor1-17249812613549670401/"
+    },
+    "2064-01-08": {
+      "attempted_at": "2064-01-03T16:01:00.000001+00:00",
+      "commentary": "Please join me at Buffalo Open Coffee Club. This week the event will be in the Seneca One Food hall vs our normal lobby location",
+      "created_at": "2064-01-03T16:01:02.000001+00:00",
+      "event_id": "7249812613549670408",
+      "name": "Buffalo Open Coffee Club for 1/8",
+      "post_urn": "urn:li:share:7511865991627468808",
+      "posted_at": "2064-01-03T16:01:03.000001+00:00",
+      "status": "posted",
+      "url": "https://www.linkedin.com/events/7249812613549670408/"
+    },
+    "2064-01-15": {
+      "attempted_at": "2064-01-10T16:00:00+00:00",
+      "commentary": "Please join me at Buffalo Open Coffee Club",
+      "created_at": "2064-01-10T16:00:02+00:00",
+      "event_id": "7249812613549670415",
+      "name": "Buffalo Open Coffee Club for 1/15",
+      "status": "created",
+      "url": "https://www.linkedin.com/events/buffaloopencoffeeclubfor1-157249812613549670415/"
+    },
+    "2064-01-22": {
+      "attempted_at": "2064-01-17T16:00:00+00:00",
+      "commentary": "Please join me at Buffalo Open Coffee Club",
+      "name": "Buffalo Open Coffee Club for 1/22",
+      "status": "pending"
+    }
+  }
+}
