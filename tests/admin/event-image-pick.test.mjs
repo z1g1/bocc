@@ -120,3 +120,100 @@ describe("schema: the Event Image reference", () => {
     }
   });
 });
+
+// ── 2. Data module ──────────────────────────────────────────────────────────
+describe("the picker: publicly usable photos from about the last 8 events", () => {
+  test("lists ready social photos of the 8 most recent events with photos, on or before this one, newest first", async () => {
+    const ds = dates(11); // ds[0] oldest … ds[10] the event being edited
+    const target = ds[10];
+    const photos = {};
+    for (const d of ds.slice(0, 10)) photos[d] = await seedPhoto(d);
+    // Never listed: a sign-in board photo, a pending upload.
+    const board = await seedPhoto(ds[9], { kind: "signin_board" });
+    const pending = await seedPhoto(ds[9], { status: "pending" });
+    await ensureEvent(target);
+    const second = await seedPhoto(ds[8], { cover: true });
+
+    const list = await ei.listPickablePhotos(pool, target);
+    const ids = list.map((p) => p.id);
+    assert.ok(!ids.includes(board) && !ids.includes(pending));
+    assert.deepEqual([...new Set(list.map((p) => p.eventDate))], ds.slice(2, 10).reverse(), "the 8 most recent dates, newest first");
+    assert.ok(ids.includes(photos[ds[2]]) && !ids.includes(photos[ds[1]]));
+    const withCover = list.find((p) => p.id === second);
+    assert.equal(withCover.coverKey, `events/${ds[8]}/${second}/cover.jpg`);
+    assert.equal(withCover.thumbKey, `events/${ds[8]}/${second}/thumb.jpg`);
+    assert.equal(withCover.displayKey, `events/${ds[8]}/${second}/display.jpg`);
+    assert.equal(list.find((p) => p.id === photos[ds[8]]).coverKey, null);
+
+    // From an earlier event, later photos aren't offered.
+    const earlier = await ei.listPickablePhotos(pool, ds[3]);
+    assert.deepEqual([...new Set(earlier.map((p) => p.eventDate))].slice(0, 4), [ds[3], ds[2], ds[1], ds[0]]);
+  });
+});
+
+describe("pick a photo as the Event Image", () => {
+  test("sets a reference (no copy), audited; the image resolves to the photo's own files", async () => {
+    const [p, d] = dates(2);
+    const photo = await seedPhoto(p, { cover: true });
+    const before = (await owner.query("select count(*)::int as n from event_media")).rows[0].n;
+
+    const res = await ei.pickEventImage(actor.id, null, d, photo);
+    assert.deepEqual(res, { changed: true, eventDate: d, mediaId: photo, needsCover: false, replaced: null, leftovers: [] });
+    assert.equal(await ref(d), photo, "the event row is created and points at the photo");
+    assert.equal((await owner.query("select count(*)::int as n from event_media")).rows[0].n, before, "nothing copied");
+
+    const img = await ei.getEventImage(pool, d);
+    assert.equal(img.source, "referenced");
+    assert.equal(img.mediaId, photo);
+    assert.equal(img.eventDate, p);
+    assert.deepEqual(img.original, { key: `events/${p}/${photo}/original.jpg`, contentType: "image/jpeg" });
+    assert.deepEqual(img.cover, { key: `events/${p}/${photo}/cover.jpg`, contentType: "image/jpeg" });
+
+    const picks = (await auditsFor(photo)).filter((x) => x.action === "event_image.pick");
+    assert.equal(picks.length, 1);
+    assert.equal(picks[0].actor_user_id, actor.id);
+    assert.deepEqual(picks[0].details, { eventDate: d, mediaId: photo, photoDate: p, previous: null, replaced: null });
+
+    // Picking the same photo again changes nothing and isn't audited again.
+    const again = await ei.pickEventImage(actor.id, null, d, photo);
+    assert.equal(again.changed, false);
+    assert.equal((await auditsFor(photo)).filter((x) => x.action === "event_image.pick").length, 1);
+  });
+
+  test("a photo without a 16:9 cover is picked with cover null and needsCover", async () => {
+    const [p, d] = dates(2);
+    const photo = await seedPhoto(p);
+    const res = await ei.pickEventImage(actor.id, null, d, photo);
+    assert.equal(res.needsCover, true);
+    assert.equal((await ei.getEventImage(pool, d)).cover, null);
+  });
+
+  test("picking another photo switches the reference (audited with the previous one)", async () => {
+    const [p, d] = dates(2);
+    const a = await seedPhoto(p);
+    const b = await seedPhoto(p);
+    await ei.pickEventImage(actor.id, null, d, a);
+    await ei.pickEventImage(actor.id, null, d, b);
+    assert.equal(await ref(d), b);
+    const pick = (await auditsFor(b)).find((x) => x.action === "event_image.pick");
+    assert.equal(pick.details.previous, a);
+  });
+
+  test("refuses what the picker doesn't offer: a sign-in board photo, a pending one, an unknown id, a bad date", async () => {
+    const [p, d] = dates(2);
+    const board = await seedPhoto(p, { kind: "signin_board" });
+    const pending = await seedPhoto(p, { status: "pending" });
+    for (const id of [board, pending, randomUUID(), "nope"]) {
+      await assert.rejects(ei.pickEventImage(actor.id, null, d, id), { status: 400 }, String(id));
+    }
+    await assert.rejects(ei.pickEventImage(actor.id, null, "2077-02-30", await seedPhoto(p)), { status: 400 });
+    assert.equal(await ref(d), null);
+  });
+
+  test("refuses a photo from too long ago (not among the last 8 events)", async () => {
+    const ds = dates(10);
+    const old = await seedPhoto(ds[0]);
+    for (const d of ds.slice(1, 9)) await seedPhoto(d);
+    await assert.rejects(ei.pickEventImage(actor.id, null, ds[9], old), { status: 400 });
+  });
+});
