@@ -222,7 +222,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
   <p><a href="/admin/events/">← Events</a></p>
-  <h1>{longDay(date)}</h1>
+  <h1 class="pinned">{longDay(date)}</h1>
   <p class="status">
     <span class={`badge ${event.status}`}>{statusLabel}</span>
     {missing && <span class="badge missing">Report missing</span>}
@@ -249,7 +249,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     </section>
   )}
 
-  <nav aria-label="Event page tabs" class="tabs">
+  <nav aria-label="Event page tabs" class="tabs pinned">
     <ul>
       {Object.entries(TABS).map(([key, label]) => (
         <li><a href={`?tab=${key}`} aria-current={key === tab ? "page" : undefined}>{label}</a></li>
@@ -416,6 +416,13 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   section { margin-top: 2rem; }
   .event-details .cancel-fields { display: none; }
   .event-details:has(input[name="status"][value="cancelled"]:checked) .cancel-fields { display: block; }
+  /* #36: the title and the tabs stay at the top on scroll; Readiness (between them, ADR 0012)
+     scrolls under the title. The title is one line of fixed height so the tabs can pin right
+     below it; html's scroll-padding keeps anchor jumps and focused fields clear of both. */
+  :global(html) { --pin-title: 3rem; --pin-tabs: 2.5rem; scroll-padding-top: calc(var(--pin-title) + var(--pin-tabs) + 0.75rem); }
+  .pinned { position: sticky; z-index: 2; background: var(--bg); }
+  h1.pinned { top: 0; height: var(--pin-title); line-height: var(--pin-title); margin: 0 0 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs.pinned { top: var(--pin-title); }
   .tabs { margin-top: 1.25rem; border-bottom: 1px solid var(--line); }
   .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; }
   .tabs a { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; text-decoration: none; }
@@ -442,5 +449,9 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   .link-row .buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
   .linkedin-cancel, .linkedin-drift { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--err); border-left-width: 4px; border-radius: 6px; max-width: 40rem; }
   .linkedin-cancel strong { color: var(--err); }
+  @media (max-width: 30rem) {
+    h1.pinned { font-size: 1.25rem; }
+    .tabs a { padding: 0.4rem 0.55rem; font-size: 0.9375rem; }
+  }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

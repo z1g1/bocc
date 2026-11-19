@@ -202,6 +202,20 @@ export function defaultPublishAt(eventDate) {
   return easternToUtc(`${mondayBefore(eventDate)}T${hh}:${mm}`);
 }
 
+const dayFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+
+/**
+ * The Publish at field's hint for a blank value: the rule and that Monday's date,
+ * e.g. "the Monday before the event, 7:00 AM Eastern (Mon, Nov 23)". The date is
+ * calendar arithmetic (mondayBefore), so it doesn't move with DST.
+ */
+export function publishAtDefaultHint(eventDate) {
+  const { hour, minute } = PUBLISH_DEFAULT;
+  const time = `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"}`;
+  const day = dayFmt.format(new Date(`${mondayBefore(eventDate)}T12:00:00Z`));
+  return `the ${PUBLISH_DEFAULT.weekday} before the event, ${time} Eastern (${day})`;
+}
+
 /**
  * @param {Date|string} date
  * @returns {{ et: string, utc: string, local: string, iso: string }}
