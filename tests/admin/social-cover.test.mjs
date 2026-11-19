@@ -36,12 +36,14 @@ const el = await import("../../src/lib/admin/event-links.mjs");
 const PASSWORD = "correct horse battery staple";
 let owner, actor;
 
-// Weeks far ahead (2087 on, so every publish time is in the future), one per call,
-// starting at a random week so a rerun against a database kept up doesn't collide.
-let n = randomInt(0, 400) * 2;
-const date = () => new Date(Date.UTC(2087, 0, 7 + 7 * n++)).toISOString().slice(0, 10);
-let h = 1000 + randomInt(0, 400) * 2;
-const httpDate = () => new Date(Date.UTC(2087, 0, 7 + 7 * h++)).toISOString().slice(0, 10);
+// Tuesdays far ahead, so every publish time is in the future, one per call, starting
+// at a random week so a rerun against a database kept up doesn't collide. Kept within
+// 2086-2090: social-orders.test.mjs (which runs after this file) lists every upcoming
+// post from 2091 on, so posts made here must be earlier than its dates.
+let n = randomInt(0, 50);
+const date = () => new Date(Date.UTC(2086, 0, 1 + 7 * n++)).toISOString().slice(0, 10);
+let h = 100 + randomInt(0, 60);
+const httpDate = () => new Date(Date.UTC(2086, 0, 1 + 7 * h++)).toISOString().slice(0, 10);
 
 const postRow = (d) => owner.query(`select * from social_posts where event_date = $1`, [d]).then((r) => r.rows[0] ?? null);
 const coverAudits = (d) => owner.query(
