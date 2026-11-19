@@ -246,8 +246,39 @@ describe("allowedActions: state x date x cancelled x location x connection x env
     assert.equal(at("created").action, "publish_retry");
     assert.equal(at("posted").action, "none");
     assert.deepEqual(at("posted").refusals.map((r) => r.code), ["ledger"]);
-    // The recovery doesn't care about the date or the event's state.
+    // Allow-retry doesn't care about the date or the event's state.
     assert.equal(at("pending", { date: "2026-09-29", event: { status: "cancelled", location: "other" } }).action, "allow_retry");
+  });
+  it("a created row: Publish event is refused like create once past or cancelled, and without a live connection", () => {
+    const at = (over) => rules.allowedActions({ ...base, ...over, ledger: { status: "created" } }).refusals.map((r) => r.code);
+    assert.deepEqual(at({}), ["ledger"]);
+    assert.deepEqual(at({ now: new Date("2026-10-06T11:30:00Z") }), ["ledger", "past"]);
+    assert.deepEqual(at({ event: { status: "cancelled", location: "lobby" } }), ["ledger", "cancelled"]);
+    // The post doesn't carry the location: "other" doesn't block it.
+    assert.deepEqual(at({ event: { status: "scheduled", location: "other" } }), ["ledger"]);
+    assert.deepEqual(at({ connection: null }), ["ledger", "no_connection"]);
+    assert.deepEqual(at({ connection: null, live: false }), ["ledger"]);
+  });
+});
+
+describe("publishRefusals: the server's check for one Publish event request", () => {
+  const ctx = {
+    date: "2026-10-06", now: new Date("2026-10-02T16:00:00Z"), event: { status: "scheduled", location: "lobby" },
+    ledger: { status: "created" }, connection: { level: "ok" }, live: true,
+  };
+  const codes = (over, req = { confirm: "live" }) => rules.publishRefusals({ ...ctx, ...over }, req).map((r) => r.code);
+  it("a created row, confirmed, upcoming: allowed", () => assert.deepEqual(codes({}), []));
+  it("requires confirm=live", () => assert.deepEqual(codes({}, {}), ["confirm"]));
+  it("only a created row", () => {
+    assert.deepEqual(codes({ ledger: null }), ["not_created"]);
+    assert.deepEqual(codes({ ledger: { status: "pending" } }), ["not_created"]);
+    assert.deepEqual(codes({ ledger: { status: "posted" } }), ["not_created"]);
+  });
+  it("refuses past dates, cancelled events and a missing or expired live connection", () => {
+    assert.deepEqual(codes({ date: "2026-09-29" }), ["past"]);
+    assert.deepEqual(codes({ event: { status: "cancelled", location: null } }), ["cancelled"]);
+    assert.deepEqual(codes({ connection: { level: "red" } }), ["expired"]);
+    assert.deepEqual(codes({ date: "2026-09-29" }, {}), ["confirm", "past"]);
   });
 });
 

@@ -18,7 +18,10 @@
 //     posted   links to the event and the post, and the reminder to reshare it from
 //              the BOCC page (the listing was filled when it was posted)
 //     created  the event link and "Publish event" (action linkedin_publish), which
-//              retries only the post
+//              retries only the post. It confirms like the create: its own <dialog>
+//              (PUBLIC post from your profile, the commentary quoted), confirm=live only
+//              in the dialog's form, the same no-JS inline fallback. Not offered once
+//              the date has passed or the event is cancelled (the server refuses too)
 //     pending  check LinkedIn, then "I checked: nothing was created, allow retry"
 //              (action linkedin_allow_retry)
 //   After a failed live step (`result.failure`): LinkedIn's error in plain language.
@@ -47,6 +50,8 @@ const refusals: { code: string; message: string }[] = result && !result.ok ? res
   : (p?.refusals ?? []).filter((r: { code: string }) => r.code !== "ledger");
 const needsConfirm = Boolean(result && !result.ok && result.refusals.length === 1 && result.refusals[0].code === "confirm");
 const canCreate = p?.action === "create" && (p.refusals.length === 0);
+// Publish event: a created row, not past or cancelled (the matrix's only other refusal is "ledger").
+const canPublish = p?.action === "publish_retry" && p.refusals.every((r: { code: string }) => r.code === "ledger");
 
 const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
 const when = p?.spec ? `${longDay(date)}, ${time.format(p.spec.startsAt)} to ${time.format(p.spec.endsAt)}` : "";
@@ -106,14 +111,34 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
             {p.ledger.status === "posted" && (
               <p class="next"><strong>Next:</strong> reshare your post from the BOCC page on LinkedIn. The LinkedIn listing is filled in.</p>
             )}
-            {p.ledger.status === "created" && (
-              <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
-                <input type="hidden" name="action" value="linkedin_publish">
-                <input type="hidden" name="confirm" value="live">
-                <p class="muted">Publish event retries only the post, as a PUBLIC post from your profile ({postedAs}). The event already
-                  exists and LinkedIn can't delete it, so it is never created again.</p>
-                <button type="submit">Publish event</button>
-              </form>
+            {canPublish && (
+              <>
+                <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
+                  <input type="hidden" name="action" value="linkedin_publish">
+                  <p class="muted">Publish event retries only the post, as a PUBLIC post from your profile ({postedAs}). The event already
+                    exists and LinkedIn can't delete it, so it is never created again.</p>
+                  <button type="submit" data-linkedin-open="linkedin-publish-confirm">Publish event</button>
+                </form>
+                <dialog id="linkedin-publish-confirm" aria-labelledby="linkedin-publish-confirm-title" open={needsConfirm}>
+                  <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
+                    <input type="hidden" name="action" value="linkedin_publish">
+                    <input type="hidden" name="confirm" value="live">
+                    <h3 id="linkedin-publish-confirm-title">Publish the LinkedIn event?</h3>
+                    {needsConfirm && <p class="muted">Confirm here to go ahead.</p>}
+                    {dryRun && <p class="dry"><strong>Dry run: nothing will be sent.</strong></p>}
+                    <dl>
+                      <dt>Date</dt><dd>{longDay(date)}</dd>
+                      <dt>Title</dt><dd>{p.ledger.name}</dd>
+                    </dl>
+                    <p>This makes a <strong>PUBLIC post from your profile</strong> ({postedAs}) that publishes the event, and says:</p>
+                    <blockquote>{p.ledger.commentary}</blockquote>
+                    <div class="buttons">
+                      <button type="submit">{dryRun ? "Run the dry run" : "Yes, post it on LinkedIn"}</button>
+                      <button type="submit" formmethod="dialog" formnovalidate class="secondary">Cancel</button>
+                    </div>
+                  </form>
+                </dialog>
+              </>
             )}
             {p.ledger.status === "pending" && (
               <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
@@ -211,9 +236,9 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
                 </div>
               </form>
             </dialog>
-            <script is:inline type="module" src="/js/admin-linkedin.js"></script>
           </>
         )}
+        {(canCreate || canPublish) && <script is:inline type="module" src="/js/admin-linkedin.js"></script>}
       </>
     )}
   </div>

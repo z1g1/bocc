@@ -40,6 +40,7 @@ import { pool, withAudit, writeAudit } from "./db.mjs";
 import { inUseMessage } from "./event-image-rules.mjs";
 import { NotFoundError, ValidationError, isUuid } from "./attendees.mjs";
 import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
+import { COVER_LIMITS } from "../linkedin/rules.mjs";
 
 export { NotFoundError, ValidationError };
 
@@ -70,8 +71,12 @@ export const LIMITS = Object.freeze({
 // The Event Image's original: smaller cap than a photo (it is a designed image, not a
 // phone photo), and big enough for the 16:9 cover. Its dimensions are measured in the
 // browser and declared (the server never reads the bytes), so the minimum is checked
-// here only as a guard against a buggy client. Keep in step with admin-media-lib.js.
-export const EVENT_IMAGE = Object.freeze({ maxBytes: 8 * 1024 * 1024, minWidth: 480, minHeight: 270 });
+// here only as a guard against a buggy client. The numbers are LinkedIn's cover limits
+// (src/lib/linkedin/rules.mjs COVER_LIMITS), the one copy on the server. Keep in step
+// with admin-media-lib.js (a test checks).
+export const EVENT_IMAGE = Object.freeze({
+  maxBytes: COVER_LIMITS.maxBytes, minWidth: COVER_LIMITS.minWidth, minHeight: COVER_LIMITS.minHeight,
+});
 
 // Presigned PUTs last 15 minutes, not the storage default of 5: the three files go up
 // one after another from a phone, and S3 checks expiry when a request starts.

@@ -28,6 +28,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { getTracer } from "@netlify/otel";
+import { context as otelContext } from "@netlify/otel/opentelemetry";
 
 const TRACER = "bocc";
 const STATUS_ERROR = 2; // SpanStatusCode.ERROR
@@ -163,6 +164,30 @@ export function setError(message) {
 export function event(name, attrs) {
   const s = store.getStore()?.span;
   if (s) safe(() => s.addEvent(String(name), clean(attrs)));
+}
+
+// OpenTelemetry's "suppress tracing" context key (@opentelemetry/core suppressTracing):
+// createContextKey is Symbol.for, so it is the same key in the runtime's bundled copy.
+const SUPPRESS_TRACING = Symbol.for("OpenTelemetry SDK Context Key SUPPRESS_TRACING");
+
+/**
+ * Run fn with the runtime's fetch/http client spans switched off: the SDK tracer returns
+ * a non-recording span while this key is set in the active OTel context, so the
+ * outgoing URL is never recorded. Only for a request whose URL carries a credential we
+ * don't control (LinkedIn's signed image uploadUrl); our own span() around it still
+ * records the operation and status. Without tracing it just runs fn.
+ * @template T
+ * @param {() => T} fn
+ * @returns {T}
+ */
+export function withoutClientTracing(fn) {
+  let ctx;
+  try {
+    ctx = otelContext.active().setValue(SUPPRESS_TRACING, true);
+  } catch {
+    return fn();
+  }
+  return otelContext.with(ctx, fn);
 }
 
 /** Add n to a per-request counter (no-op outside span()). */

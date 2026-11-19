@@ -135,16 +135,17 @@ const FOOD_HALL = {
 
 /** Every reason the app refuses a LinkedIn action: code -> the page's message. */
 export const REFUSALS = Object.freeze({
-  past: "The event date has passed: LinkedIn events can only be created for upcoming dates.",
-  cancelled: "This event is cancelled. Un-cancel it before creating the LinkedIn event.",
+  past: "The event date has passed: LinkedIn events are only created and published for upcoming dates.",
+  cancelled: "This event is cancelled. Un-cancel it before creating or publishing the LinkedIn event.",
   location_other: 'The location is "Other": there is no LinkedIn wording for it yet, so the app won\'t publish directions. Set Lobby or Food hall.',
   no_connection: "Connect your LinkedIn account first.",
   expired: "Your LinkedIn connection has expired. Reconnect LinkedIn first.",
   ledger: "The ledger already has a LinkedIn event for this date, so another one won't be created.",
-  confirm: "Not confirmed: use the Create live event button and confirm in the dialog.",
+  confirm: "Not confirmed: confirm in the dialog first.",
   duplicate: "LinkedIn already lists a BOCC event with the same name or on the same day.",
   image: "The cover image can't be sent to LinkedIn.",
   not_created: "Publish event only retries the post of an event that was created on LinkedIn and not posted yet.",
+  posting: "Another Publish event for this date is in progress, or its outcome is unknown. Check your LinkedIn posts, then try again in a few minutes if it isn't there.",
   not_pending: "Allow retry only clears a pending create (one whose outcome is unknown).",
 });
 
@@ -219,7 +220,9 @@ export function findDuplicates(elements, spec) {
  *   no active ledger row   -> "create", refused for: past (start time passed), cancelled,
  *                             location other, and when live: no / expired connection
  *   pending                -> "allow_retry" (#26: the outcome of a create is unknown)
- *   created                -> "publish_retry" (#26: the event exists, the post failed)
+ *   created                -> "publish_retry" (#26: the event exists, the post failed),
+ *                             refused like create for past, cancelled and (live) the
+ *                             connection; not for location other (the post has no location)
  *   posted                 -> "none"
  * With a row, create is refused with "ledger" whatever else is true. In a dry run a
  * missing or expired connection isn't a refusal: only the duplicate check needs it.
@@ -231,17 +234,20 @@ export function findDuplicates(elements, spec) {
  */
 export function allowedActions({ date, now = new Date(), event, ledger, connection, live }) {
   const mode = live ? "live" : "dry_run";
+  // Past and cancelled refuse anything that publishes; so does, live, the connection.
+  const dated = [];
+  if (now.getTime() >= eventWindow(date).startsAt) dated.push(refusal("past"));
+  if (event.status === "cancelled") dated.push(refusal("cancelled"));
+  const connected = [];
+  if (live && !connection) connected.push(refusal("no_connection"));
+  else if (live && connection.level === "red") connected.push(refusal("expired"));
   if (ledger) {
     const action = { pending: "allow_retry", created: "publish_retry" }[ledger.status] ?? "none";
-    return { action, mode, refusals: [refusal("ledger")] };
+    const more = action === "publish_retry" ? [...dated, ...connected] : [];
+    return { action, mode, refusals: [refusal("ledger"), ...more] };
   }
-  const refusals = [];
-  if (now.getTime() >= eventWindow(date).startsAt) refusals.push(refusal("past"));
-  if (event.status === "cancelled") refusals.push(refusal("cancelled"));
-  if (event.location === "other") refusals.push(refusal("location_other"));
-  if (live && !connection) refusals.push(refusal("no_connection"));
-  else if (live && connection.level === "red") refusals.push(refusal("expired"));
-  return { action: "create", mode, refusals };
+  const located = event.location === "other" ? [refusal("location_other")] : [];
+  return { action: "create", mode, refusals: [...dated, ...located, ...connected] };
 }
 
 /**
@@ -253,6 +259,19 @@ export function allowedActions({ date, now = new Date(), event, ledger, connecti
 export function createRefusals(ctx, { confirm }) {
   const out = confirm === "live" ? [] : [refusal("confirm")];
   return out.concat(allowedActions(ctx).refusals);
+}
+
+/**
+ * The server's check for one Publish event request: confirm=live (from the dialog), a
+ * `created` row, then the matrix's publish_retry refusals (past, cancelled, connection).
+ * Empty means it may proceed.
+ * @param {Parameters<typeof allowedActions>[0]} ctx
+ * @param {{ confirm?: unknown }} request
+ */
+export function publishRefusals(ctx, { confirm }) {
+  const out = confirm === "live" ? [] : [refusal("confirm")];
+  if (ctx.ledger?.status !== "created") return out.concat(refusal("not_created"));
+  return out.concat(allowedActions(ctx).refusals.filter((r) => r.code !== "ledger"));
 }
 
 // LinkedIn's image limits (the CLI's images.py), checked on the bytes the server sends.

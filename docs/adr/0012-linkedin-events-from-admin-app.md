@@ -94,3 +94,35 @@ LinkedIn facts that shape this (carried over from the CLI):
   move to a newer version before then.
 - The tabs add a `tab` query parameter to every redirect from the event page and from the media
   delete route. Links to the bare page still work, landing on the date's default tab.
+
+## Amendments from the build (2026-11-19)
+
+Deliberate extras beyond the spec, recorded so they aren't mistaken for drift:
+
+- **Connect is refused when LinkedIn grants fewer scopes** than the five asked for (the member
+  unticked one): no connection is stored and the page asks to connect again allowing all of them (`notice=scopes`),
+  rather than storing a token that fails later at create time.
+- **The Thursday check alerts when it can't read the connections**, as well as on expiry: a
+  "the Thursday check couldn't read the connection" ntfy push, so a broken grant or database outage
+  doesn't hide an expiring token.
+- **The CLI ledger import does more than copy rows** (`backend/scripts/import-linkedin-ledger.js`):
+  it creates a missing `events` row (`scheduled`) for an imported week, fills a posted week's
+  `linkedin_event` listing when it has none, writes one summary `linkedin_event.import` audit
+  row per run that changed something, and has `--prefer-db` to keep the stored row on a
+  conflict instead of refusing `--apply`.
+- **One Publish event at a time.** Two concurrent Publish event requests (double click, second
+  tab) could both post. Migration `20261130120000_linkedin_events_post_claim.sql` adds
+  `post_claimed_at`: a request claims the `created` row with a conditional UPDATE before
+  calling LinkedIn (the live create takes it in the same UPDATE that moves the row to
+  `created`); a failed post releases it; an unreleased claim (posted but not recorded, or a
+  request that died) expires after ten minutes. The claim is a lock, not a change, so it isn't
+  audited; the post it guards is. Publish event also confirms in its own dialog and is refused
+  for a past date or a cancelled event, through the same allowed-actions matrix as create.
+- **LinkedIn's signed image `uploadUrl` never reaches a trace.** The runtime's fetch tracing
+  records full outgoing URLs, and that URL is the one the app doesn't build. The upload PUT runs
+  with OpenTelemetry's suppress-tracing context key set (`telemetry.mjs`
+  `withoutClientTracing`), so the runtime records no client span for it
+  ([OBSERVABILITY.md](../backend/OBSERVABILITY.md#what-the-runtimes-fetch-tracing-records)).
+- **`site_reader` and `social_checker` see `events.event_image_media_id`** through their
+  table-level `SELECT` on `events`: an opaque uuid, reviewed and kept
+  ([NEON_PERMISSIONS.md](../backend/NEON_PERMISSIONS.md)).

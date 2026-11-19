@@ -250,6 +250,61 @@ describe("live create, recovery and errors (use-case, fake client)", () => {
     assert.deepEqual(retry.ops(), ["createPost"]);
   });
 
+  test("two concurrent Publish event requests post exactly once", async () => {
+    const date = await nextDate();
+    await seedEvent(date);
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient();
+    client.fail("createPost", new LinkedInError("unknown", "500"));
+    await create(user, date, client);
+
+    // A slow LinkedIn: both requests are in flight before either post returns.
+    const retry = createFakeLinkedInClient();
+    const post = retry.createPost;
+    retry.createPost = async (...args) => { await new Promise((r) => setTimeout(r, 300)); return post(...args); };
+    const results = await Promise.all([1, 2].map(() => li.publishRetry(user.id, date, { confirm: "live" }, opts(retry))));
+    assert.deepEqual(retry.ops(), ["createPost"], "exactly one post");
+    assert.equal(results.filter((r) => r.ok).length, 1);
+    const refused = results.find((r) => !r.ok);
+    assert.deepEqual(refused.refusals.map((x) => x.code), ["posting"]);
+    assert.equal(refused.failure, undefined);
+    assert.equal((await ledger(date))[0].status, "posted");
+  });
+
+  test("a failed Publish event releases its claim, so it can be retried", async () => {
+    const date = await nextDate();
+    await seedEvent(date);
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient();
+    client.fail("createPost", new LinkedInError("unknown", "500"));
+    await create(user, date, client);
+    const retry = createFakeLinkedInClient();
+    retry.fail("createPost", new LinkedInError("page_role", "403", { status: 403 }));
+    const r1 = await li.publishRetry(user.id, date, { confirm: "live" }, opts(retry));
+    assert.equal(r1.failure.step, "post");
+    const r2 = await li.publishRetry(user.id, date, { confirm: "live" }, opts(retry));
+    assert.equal(r2.ok, true);
+    assert.deepEqual(retry.ops(), ["createPost", "createPost"]);
+  });
+
+  test("Publish-retry is refused once the date has passed or the event is cancelled", async () => {
+    const date = await nextDate();
+    await seedEvent(date);
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient();
+    client.fail("createPost", new LinkedInError("unknown", "500"));
+    await create(user, date, client);
+    const retry = createFakeLinkedInClient();
+    const later = new Date(`${date}T23:00:00Z`);
+    await owner.query(`update linkedin_connections set expires_at = $2 where user_id = $1`, [user.id, new Date(later.getTime() + 30 * 86_400_000)]);
+    const codes = async (over) => (await li.publishRetry(user.id, date, { confirm: "live" }, opts(retry, over))).refusals.map((x) => x.code);
+    assert.deepEqual(await codes({ now: later }), ["past"]);
+    await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [date]);
+    assert.deepEqual(await codes({}), ["cancelled"]);
+    assert.deepEqual(retry.calls, []);
+    assert.equal((await ledger(date))[0].status, "created");
+  });
+
   test("Publish-retry is refused for a pending row and when not created at all", async () => {
     const date = await nextDate();
     await seedEvent(date);
@@ -404,6 +459,33 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.deepEqual(sent, ["initializeImageUpload", "uploadImage", "createEvent", "createPost", "createPost"]);
     assert.equal((await ledger(date))[0].status, "posted");
     assert.equal(await listing(date), EVENT_URL);
+  });
+
+  test("Publish event confirms in a dialog like create: PUBLIC post, the commentary; without confirm=live 409 shown inline", async () => {
+    const date = await nextDate();
+    await seedEvent(date, { location: "food_hall" });
+    fake.fail("createPost", new LinkedInError("unknown", "500"));
+    assert.equal((await post(date, "linkedin_create", admin, { confirm: "live" })).status, 502);
+    const before = fake.ops().length;
+
+    const html = await page(date);
+    // The button's own form carries no confirm=live: only the dialog's form does.
+    const button = html.match(/<form[^>]*>(?:(?!<\/form>)[\s\S])*data-linkedin-open="linkedin-publish-confirm"[\s\S]*?<\/form>/);
+    assert.ok(button, "the Publish event button opens the dialog");
+    assert.doesNotMatch(button[0], /name="confirm"/);
+    const dialog = html.match(/<dialog[^>]*id="linkedin-publish-confirm"[\s\S]*?<\/dialog>/);
+    assert.ok(dialog, "the publish dialog is on the page");
+    assert.match(dialog[0], /<input type="hidden" name="confirm" value="live"/);
+    assert.ok(dialog[0].includes("PUBLIC post from your profile"));
+    assert.ok(dialog[0].includes("Seneca One Food hall"), "quotes the commentary");
+    assert.match(html, /<script[^>]*src="\/js\/admin-linkedin\.js"/);
+
+    const res = await post(date, "linkedin_publish", admin);
+    assert.equal(res.status, 409);
+    const refused = await res.text();
+    assert.match(refused, /<dialog[^>]*id="linkedin-publish-confirm"[^>]*open/);
+    assert.deepEqual(fake.ops().slice(before), [], "nothing sent");
+    assert.equal((await ledger(date))[0].status, "created");
   });
 
   test("an unknown create outcome: the page says to check LinkedIn and offers allow-retry, which retires the row", async () => {

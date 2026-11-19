@@ -505,7 +505,7 @@ work (to save deploy credits); everything is verified on staging first.
       adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
       production and staging callback URLs
 - [ ] The LinkedIn event section on Social Posts: preview, "Create live event" with a confirm
-      dialog, dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
+      dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
       the `linkedin_event` listing filled on post, drift and cancellation notices
       (#25 done: `linkedin_events` ledger migration, the preview, the dialog with
@@ -522,14 +522,17 @@ work (to save deploy credits); everything is verified on staging first.
       row with no image recorded compares the location only). A cancelled event with a
       posted row shows a red "Cancel the LinkedIn event on LinkedIn" item in Cancel and
       Readiness until "Done on LinkedIn" (audited `linkedin_event.cancel_ack`))
-- [ ] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
-      (Event Image, LinkedIn out of date and cancel on LinkedIn done, #21/#27; "LinkedIn posted"
-      is still covered only by the `linkedin_event` listing line)
+- [x] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
+      (#21/#27, and "LinkedIn event posted" from the review fixes: done once the ledger row is
+      posted, linking the event; no line for a cancelled event, where the cancel line takes over)
 - [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
       or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
       independent check in `src/lib/social-alert/run.mjs`; migration
       `20261126120000_social_checker_linkedin.sql` gives `social_checker` only
-      `linkedin_connections (user_id, expires_at)` and `auth."user" (id, name)`)
+      `linkedin_connections (user_id, expires_at, display_name)`, and nothing in `auth`: the
+      alert names the connection by its LinkedIn display name. If the connections can't be
+      read, it pushes its own "the Thursday check couldn't read the connection" alert rather than
+      staying silent)
 - [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
       environments), `LINKEDIN_LIVE=1` (production only)
 - [ ] Import the CLI's local ledger into `linkedin_events` before the first webapp create.

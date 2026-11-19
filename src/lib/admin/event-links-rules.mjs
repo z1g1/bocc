@@ -142,7 +142,9 @@ export const publicPath = (date) => `/events/${date}/`;
  *   line, ok null when the BOCC logo default is in use (fine, but worth a look)
  * @param {{ linkedIn?: { drift: null | { message: string, href: string },
  *   cancel: null | { due: boolean, message: string, href: string } } }} [extra]
- *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#27); adds a red line for
+ *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#25/#27); adds "LinkedIn event
+ *   posted" (done once posted, linking the event; missing before; no line for a cancelled
+ *   event; the page shows readiness only for upcoming events), and a red line for
  *   drift ("LinkedIn is out of date…") and for a cancelled event still to be cancelled
  *   on LinkedIn, each linking the LinkedIn event. No lines for an event never posted.
  */
@@ -169,6 +171,12 @@ export function readiness(event, links = {}, social = null, { eventImage, linked
         : eventImage.source === "referenced" ? `photo from ${eventImage.eventDate}`
           : "default: the BOCC logo",
     });
+  }
+  // "LinkedIn event posted": not for a cancelled event (the cancel line below covers it).
+  if (linkedIn && event.status !== "cancelled") {
+    items.push(linkedIn.eventUrl
+      ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: linkedIn.eventUrl }
+      : { key: "linkedin_posted", label: "LinkedIn event posted", ok: false, note: "not posted yet (LinkedIn event, Social Posts tab)" });
   }
   if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: linkedIn.drift.href });
   if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: linkedIn.cancel.href });

@@ -42,7 +42,7 @@ import LinkedInEvent from "../../../components/admin/LinkedInEvent.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
 import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
-import { ACTION_TABS, TABS, pickTab } from "../../../lib/admin/event-tabs.mjs";
+import { ACTION_TABS, LINKEDIN_TAB, TABS, pickTab } from "../../../lib/admin/event-tabs.mjs";
 import { purgeEventPages } from "../../../lib/site/purge.mjs";
 import { log } from "../../../lib/telemetry.mjs";
 export const prerender = false;
@@ -102,6 +102,15 @@ const DONE: Record<string, string> = {
   linkedin_cancel_done: "linkedin_cancel_done",
 };
 
+// Purge the public page; a failure is logged, never fails the save.
+async function purge() {
+  try {
+    await purgeEventPages([date!], { locals: Astro.locals });
+  } catch (err) {
+    log("error", "event page purge failed", { date, error: String(err) });
+  }
+}
+
 let errors: Record<string, string> = {};
 let posted: { action: string; values: Record<string, string> } | null = null;
 let linkedInResult: any = null;
@@ -134,16 +143,12 @@ if (Astro.request.method === "POST") {
       linkedInResult = await li.publishRetry(user!.id, date, { confirm });
     } else {
       linkedInResult = await li.allowRetry(user!.id, date);
-      if (linkedInResult.ok) return Astro.redirect(`/admin/events/${date}/?tab=social&notice=linkedin_retry#linkedin-event`, 303);
+      if (linkedInResult.ok) return Astro.redirect(`/admin/events/${date}/?tab=${LINKEDIN_TAB}&notice=linkedin_retry#linkedin-event`, 303);
     }
     if (linkedInResult.ok && linkedInResult.status === "posted") {
       // The linkedin_event listing was filled: the public page shows listings.
-      try {
-        await purgeEventPages([date], { locals: Astro.locals });
-      } catch (err) {
-        log("error", "event page purge failed", { date, error: String(err) });
-      }
-      return Astro.redirect(`/admin/events/${date}/?tab=social&notice=linkedin_posted#linkedin-event`, 303);
+      await purge();
+      return Astro.redirect(`/admin/events/${date}/?tab=${LINKEDIN_TAB}&notice=linkedin_posted#linkedin-event`, 303);
     }
     posted = { action, values: {} };
     Astro.response.status = linkedInResult.ok ? 200 : linkedInResult.failure ? 502 : 409;
@@ -154,13 +159,7 @@ if (Astro.request.method === "POST") {
   for (const [k, v] of data) if (typeof v === "string") values[k] = v;
   try {
     const { changed, eventCreated } = await run(user!.id, date, values);
-    if (changed && !NO_PURGE.has(action) && (!SOCIAL.has(action) || eventCreated)) {
-      try {
-        await purgeEventPages([date], { locals: Astro.locals });
-      } catch (err) {
-        log("error", "event page purge failed", { date, error: String(err) });
-      }
-    }
+    if (changed && !NO_PURGE.has(action) && (!SOCIAL.has(action) || eventCreated)) await purge();
     const anchor = ANCHORS[action] ?? (SOCIAL.has(action) ? "#social" : "");
     return Astro.redirect(`/admin/events/${date}/?tab=${ACTION_TABS[action]}&notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
   } catch (err: any) {
