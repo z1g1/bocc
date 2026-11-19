@@ -14,7 +14,7 @@ const DATE = "2026-11-24";
 const SITE = "https://716coffee.club";
 
 /** A work order from the real buildWorkOrder(). */
-function order({ date = DATE, exists = true, ready = true, statuses = {}, eventStatus = "scheduled", luma = "https://luma.com/x", video = true, baseCaption = "Coffee Tuesday" } = {}) {
+function order({ date = DATE, exists = true, status = "ready", statuses = {}, eventStatus = "scheduled", luma = "https://luma.com/x", video = true, baseCaption = "Coffee Tuesday" } = {}) {
   const channels = Object.fromEntries(CHANNEL_KEYS.map((c) => [c, {
     caption: null, firstComment: null, status: statuses[c] ?? "scheduled", postUrl: null,
     verifiedAt: null, commentPostedAt: null, notes: null,
@@ -22,7 +22,7 @@ function order({ date = DATE, exists = true, ready = true, statuses = {}, eventS
   return buildWorkOrder({
     date,
     event: { status: eventStatus, exists: true },
-    post: exists ? { videoMediaId: video ? "v" : null, coverNote: null, baseCaption, extraHashtags: [], publishAt: new Date("2026-11-23T12:00:00Z"), ready, channels } : null,
+    post: exists ? { videoMediaId: video ? "v" : null, coverNote: null, baseCaption, extraHashtags: [], publishAt: new Date("2026-11-23T12:00:00Z"), status, channels } : null,
     lumaUrl: luma,
     video: video ? { id: "v", kind: "promo_video", status: "ready" } : null,
   });
@@ -48,7 +48,7 @@ describe("socialAlert", () => {
   });
 
   test("a cancelled event: no alert, whatever its post says", () => {
-    assert.equal(socialAlert({ order: order({ eventStatus: "cancelled", ready: false }), date: DATE, siteUrl: SITE }), null);
+    assert.equal(socialAlert({ order: order({ eventStatus: "cancelled", status: "todo" }), date: DATE, siteUrl: SITE }), null);
   });
 
   test("channels not yet scheduled are listed with their status", () => {
@@ -92,11 +92,11 @@ describe("socialAlert", () => {
     assert.equal(socialAlert({ order: order({ date: d, eventStatus: "cancelled" }), date: d, siteUrl: SITE }), null, "cancelled");
   });
 
-  test("a post not marked ready lists its problems and every pending channel", () => {
+  test("a post To do lists its problems and every pending channel", () => {
     const pending = Object.fromEntries(CHANNEL_KEYS.map((c) => [c, "pending"]));
-    const a = socialAlert({ order: order({ ready: false, video: false, luma: null, statuses: pending }), date: DATE, siteUrl: SITE });
+    const a = socialAlert({ order: order({ status: "todo", video: false, luma: null, statuses: pending }), date: DATE, siteUrl: SITE });
     assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
-    assert.match(a.message, /isn't marked ready/);
+    assert.match(a.message, /isn't set to Ready for Posting \(it is To do\)/);
     assert.match(a.message, /- Upload the promo video\./);
     assert.match(a.message, /- Add the Luma listing/);
     assert.equal((a.message.match(/: pending/g) ?? []).length, 5);
@@ -105,12 +105,25 @@ describe("socialAlert", () => {
   test("a ready post that has since lost its Luma link is reported, even with every channel scheduled", () => {
     const a = socialAlert({ order: order({ luma: null }), date: DATE, siteUrl: SITE });
     assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
-    assert.match(a.message, /marked ready, but something changed since:\n- Add the Luma listing/);
+    assert.match(a.message, /is Ready for Posting, but something changed since:\n- Add the Luma listing/);
     assert.doesNotMatch(a.message, /Not scheduled yet/);
   });
 
+  test("Ready for Posting and Posted count as ready (ticket #39): no alert once every channel is scheduled or live", () => {
+    assert.equal(socialAlert({ order: order({ status: "posted", statuses: { tiktok: "live" } }), date: DATE, siteUrl: SITE }), null);
+    const a = socialAlert({ order: order({ status: "posted", statuses: { threads: "pending" } }), date: DATE, siteUrl: SITE });
+    assert.equal(a.title, "BOCC social: 1 of 5 channels not scheduled for Tue Nov 24");
+  });
+
+  test("Error: not ready, says a channel failed, and lists it", () => {
+    const a = socialAlert({ order: order({ status: "error", statuses: { tiktok: "failed" } }), date: DATE, siteUrl: SITE });
+    assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
+    assert.match(a.message, /The post's status is Error: a channel failed\. Fix it on \/admin\/events\/2026-11-24\/\./);
+    assert.match(a.message, /Not scheduled yet:\n- TikTok: failed$/);
+  });
+
   test("the title is ASCII (it travels as an HTTP header)", () => {
-    for (const o of [order({ exists: false }), order({ ready: false }), order({ statuses: { threads: "pending" } })]) {
+    for (const o of [order({ exists: false }), order({ status: "todo" }), order({ status: "error", statuses: { tiktok: "failed" } }), order({ statuses: { threads: "pending" } })]) {
       assert.match(socialAlert({ order: o, date: DATE, siteUrl: SITE }).title, /^[\x20-\x7e]+$/);
     }
   });

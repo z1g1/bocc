@@ -340,9 +340,11 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
         where e.event_image_media_id = $1 order by e.event_date for share of e`, [id]);
     if (users.length) throw new InUseError(users.map((u) => u.d), users[0].photoDate);
     // A promo video may be a social post's video: clear it there first (the FK would
-    // refuse the delete), and un-ready the post, which needs a video (its CHECK).
+    // refuse the delete), and move a Ready for Posting post back to To do: it needs a
+    // video (its CHECK). Posted and Error stay (ticket #39).
     const { rows: detached } = await client.query(
-      `update public.social_posts set video_media_id = null, ready = false
+      `update public.social_posts
+          set video_media_id = null, status = case when status = 'ready' then 'todo' else status end
         where video_media_id = $1
         returning event_date::text as "eventDate"`, [id]);
     const { rows } = await client.query(

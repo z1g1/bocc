@@ -58,7 +58,7 @@ export async function readWorkOrder(db, date) {
     db.query(`select url from public.event_links where event_date = $1::date and platform = 'luma'`, [date]),
     db.query(
       `select video_media_id as "videoMediaId", cover_note as "coverNote", base_caption as "baseCaption",
-              extra_hashtags as "extraHashtags", publish_at as "publishAt", ready, updated_at as "updatedAt"
+              extra_hashtags as "extraHashtags", publish_at as "publishAt", status, updated_at as "updatedAt"
          from public.social_posts where event_date = $1::date`, [date]),
     db.query(
       `select channel, caption, first_comment as "firstComment", status, post_url as "postUrl",

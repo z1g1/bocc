@@ -69,7 +69,7 @@ async function insertVideo(d) {
 async function readyPost(d, { caption = "Coffee Tuesday in Buffalo", coverNote = "Frame at 0:03" } = {}) {
   await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
   await so.setVideo(actor.id, d, await insertVideo(d));
-  await so.savePost(actor.id, d, { baseCaption: caption, coverNote, ready: "on" });
+  await so.savePost(actor.id, d, { baseCaption: caption, coverNote, status: "ready" });
 }
 
 /** Mid-day Eastern, `days` after `d` (YYYY-MM-DD). */
@@ -217,7 +217,7 @@ describe("setChannelResult (admin_app)", () => {
   test("scheduling needs an actionable post (409), then pending -> scheduled is audited", async () => {
     await so.savePost(actor.id, D, { baseCaption: "Coffee" });
     await assert.rejects(so.setChannelResult(actor.id, D, "facebook", { status: "scheduled" }, { now }),
-      (e) => e.status === 409 && /Can't schedule Facebook yet: The post isn't marked ready/.test(e.errors.status));
+      (e) => e.status === 409 && /Can't schedule Facebook yet: The post isn't set to Ready for Posting \(it is To do\)/.test(e.errors.status));
     assert.equal((await channelRow(D, "facebook")).status, "pending");
 
     await readyPost(D);
@@ -353,7 +353,10 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     assert.equal(r.reason, "not_ready");
     assert.equal(r.date, D);
     assert.deepEqual(r.problems.map((p) => p.key), ["video", "luma"]);
-    assert.deepEqual(r.upcoming.slice(0, 2), [{ date: D, ready: false, pendingChannels: 5 }, { date: D2, ready: true, pendingChannels: 5 }]);
+    assert.deepEqual(r.upcoming.slice(0, 2), [
+      { date: D, status: "todo", statusLabel: "To do", pendingChannels: 5 },
+      { date: D2, status: "ready", statusLabel: "Ready for Posting", pendingChannels: 5 },
+    ]);
 
     await readyPost(D);
     r = await so.findNext(pool, { now });
@@ -375,6 +378,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     r = await so.findNext(pool, { now });
     assert.equal(r.state, "ready");
     assert.equal(r.order.date, D2, "every channel of D is done, so the next week");
+    assert.equal((await so.getWorkOrder(pool, D)).status, "error", "D's failed channel made it Error");
 
     // A cancelled week is skipped.
     await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [D2]);

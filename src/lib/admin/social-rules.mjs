@@ -17,10 +17,21 @@
 // strictly before the event date (a Tuesday event: the day before), DST-correct.
 // Shown both in Eastern and in UTC (formatPublishAt).
 //
-// Ready (readyProblems, publishAtProblems): a post may be marked ready only with a
+// Ready (readyProblems, publishAtProblems): a post may be set to Ready for Posting only with a
 // ready promo video, a base caption, a Luma listing, every final caption within its
 // channel's limit, an event that isn't cancelled, and a publish time that is in the
 // future and not after the event day. buildWorkOrder() puts it all together.
+//
+// Post status (ticket #39; POST_STATUSES, postStatusAfterChannelUpdate): the summary of
+// the whole post, one of
+//   todo    To do              being prepared; the Chrome tasks ignore it (the default)
+//   ready   Ready for Posting  the work order is offered to the Chrome tasks; only
+//                              with no readyProblems() (what the old `ready` flag needed)
+//   posted  Posted             every channel scheduled or live (set automatically)
+//   error   Error              a channel failed (set automatically)
+// An Admin sets any of them; only Ready for Posting is checked. Error stays offered
+// (OFFERED_STATUSES) so the Wednesday task can carry on after one channel fails and a
+// failed channel can be scheduled again.
 
 /** Channels in work-order order (the Wednesday task's order), with their labels. */
 export const CHANNELS = Object.freeze({
@@ -35,6 +46,20 @@ export const isChannel = (c) => typeof c === "string" && Object.hasOwn(CHANNELS,
 
 /** Channel statuses (the column's CHECK): pending -> scheduled -> live | failed. */
 export const STATUSES = Object.freeze(["pending", "scheduled", "live", "failed"]);
+
+/** Post statuses (social_posts.status CHECK), in dropdown order. See the header. */
+export const POST_STATUSES = Object.freeze(["todo", "ready", "posted", "error"]);
+export const POST_STATUS_LABELS = Object.freeze({
+  todo: "To do",
+  ready: "Ready for Posting",
+  posted: "Posted",
+  error: "Error",
+});
+export const isPostStatus = (s) => typeof s === "string" && POST_STATUSES.includes(s);
+/** Post statuses whose work order the Chrome tasks act on (schedule channels). */
+export const OFFERED_STATUSES = Object.freeze(["ready", "error"]);
+/** Channel statuses that count as done for Posted. */
+export const POSTED_CHANNEL_STATUSES = Object.freeze(["scheduled", "live"]);
 
 /** Channels whose caption carries the Luma link; the others say "Link in bio". */
 export const LINK_CHANNELS = Object.freeze(["facebook", "threads", "linkedin_page"]);
@@ -328,14 +353,18 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, coverMedia =
   });
   const publishAt = post?.publishAt ? new Date(post.publishAt) : defaultPublishAt(date);
   const problems = readyProblems({ event, post, video, lumaUrl, channels });
-  const ready = Boolean(post?.ready);
+  const status = isPostStatus(post?.status) ? post.status : "todo";
+  /** Offered to the Chrome tasks (Ready for Posting or Error): what the old `ready` flag meant. */
+  const ready = OFFERED_STATUSES.includes(status);
   return {
     date,
     exists: Boolean(post),
     eventStatus: event?.status ?? "scheduled",
+    status,
+    statusLabel: POST_STATUS_LABELS[status],
     ready,
     problems,
-    /** Ready and nothing wrong: the Chrome tasks may act on it. */
+    /** Offered and nothing wrong: the Chrome tasks may act on it. */
     actionable: ready && problems.length === 0,
     publishAt,
     publishAtDisplay: formatPublishAt(publishAt),
@@ -354,6 +383,23 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, coverMedia =
 }
 
 // ── Channel results (the social role's pages, Phase 5 part B) ────────────────
+
+/**
+ * The post status a channel update leads to, or null for no change (ticket #39):
+ * Error when the update recorded `failed`; Posted when it leaves every channel
+ * scheduled or live. Only an update that changed the channel's status counts.
+ * @param {{ status: string, changedTo: string|null, channels: Record<string, string> }} s
+ *   status: the post's status now; changedTo: the channel's new status, null when it
+ *   didn't change; channels: every channel's status after the update.
+ * @returns {string|null}
+ */
+export function postStatusAfterChannelUpdate({ status, changedTo, channels }) {
+  if (!changedTo) return null;
+  let next = null;
+  if (changedTo === "failed") next = "error";
+  else if (CHANNEL_KEYS.every((c) => POSTED_CHANNEL_STATUSES.includes(channels[c]))) next = "posted";
+  return next === status ? null : next;
+}
 
 /**
  * Status changes setChannelResult() (./social.mjs) accepts. The happy path is

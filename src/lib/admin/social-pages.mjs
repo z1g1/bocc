@@ -85,6 +85,8 @@ export function toJson(pick) {
     ...rest,
     order: {
       date: order.date,
+      status: order.status,
+      statusLabel: order.statusLabel,
       ready: order.ready,
       actionable: order.actionable,
       problems: order.problems,
