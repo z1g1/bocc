@@ -41,7 +41,7 @@ let m = randomInt(0, 7000);
 const futureDate = () => day(2040, m++);
 
 const SECTIONS = {
-  info: ["h-details", "h-links"],
+  info: ["h-details", "h-links", "h-linkedin"],
   social: ["h-social"],
   post: ["h-report", "h-media-signin", "h-media-social"],
 };
@@ -149,6 +149,18 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     assert.match(css, /\.pinned(\[[^\]]*\])*\{[^}]*position:sticky/, "the pinned elements are sticky");
     assert.match(css, /\.pinned(\[[^\]]*\])*\{[^}]*background:var\(--bg\)/, "with the page background, not see-through");
     assert.match(css, /html\{[^}]*scroll-padding-top:/, "anchor jumps land below the pinned bar");
+  });
+
+  test("the LinkedIn event section is on Event Info, after the Online Event Listings and the Event Image", async () => {
+    const d = futureDate();
+    const info = await page(`/admin/events/${d}/?tab=info`);
+    assert.match(info, /<h2 id="h-linkedin"[^>]*>LinkedIn event<\/h2>/);
+    const at = (id) => info.indexOf(`id="${id}"`);
+    assert.ok(at("h-links") < at("h-linkedin"), "after the Online Event Listings");
+    assert.ok(at("h-event-image") > 0 && at("h-event-image") < at("h-linkedin"), "after the Event Image");
+    const social = await page(`/admin/events/${d}/?tab=social`);
+    assert.ok(!social.includes('id="h-linkedin"'), "not on Social Posts");
+    assert.ok(!social.includes('id="linkedin-event"'), "nor its form");
   });
 
   test("no tab, or an unknown one: Event Info for a future date, Post Event for a past one", async () => {

@@ -129,12 +129,13 @@ describe("readiness: the LinkedIn event posted line", () => {
     assert.deepEqual(line(linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: LOGO })),
       { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: EVENT_URL });
   });
-  it("not posted (no row, pending, created): missing, pointing at the Social Posts tab", () => {
+  it("not posted (no row, pending, created): missing, pointing at the Event Info tab", () => {
     for (const ledger of [null, posted({ status: "pending", eventUrl: null }), posted({ status: "created" })]) {
       const l = line(linkedInFollowUp({ ledger, event: scheduled(), eventImage: LOGO }));
       assert.equal(l.ok, false, String(ledger?.status));
       assert.equal(l.href, undefined);
-      assert.match(l.note, /Social Posts/);
+      assert.match(l.note, /Event Info tab/);
+      assert.doesNotMatch(l.note, /Social Posts/);
     }
   });
   it("no line for a cancelled event (the cancel line covers it) or without a ledger read", () => {

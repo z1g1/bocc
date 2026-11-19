@@ -6,9 +6,9 @@
 //                below it, for a cancelled event that was posted on LinkedIn, the red
 //                "Cancel the LinkedIn event on LinkedIn" item and its "Done on LinkedIn"
 //                form (action linkedin_cancel_done, #27); the Online Event Listings; the
-//                Event Image (EventImage, ADR 0012 decision 3)
-//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011) and the
-//                LinkedIn event section (ADR 0012): the Admin's own LinkedIn
+//                Event Image (EventImage, ADR 0012 decision 3); then the LinkedIn event
+//                section (ADR 0012, #38: made Tuesday afternoon for the next week's
+//                event, alongside the other listings): the Admin's own LinkedIn
 //                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
 //                the event's preview, dialog, dry run and live create with its
 //                recovery (LinkedInEvent; actions linkedin_create, linkedin_publish,
@@ -16,6 +16,7 @@
 //                without a redirect, 409 when refused, 502 when a LinkedIn step failed),
 //                and the "LinkedIn is out of date…" notice when the location or Event
 //                Image changed after it was posted (#27: flagged, not synced)
+//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -352,18 +353,19 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
 
   <EventImage date={date} image={eventImage} />
 
+  <section aria-labelledby="h-linkedin">
+    <h2 id="h-linkedin">LinkedIn event</h2>
+    {linkedIn.drift && (
+      <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.drift.href} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
+    )}
+    <LinkedInConnection returnTo={date} />
+    <LinkedInEvent date={date} result={linkedInResult} />
+  </section>
+
   </>)}
 
   {tab === "social" && (<>
     <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
-    <section aria-labelledby="h-linkedin">
-      <h2 id="h-linkedin">LinkedIn event</h2>
-      {linkedIn.drift && (
-        <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.drift.href} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
-      )}
-      <LinkedInConnection returnTo={date} />
-      <LinkedInEvent date={date} result={linkedInResult} />
-    </section>
   </>)}
 
   {tab === "post" && (<>
