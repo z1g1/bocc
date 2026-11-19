@@ -408,7 +408,7 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     for (const c of CHANNELS) assert.ok(page.includes(`id="channel-${c}"`), c);
     assert.ok(page.includes('src="/js/admin-video.js"'), "the upload script is an external file (CSP script-src 'self')");
     assert.ok(page.includes(so.formatPublishAt(so.defaultPublishAt(d)).utc), "the default publish time in UTC");
-    assert.ok(page.includes("social post") && page.includes("not set up yet"));
+    assert.ok(page.includes("Social Posts: not set up yet"));
 
     assert.equal((await req(`/admin/events/${d}/`, { cookie: social.cookie })).status, 403);
     const sp = await req(`/admin/events/${d}/`, { cookie: social.cookie, method: "POST", form: { action: "social_post", baseCaption: "x" } });
@@ -430,7 +430,10 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     const page = await (await req(`/admin/events/${d}/?tab=social&notice=social_post`, { cookie: admin.cookie })).text();
     assert.ok(page.includes("Social post saved."));
     assert.ok(page.includes("Coffee &lt;b&gt;Tuesday&lt;/b&gt;") && !page.includes("<b>Tuesday</b>"), "escaped");
-    assert.ok(page.includes("social post ready") && page.includes("Facebook: pending") && page.includes("0/5 channels scheduled"));
+    const ready = page.slice(page.indexOf('id="h-ready"'), page.indexOf('aria-label="Event page tabs"'));
+    assert.ok(ready.includes("Social Posts: To do") && ready.includes("Facebook: pending") && ready.includes("0/5 channels scheduled"));
+    assert.ok(ready.includes("Add the Luma listing"), "the problems under the bullet");
+    assert.ok(!ready.includes("not marked ready"));
     assert.ok(page.includes(`RSVP: [Luma link: add the Luma listing]`), "preview flags the missing Luma link");
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",

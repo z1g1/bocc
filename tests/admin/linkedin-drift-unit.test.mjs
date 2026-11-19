@@ -95,7 +95,7 @@ describe("linkedInFollowUp: cancellation", () => {
 
 describe("readiness: the LinkedIn lines", () => {
   const event = { date: "2078-01-04", status: "scheduled", exists: true };
-  const lines = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).items.filter((i) => ["linkedin_drift", "linkedin_cancel"].includes(i.key));
+  const lines = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).listings.items.filter((i) => ["linkedin_drift", "linkedin_cancel"].includes(i.key));
 
   it("none without a follow-up (never posted, or no ledger read)", () => {
     assert.deepEqual(lines(undefined), []);
@@ -103,19 +103,19 @@ describe("readiness: the LinkedIn lines", () => {
     assert.deepEqual(lines({ eventUrl: EVENT_URL, drift: null, cancel: null }), []);
   });
 
-  it("drift: a red 'LinkedIn is out of date' line linking the event", () => {
+  it("drift: a red 'LinkedIn is out of date' line pointing at the Event Info tab", () => {
     const f = linkedInFollowUp({ ledger: posted(), event: scheduled("food_hall"), eventImage: LOGO });
     const [line] = lines(f);
     assert.equal(line.key, "linkedin_drift");
     assert.equal(line.ok, false);
     assert.match(line.label, /^LinkedIn is out of date/);
-    assert.equal(line.href, EVENT_URL);
+    assert.equal(line.href, "?tab=info#h-linkedin");
   });
 
   it("cancelled and not done: a red 'Cancel the LinkedIn event on LinkedIn' line; done clears it", () => {
     const ev = { ...event, status: "cancelled" };
     const [line] = lines(linkedInFollowUp({ ledger: posted(), event: ev, eventImage: LOGO }), ev);
-    assert.deepEqual(line, { key: "linkedin_cancel", label: "Cancel the LinkedIn event on LinkedIn", ok: false, href: EVENT_URL });
+    assert.deepEqual(line, { key: "linkedin_cancel", label: "Cancel the LinkedIn event on LinkedIn", ok: false, href: "?tab=info#h-linkedin" });
     const done = linkedInFollowUp({ ledger: posted({ cancelledOnLinkedInAt: new Date() }), event: ev, eventImage: LOGO });
     assert.deepEqual(lines(done, ev), []);
   });
@@ -123,7 +123,7 @@ describe("readiness: the LinkedIn lines", () => {
 
 describe("readiness: the LinkedIn event posted line", () => {
   const event = { date: "2078-01-04", status: "scheduled", exists: true };
-  const line = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).items.find((i) => i.key === "linkedin_posted");
+  const line = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).listings.items.find((i) => i.key === "linkedin_posted");
 
   it("posted: done, linking the LinkedIn event", () => {
     assert.deepEqual(line(linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: LOGO })),

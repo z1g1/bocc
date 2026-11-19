@@ -130,6 +130,13 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       expectTab(html, tab, tab);
       assert.ok(html.includes('id="h-ready"'), `${tab}: readiness`);
       assert.ok(html.indexOf('id="h-ready"') < html.indexOf('aria-label="Event page tabs"'), `${tab}: readiness above the tabs`);
+      // #42: an H2 section with two bullets.
+      const ready = html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('aria-label="Event page tabs"'));
+      assert.match(ready, /<h2 id="h-ready"[^>]*>Readiness<\/h2>/, `${tab}: the H2`);
+      const bullets = [...ready.matchAll(/<li\b[^>]*class="[^"]*\bbullet\b[^"]*"[^>]*>/g)];
+      assert.equal(bullets.length, 2, `${tab}: two bullets`);
+      assert.match(ready, /Online Event Listings \d\/5 \(Default Cover Image\)/, `${tab}: the listings bullet`);
+      assert.match(ready, /Social Posts: not set up yet/, `${tab}: the social bullet`);
       for (const [key, label] of [["info", "Event Info"], ["social", "Social Posts"], ["post", "Post Event"]]) {
         assert.match(html, new RegExp(`<a\\b[^>]*href="\\?tab=${key}"[^>]*>${label}</a>`), `${tab}: a plain link to ${label}`);
       }

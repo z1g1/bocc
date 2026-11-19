@@ -1,14 +1,14 @@
 ---
-// Listings at a glance for an upcoming event in the admin lists (plan Phase 4):
-// "3/4 listings", plus "no embed id" when Luma is listed without its evt- id.
-// `info` comes from linkSummaries() in src/lib/admin/event-links.mjs.
-interface Props { info?: { listings: number; lumaId: boolean }; total: number }
-const { info = { listings: 0, lumaId: false }, total } = Astro.props;
-const complete = info.listings === total && info.lumaId;
+// Listings at a glance for an upcoming event in the admin lists (plan Phase 4, #42):
+// "3/5 listings", the same five the event page's Readiness counts (the four listings and
+// the public page). `info` comes from linkSummaries() in src/lib/admin/event-links.mjs.
+import { LISTINGS_TOTAL, listingsDone } from "../../lib/admin/event-links-rules.mjs";
+interface Props { info?: { listings: number }; event: { status: string; exists?: boolean } }
+const { info = { listings: 0 }, event } = Astro.props;
+const done = listingsDone(event, info.listings);
+const complete = done === LISTINGS_TOTAL;
 ---
-<span class:list={["ready-tag", { complete }]}>
-  {info.listings}/{total} listings{info.listings > 0 && !info.lumaId && " · no embed id"}
-</span>
+<span class:list={["ready-tag", { complete }]}>{done}/{LISTINGS_TOTAL} listings</span>
 
 <style>
   .ready-tag { font-size: 0.85em; padding: 0 0.35rem; border: 1px solid var(--line); border-radius: 4px; margin-left: 0.25rem; }

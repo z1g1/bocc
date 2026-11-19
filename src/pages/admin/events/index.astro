@@ -4,7 +4,7 @@
 // "report missing". The past list is paged (?page=N, 25 a page); ?missing=1 shows only
 // the report-missing ones. ?date=YYYY-MM-DD (the "open a date" GET form, no script)
 // redirects to /admin/events/YYYY-MM-DD/. Upcoming events show their listings at a
-// glance ("3/4 listings", "no embed id"; plan Phase 4).
+// glance ("3/5 listings": the four listings and the public page; plan Phase 4, #42).
 import Admin from "../../../layouts/Admin.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { longDay } from "../../../lib/admin/format.mjs";
@@ -62,7 +62,7 @@ const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "
             <a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a>
             {e.date === today && <span class="tag">today</span>}
             <span class="muted"> {statusText(e)}{where(e) && ` · ${where(e)}`}</span>
-            <ReadyTag info={linkInfo.get(e.date)} total={el.PLATFORM_KEYS.length} />
+            <ReadyTag info={linkInfo.get(e.date)} event={e} />
           </li>
         ))}
       </ul>

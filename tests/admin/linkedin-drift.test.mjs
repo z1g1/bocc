@@ -197,7 +197,7 @@ describe("drift notice, cancel item and Done on LinkedIn over HTTP", { timeout: 
     await ev.saveEvent(admin.user.id, date, { status: "scheduled", location: "food_hall" });
     const info = await page(date, "info");
     assert.match(readinessOf(info), /LinkedIn is out of date/);
-    assert.ok(readinessOf(info).includes(`href="${EVENT_URL}"`), "readiness links the event");
+    assert.ok(readinessOf(info).includes('href="?tab=info#h-linkedin"'), "readiness points at the LinkedIn section on Event Info");
     assert.ok(info.includes('id="h-linkedin"'), "the LinkedIn section is on Event Info");
     const section = info.slice(info.indexOf('id="h-linkedin"'));
     assert.match(section, /LinkedIn is out of date: the location changed/);

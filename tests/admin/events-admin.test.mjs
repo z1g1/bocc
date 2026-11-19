@@ -756,10 +756,10 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const d = ev.todayEastern(new Date(Date.now() + 3 * 86400_000));
     assert.equal(await eventRow(d), null, "no other test uses this date");
     const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
-    assert.ok(page.includes('id="h-ready"') && page.includes("0/4 listings"), "readiness near the top");
+    assert.ok(page.includes('id="h-ready"') && page.includes("Online Event Listings 0/5 (Default Cover Image)"), "readiness near the top");
     assert.ok(page.indexOf('id="h-ready"') < page.indexOf('id="h-details"'));
     assert.ok(page.includes("public page") && page.includes("404 until the event is saved") && !page.includes(`href="/events/${d}/"`));
-    assert.ok(page.includes("social post") && page.includes("not set up yet") && !page.includes("Phase 5"));
+    assert.ok(page.includes("Social Posts: not set up yet") && !page.includes("Phase 5"));
     for (const p of ["luma", "eventbrite", "facebook_event", "linkedin_event"]) assert.ok(page.includes(`id="link-${p}"`), p);
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
@@ -778,8 +778,9 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const [audit] = (await auditRows(d)).filter((a) => a.action === "event_link.set");
     assert.deepEqual([audit.target_table, audit.details.platform, audit.details.created], ["event_links", "luma", true]);
     const after = await (await req(`/admin/events/${d}/?notice=link`, { cookie: admin.cookie })).text();
-    assert.ok(after.includes("Listing saved.") && after.includes("1/4 listings"));
-    assert.ok(after.includes("no embed id"));
+    // The Luma listing and the public page (the save created the event); no embed id item.
+    assert.ok(after.includes("Listing saved.") && after.includes("Online Event Listings 2/5 (Default Cover Image)"));
+    assert.ok(!after.includes("no embed id") && !after.includes("Luma embed id"));
     // The row is its label, the text box holding the saved URL and its buttons: no printed link.
     const lumaRow = after.match(/<form[^>]*id="link-luma"[\s\S]*?<\/form>/)?.[0] ?? "";
     assert.match(lumaRow, /<input[^>]*id="url-luma"[^>]*value="https:\/\/lu\.ma\/abc"/, "the saved URL in the text box");
@@ -791,12 +792,15 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
 
     const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
     const item = list.match(new RegExp(`<li\\b[^>]*><a href="/admin/events/${d}/"[\\s\\S]*?</li>`))?.[0] ?? "";
-    assert.match(item, /1\/4 listings · no embed id/);
+    assert.match(item, /<span class="ready-tag[^"]*"[^>]*>\s*2\/5 listings\s*<\/span>/);
+    assert.ok(!list.includes("no embed id"));
     const home = await (await req("/admin/", { cookie: admin.cookie })).text();
     // Structure, not distance: astro dev adds data-astro-* attributes to every tag.
     const nextItems = [...home.matchAll(/<li\b[^>]*>Next: ([\s\S]*?)<\/li>/g)].map((m) => m[1]);
     assert.ok(nextItems.length > 0, "home lists the next events");
-    for (const li of nextItems) assert.match(li, /<span class="ready-tag[^"]*"[^>]*>\s*\d\/4 listings/, "home: listings at a glance");
+    for (const li of nextItems) assert.match(li, /<span class="ready-tag[^"]*"[^>]*>\s*\d\/5 listings\s*<\/span>/, "home: listings at a glance");
+    const homeItem = nextItems.find((li) => li.includes(`/admin/events/${d}/`));
+    if (homeItem) assert.match(homeItem, /2\/5 listings/, "home: the same five-item count");
 
     const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "unlink", platform: "luma" } });
     assert.equal(clear.headers.get("location"), `/admin/events/${d}/?tab=info&notice=unlink`);

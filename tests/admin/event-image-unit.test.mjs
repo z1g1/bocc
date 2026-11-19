@@ -67,28 +67,20 @@ describe("Event Image resolution: uploaded, then referenced, then the logo", () 
   });
 });
 
-describe("Readiness: the Event Image line", () => {
+describe("Readiness: Default or Custom Cover Image", () => {
   const event = { date: "2026-11-24", status: "scheduled", exists: true };
-  const line = (eventImage) => readiness(event, {}, null, { eventImage }).items.find((i) => i.key === "event_image");
+  const cover = (eventImage) => readiness(event, {}, null, { eventImage }).listings.cover;
 
-  test("set: done, says it's uploaded", () => {
-    const i = line(resolveEventImage({ uploaded }));
-    assert.equal(i.label, "Event Image");
-    assert.equal(i.ok, true);
-    assert.match(i.note, /uploaded/);
+  test("an uploaded Event Image or a Photo from Event: Custom Cover Image", () => {
+    assert.equal(cover(resolveEventImage({ uploaded })), "Custom Cover Image");
+    assert.equal(cover(resolveEventImage({ referenced: photo })), "Custom Cover Image");
   });
-  test("a referenced photo: done, names the photo's event", () => {
-    const i = line(resolveEventImage({ referenced: photo }));
-    assert.equal(i.ok, true);
-    assert.match(i.note, /photo from 2026-11-17/);
+  test("the BOCC logo default: Default Cover Image", () => {
+    assert.equal(cover(resolveEventImage({})), "Default Cover Image");
   });
-  test("default: not a failure, says the BOCC logo is in use", () => {
-    const i = line(resolveEventImage({}));
-    assert.equal(i.ok, null);
-    assert.match(i.note, /default: the BOCC logo/);
-  });
-  test("no line when the caller doesn't pass the image (other pages)", () => {
-    assert.equal(readiness(event, {}, null).items.find((i) => i.key === "event_image"), undefined);
+  test("no Event Image line any more", () => {
+    const r = readiness(event, {}, null, { eventImage: resolveEventImage({ uploaded }) });
+    assert.ok(![...r.listings.parts, ...r.listings.items].some((i) => i.key === "event_image"));
   });
 });
 
