@@ -140,8 +140,13 @@ export const publicPath = (date) => `/events/${date}/`;
  * @param {{ eventImage?: { source: "uploaded"|"referenced"|"default", eventDate: string|null } }} [extra]
  *   eventImage: the resolved Event Image (src/lib/admin/event-image-rules.mjs); adds its
  *   line, ok null when the BOCC logo default is in use (fine, but worth a look)
+ * @param {{ linkedIn?: { drift: null | { message: string, href: string },
+ *   cancel: null | { due: boolean, message: string, href: string } } }} [extra]
+ *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#27); adds a red line for
+ *   drift ("LinkedIn is out of date…") and for a cancelled event still to be cancelled
+ *   on LinkedIn, each linking the LinkedIn event. No lines for an event never posted.
  */
-export function readiness(event, links = {}, social = null, { eventImage } = {}) {
+export function readiness(event, links = {}, social = null, { eventImage, linkedIn } = {}) {
   const items = PLATFORM_KEYS.map((p) => ({ key: p, label: `${PLATFORMS[p]} listing`, ok: Boolean(links[p]?.url) }));
   const listings = items.filter((i) => i.ok).length;
   const lumaId = Boolean(links.luma?.externalId);
@@ -165,6 +170,8 @@ export function readiness(event, links = {}, social = null, { eventImage } = {})
           : "default: the BOCC logo",
     });
   }
+  if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: linkedIn.drift.href });
+  if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: linkedIn.cancel.href });
   const channels = social?.exists ? social.channels ?? [] : [];
   const scheduled = channels.filter((c) => c.status === "scheduled" || c.status === "live").length;
   if (!social?.exists) {

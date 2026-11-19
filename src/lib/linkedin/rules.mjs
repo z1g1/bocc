@@ -2,7 +2,7 @@
 // and the browser-free Thursday check can load it. Holds the connection expiry and
 // scopes (#23), and the weekly event (#25): name, times, wording by location, the
 // payloads, the cover image checks, the duplicate match and the allowed-actions matrix.
-// Drift detection is added here by a later ticket.
+// Drift and the cancellation follow-up (#27): linkedInFollowUp.
 
 const DAY_MS = 86_400_000;
 
@@ -340,4 +340,53 @@ export function eventUrl(id, vanityName = null) {
 /** The member post's page (events.py). */
 export function postUrl(postUrn) {
   return `https://www.linkedin.com/feed/update/${postUrn}/`;
+}
+
+
+// ── Drift and cancellation (#27) ───────────────────────────────────────────
+// After an event is posted the app flags drift instead of syncing it (API sync is #14).
+
+export const CANCEL_ON_LINKEDIN = "Cancel the LinkedIn event on LinkedIn";
+
+/** The location's LinkedIn wording: not set reads as the lobby (buildEventSpec). */
+const wording = (location) => location ?? "lobby";
+/** The cover's identity: its object key or checked-in path, null when there is none. */
+const coverRef = (eventImage) => {
+  const c = eventImage?.cover;
+  return c ? ("path" in c ? c.path : c.key) : null;
+};
+
+/**
+ * What LinkedIn needs from the Admin by hand, for a date's active ledger row.
+ * Only a `posted` row counts: an event never posted shows nothing.
+ *   drift   the location or Event Image changed since it was sent (not when cancelled:
+ *           then the event is to be cancelled, not fixed). A row with no image recorded
+ *           (imported from the CLI's ledger, #28) only compares the location.
+ *   cancel  the event is cancelled: `due` until the Admin ticks "Done on LinkedIn"
+ * @param {{ ledger: null | { status: string, location: string|null, imageSource: string|null,
+ *   imageRef: string|null, eventUrl: string|null, cancelledOnLinkedInAt: Date|null },
+ *   event: { status: string, location: string|null },
+ *   eventImage: { source: string, cover: { key: string } | { path: string } | null } }} input
+ * @returns {{ eventUrl: string|null,
+ *   drift: null | { changes: ("location"|"image")[], message: string, href: string },
+ *   cancel: null | { due: boolean, doneAt: Date|null, message: string, href: string } }}
+ */
+export function linkedInFollowUp({ ledger, event, eventImage }) {
+  if (ledger?.status !== "posted") return { eventUrl: null, drift: null, cancel: null };
+  const href = ledger.eventUrl;
+  if (event.status === "cancelled") {
+    const doneAt = ledger.cancelledOnLinkedInAt ?? null;
+    return { eventUrl: href, drift: null, cancel: { due: doneAt === null, doneAt, message: CANCEL_ON_LINKEDIN, href } };
+  }
+  const changes = [];
+  if (wording(ledger.location) !== wording(event.location)) changes.push("location");
+  if (ledger.imageSource != null && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== coverRef(eventImage))) {
+    changes.push("image");
+  }
+  if (!changes.length) return { eventUrl: href, drift: null, cancel: null };
+  const what = changes.map((c) => (c === "location" ? "location" : "Event Image")).join(" and the ");
+  return {
+    eventUrl: href, cancel: null,
+    drift: { changes, href, message: `LinkedIn is out of date: the ${what} changed after the event was posted. Fix it on LinkedIn by hand.` },
+  };
 }
