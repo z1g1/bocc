@@ -48,7 +48,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed; covers the cover image override `cover_media_id`, migration `20261127120000_social_post_cover.sql`, no new grant) |
 | `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
-| `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261129120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves) |
+| `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261129120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves. `post_claimed_at`, migration `20261130120000_linkedin_events_post_claim.sql`, is the one-Publish-at-a-time claim; no new grant) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -81,7 +81,12 @@ exactly:
 | schema `public` | `USAGE` |
 | `events`, `event_links` | `SELECT` |
 
-Nothing else: no reports, media, attendees, check-ins, `audit_log` or `auth`. Its URL
+Nothing else: no reports, media, attendees, check-ins, `audit_log` or `auth`. The
+table-level `SELECT` on `events` also covers `events.event_image_media_id` (Phase 6, the
+Event Image picked from a Photo from Event). That is an opaque uuid: `site_reader` can't
+read `event_media`, so it can't turn it into an object key, a URL or anything else, and the
+public pages don't use it. Reviewed and kept (2026-11-19) rather than replaced by a column
+grant that every new `events` column would then have to extend. Its URL
 (`SITE_DB_URL`) is the **pooled** `site_reader` URL, its own value per Netlify context, marked
 secret.
 
@@ -103,6 +108,11 @@ Its grants, exactly:
 | `events`, `event_links`, `social_posts`, `social_post_channels` | `SELECT` |
 | `event_media` columns `id`, `event_date`, `kind`, `status` | `SELECT` (enough to tell whether the attached promo video is ready; no object keys, sizes or uploader) |
 | `linkedin_connections` columns `user_id`, `expires_at`, `display_name` | `SELECT` (the LinkedIn expiry alert, #24, names the connection by its LinkedIn display name; never the token, member URN or scope) |
+
+`events` table-wide includes `event_image_media_id` (Phase 6). With its `event_media` column
+grant, `social_checker` can tell which photo row (date, kind, status) an event picked as its
+Event Image, and nothing more: no object keys, sizes or uploader. Reviewed and kept
+(2026-11-19): it is not sensitive and the check doesn't use it.
 
 Nothing else: no attendees, check-ins, reports, `audit_log`, `user_roles`, nothing in the
 `auth` schema (not even `USAGE`), and no writes. Its URL (`SOCIAL_CHECK_DB_URL`) is the **pooled** `social_checker` URL. It has its own
