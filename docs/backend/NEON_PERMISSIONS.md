@@ -43,7 +43,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `attendees` columns `ok_to_email`, `name`, `business_name`, `phone` | `UPDATE` (no other column) |
 | `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
-| `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`; covers `events.event_image_media_id`, the Event Image picked from a Photo from Event, migration `20261126120000_event_image_reference.sql`, no new grant) |
+| `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`; covers `events.event_image_media_id`, the Event Image picked from a Photo from Event, migration `20261127120000_event_image_reference.sql`, no new grant) |
 | `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its `cover_key`, migration `20261125120000_event_image.sql`, no new grant) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed) |

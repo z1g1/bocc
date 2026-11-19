@@ -1,4 +1,4 @@
--- Migration 0014 — the Event Image picked from a Photo from Event (ADR 0012 decision 3, ticket #21)
+-- Migration 0015 — the Event Image picked from a Photo from Event (ADR 0012 decision 3, ticket #21)
 --
 -- Instead of uploading, an Admin can pick a publicly usable Photo from Event of a recent
 -- event as this event's Event Image. The event then REFERENCES that photo (no copy):

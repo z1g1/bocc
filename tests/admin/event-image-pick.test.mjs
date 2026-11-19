@@ -1,6 +1,6 @@
 // The Event Image picked from a recent Photo from Event (ticket #21, ADR 0012
 // decision 3) against the throwaway database and MinIO (npm run test:db):
-//   1. the schema (migration 20261126120000): events.event_image_media_id, a reference
+//   1. the schema (migration 20261127120000): events.event_image_media_id, a reference
 //      that refuses the referenced photo's delete
 //   2. src/lib/admin/event-image.mjs + media.mjs as admin_app: the picker list, pick
 //      (audited, a reference not a copy), the 16:9 cover made for a photo without one,
