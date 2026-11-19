@@ -40,7 +40,7 @@
 //       the cover image override: a ready, publicly usable social_photo of any event
 //       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
 //       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
-//       SET NULL, migration 20261126120000).
+//       SET NULL, migration 20261127120000).
 //   saveChannel(actor, date, channel, input)     social_post_channel.update
 //       caption / firstComment overrides; blank, or exactly the default, stores NULL
 //       (so the channel keeps following the default). On a ready post, a caption over

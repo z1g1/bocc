@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readLinkedInEnv } from "../../src/lib/linkedin/env.mjs";
-import { expiryLevel, missingScopes, SCOPES } from "../../src/lib/linkedin/rules.mjs";
+import { expiryAlertDue, expiryLevel, missingScopes, SCOPES } from "../../src/lib/linkedin/rules.mjs";
 import { decryptToken, encryptToken, signState, verifyState } from "../../src/lib/linkedin/crypto.mjs";
 
 const KEY_HEX = "a".repeat(64);
@@ -73,6 +73,28 @@ describe("expiryLevel", () => {
   it("is red once expired", () => {
     assert.deepEqual(expiryLevel(now, now), { level: "red", daysLeft: 0 });
     assert.deepEqual(expiryLevel(at(-3), now), { level: "red", daysLeft: 0 });
+  });
+});
+
+describe("expiryAlertDue (the Thursday ntfy threshold)", () => {
+  const now = new Date("2026-11-19T14:00:00Z");
+  const at = (days) => new Date(now.getTime() + days * 86_400_000);
+
+  it("stays quiet with 10 days or more left", () => {
+    assert.equal(expiryAlertDue(at(59), now), false);
+    assert.equal(expiryAlertDue(at(10), now), false);
+  });
+  it("alerts under 10 days", () => {
+    assert.equal(expiryAlertDue(at(9.99), now), true);
+    assert.equal(expiryAlertDue(at(1), now), true);
+  });
+  it("alerts once expired", () => {
+    assert.equal(expiryAlertDue(now, now), true);
+    assert.equal(expiryAlertDue(at(-30), now), true);
+  });
+  it("takes the timestamptz as a string too", () => {
+    assert.equal(expiryAlertDue("2026-11-25T14:00:00Z", now), true);
+    assert.equal(expiryAlertDue("2026-12-25T14:00:00Z", now), false);
   });
 });
 

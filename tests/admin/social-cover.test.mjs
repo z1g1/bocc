@@ -1,6 +1,6 @@
 // The Social Post cover image (ticket #22) against the throwaway database
 // (npm run test:db):
-//   1. migration 20261126120000_social_post_cover.sql: the nullable cover reference,
+//   1. migration 20261127120000_social_post_cover.sql: the nullable cover reference,
 //      which may only point at event_media and is cleared when that media is deleted
 //   2. src/lib/admin/social.mjs as admin_app: the cover resolves to the Event Image (the
 //      logo default or an uploaded one); setCover sets and clears an override, each
@@ -86,7 +86,7 @@ before(async () => {
 after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
-describe("migration 20261126120000_social_post_cover.sql", () => {
+describe("migration 20261127120000_social_post_cover.sql", () => {
   test("cover_media_id is nullable, must be event_media, and is cleared when that media is deleted", async () => {
     const { rows: [col] } = await owner.query(
       `select is_nullable, data_type from information_schema.columns

@@ -1,4 +1,4 @@
--- Migration 0014 — the Social Post cover image (ticket #22, parent #18)
+-- Migration 0015 — the Social Post cover image (ticket #22, parent #18)
 --
 -- social_posts.cover_media_id: an override for the promo video's cover image. NULL (the
 -- default) means the cover is the event's Event Image (src/lib/admin/event-image.mjs
