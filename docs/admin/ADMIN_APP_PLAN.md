@@ -532,7 +532,26 @@ work (to save deploy credits); everything is verified on staging first.
       `linkedin_connections (user_id, expires_at)` and `auth."user" (id, name)`)
 - [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
       environments), `LINKEDIN_LIVE=1` (production only)
-- [ ] Import the CLI's local ledger into `linkedin_events` before the first webapp create
+- [ ] Import the CLI's local ledger into `linkedin_events` before the first webapp create.
+      Script ready (#28): `backend/scripts/import-linkedin-ledger.js` (dry run by default,
+      `--apply`, `--prefer-db`; rules in its header). It reads the CLI's
+      `~/.local/state/bocc-linkedin/ledger.json` (or `--ledger <file>`), so run it on the
+      machine that ran the CLI, **with the production owner URL, after the Phase 6
+      migrations and before the first web create** (dev first, as a rehearsal):
+      ```sh
+      cd backend
+      node --env-file=../.env.local scripts/import-linkedin-ledger.js           # dry run vs production
+      node --env-file=../.env.local scripts/import-linkedin-ledger.js --apply
+      node --env-file=../.env.local scripts/import-linkedin-ledger.js           # again: unchanged N, conflicts 0
+      ```
+      `posted` and `created` entries become ledger rows (created_by and the image null);
+      `pending` entries are SKIPPED and listed: check LinkedIn for that week, then finish it
+      with the CLI (`bocc-event post`) or `bocc-event forget` it, and re-run. A posted week
+      with no `linkedin_event` listing gets one. A stored web row that disagrees is a
+      CONFLICT and refuses `--apply` unless `--prefer-db` (keeps the stored row). One
+      `linkedin_event.import` audit row per run that changed something. Afterwards each
+      imported week's Social Posts tab shows **Posted on LinkedIn** with the event and post
+      links, and Create live event is refused for it
 - [ ] Release runbook (`PHASE6_RELEASE.md`): prefactor checked on staging, then production,
       **before** the first live create. Reminder: `LinkedIn-Version: 202609` sunsets
       2027-09-15
