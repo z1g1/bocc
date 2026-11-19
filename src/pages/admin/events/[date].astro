@@ -58,6 +58,7 @@ const el = await import("../../../lib/admin/event-links.mjs");
 const so = await import("../../../lib/admin/social.mjs");
 const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
+const STATUS_LABELS: Record<string, string> = { scheduled: "Scheduled", held: "Held", cancelled: "Cancelled" };
 
 const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 const date = ev.parseDate(Astro.params.date ?? "");
@@ -218,11 +219,11 @@ const linkVal = (p: string) => {
 };
 const linkErr = (p: string) => (linkPosted(p) ? errors : {});
 const mark = (ok: boolean | null) => (ok === null ? "–" : ok ? "✓" : "✗");
-const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status === "held" ? "Held" : "Scheduled";
+const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
   <p><a href="/admin/events/">← Events</a></p>
-  <h1>{longDay(date)}</h1>
+  <h1 class="pinned">{longDay(date)}</h1>
   <p class="status">
     <span class={`badge ${event.status}`}>{statusLabel}</span>
     {missing && <span class="badge missing">Report missing</span>}
@@ -249,7 +250,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     </section>
   )}
 
-  <nav aria-label="Event page tabs" class="tabs">
+  <nav aria-label="Event page tabs" class="tabs pinned">
     <ul>
       {Object.entries(TABS).map(([key, label]) => (
         <li><a href={`?tab=${key}`} aria-current={key === tab ? "page" : undefined}>{label}</a></li>
@@ -262,39 +263,40 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     <h2 id="h-details">Status and location</h2>
     <form method="post" class="narrow event-details">
       <input type="hidden" name="action" value="save">
-      <fieldset>
-        <legend>Status</legend>
-        <label class="check"><input type="radio" name="status" value="scheduled" checked={det.status === "scheduled"}> Scheduled</label>
-        <label class="check"><input type="radio" name="status" value="held" checked={det.status === "held"}> Held</label>
-        <label class="check"><input type="radio" name="status" value="cancelled" checked={det.status === "cancelled"}> Cancelled</label>
-        {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
-      </fieldset>
-      {/* Shown only while Cancelled is selected (CSS :has, no script). Not `required`:
-          a hidden required field would block every save; the server checks the reason. */}
+      <label for="status">Status</label>
+      <select id="status" name="status" aria-invalid={detErr.status ? "true" : undefined}>
+        {Object.entries(STATUS_LABELS).map(([v, label]) => <option value={v} selected={det.status === v}>{label}</option>)}
+      </select>
+      {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
+      {/* Shown only while Cancelled is selected, and each "if Other" text box only while
+          Other is chosen (CSS :has, no script). Not `required`: a hidden required field
+          would block every save; the server checks the reason and the Other text. */}
       <fieldset class="cancel-fields">
         <legend>Why was it cancelled?</legend>
         {Object.entries(CANCEL_REASONS).map(([v, label]) => (
           <label class="check"><input type="radio" name="cancelReason" value={v} checked={det.cancelReason === v}> {label}</label>
         ))}
         {detErr.cancelReason && <p class="error" role="alert">{detErr.cancelReason}</p>}
-        <label for="cancelReasonOther">Reason, if Other</label>
-        <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={det.cancelReasonOther}
-          aria-invalid={detErr.cancelReasonOther ? "true" : undefined}>
-        {detErr.cancelReasonOther && <p class="error" role="alert">{detErr.cancelReasonOther}</p>}
+        <div class="cancel-reason-other">
+          <label for="cancelReasonOther">Reason, if Other</label>
+          <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={det.cancelReasonOther}
+            aria-invalid={detErr.cancelReasonOther ? "true" : undefined}>
+          {detErr.cancelReasonOther && <p class="error" role="alert">{detErr.cancelReasonOther}</p>}
+        </div>
         <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={det.cancelAnnounced === "on"}> Announced on all socials</label>
       </fieldset>
-      <fieldset>
-        <legend>Location</legend>
-        <label class="check"><input type="radio" name="location" value="" checked={det.location === ""}> Not set</label>
-        {Object.entries(LOCATIONS).map(([v, label]) => (
-          <label class="check"><input type="radio" name="location" value={v} checked={det.location === v}> {label}</label>
-        ))}
-        {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
+      <label for="location">Location</label>
+      <select id="location" name="location" aria-invalid={detErr.location ? "true" : undefined}>
+        <option value="" selected={det.location === ""}>Not set</option>
+        {Object.entries(LOCATIONS).map(([v, label]) => <option value={v} selected={det.location === v}>{label}</option>)}
+      </select>
+      {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
+      <div class="location-other">
         <label for="locationOther">Where, if Other</label>
         <input id="locationOther" name="locationOther" maxlength={LIMITS.locationOther} value={det.locationOther}
           aria-invalid={detErr.locationOther ? "true" : undefined}>
         {detErr.locationOther && <p class="error" role="alert">{detErr.locationOther}</p>}
-      </fieldset>
+      </div>
       <button type="submit">Save status and location</button>
     </form>
     <div id="linkedin-cancel">
@@ -418,7 +420,19 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 <style>
   section { margin-top: 2rem; }
   .event-details .cancel-fields { display: none; }
-  .event-details:has(input[name="status"][value="cancelled"]:checked) .cancel-fields { display: block; }
+  .event-details:has(select[name="status"] option[value="cancelled"]:checked) .cancel-fields { display: block; }
+  .event-details .cancel-reason-other { display: none; }
+  .event-details:has(input[name="cancelReason"][value="other"]:checked) .cancel-reason-other { display: block; }
+  .event-details .location-other { display: none; }
+  .event-details:has(select[name="location"] option[value="other"]:checked) .location-other { display: block; }
+  .event-details select { display: block; }
+  /* #36: the title and the tabs stay at the top on scroll; Readiness (between them, ADR 0012)
+     scrolls under the title. The title is one line of fixed height so the tabs can pin right
+     below it; html's scroll-padding keeps anchor jumps and focused fields clear of both. */
+  :global(html) { --pin-title: 3rem; --pin-tabs: 2.5rem; scroll-padding-top: calc(var(--pin-title) + var(--pin-tabs) + 0.75rem); }
+  .pinned { position: sticky; z-index: 2; background: var(--bg); }
+  h1.pinned { top: 0; height: var(--pin-title); line-height: var(--pin-title); margin: 0 0 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs.pinned { top: var(--pin-title); }
   .tabs { margin-top: 1.25rem; border-bottom: 1px solid var(--line); }
   .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; }
   .tabs a { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; text-decoration: none; }
@@ -446,5 +460,9 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   .link-row .buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
   .linkedin-cancel, .linkedin-drift { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--err); border-left-width: 4px; border-radius: 6px; max-width: 40rem; }
   .linkedin-cancel strong { color: var(--err); }
+  @media (max-width: 30rem) {
+    h1.pinned { font-size: 1.25rem; }
+    .tabs a { padding: 0.4rem 0.55rem; font-size: 0.9375rem; }
+  }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

@@ -619,11 +619,18 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.match(await cancel.text(), /so it was held and can(&#39;|')t be cancelled/);
   });
 
+  // #35: Status and Location are dropdowns; the "Other" text boxes show only when Other is chosen.
+  const detailsForm = (html) => html.match(/<form method="post" class="narrow event-details"[\s\S]*?<\/form>/)?.[0] ?? "";
+  const dropdown = (html, name) => html.match(new RegExp(`<select[^>]*name="${name}"[^>]*>[\\s\\S]*?</select>`))?.[0] ?? "";
+  const options = (html, name) => [...dropdown(html, name).matchAll(/<option([^>]*)>([^<]*)<\/option>/g)]
+    .map(([, attrs, label]) => ({ value: attrs.match(/value="([^"]*)"/)?.[1], label: label.trim(), selected: /\sselected\b/.test(attrs) }));
+  const chosen = (html, name) => options(html, name).filter((o) => o.selected).map((o) => o.value);
+
   test("Status and location: Cancelled is a third status, its reason fields in the same form", async () => {
     const d = pastDate();
     const blank = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
-    assert.match(blank, /<input type="radio" name="status" value="cancelled"[^>]*>/);
-    const form = blank.match(/<form method="post" class="narrow event-details"[\s\S]*?<\/form>/)?.[0] ?? "";
+    const form = detailsForm(blank);
+    assert.ok(options(form, "status").some((o) => o.value === "cancelled"));
     assert.ok(form.includes('name="cancelReason"') && form.includes('name="cancelAnnounced"') && form.includes('name="location"'),
       "one form: status, cancel fields and location");
     assert.ok(!blank.includes('value="uncancel"') && !blank.includes('value="cancel"'), "no separate cancel forms");
@@ -633,14 +640,14 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.equal(bad.status, 400);
     const badHtml = await bad.text();
     assert.ok(badHtml.includes("Say why the event was cancelled."));
-    assert.match(badHtml, /value="cancelled"[^>]*checked/, "Cancelled stays selected, so the reason fields stay open");
+    assert.deepEqual(chosen(detailsForm(badHtml), "status"), ["cancelled"], "Cancelled stays selected, so the reason fields stay open");
     assert.equal(await eventRow(d), null);
 
     const c = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "save", status: "cancelled", location: "lobby", cancelReason: "other_event", cancelAnnounced: "on" } });
     assert.equal(c.headers.get("location"), `/admin/events/${d}/?tab=info&notice=saved`);
     const page = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
-    assert.match(page, /value="cancelled"[^>]*checked/);
+    assert.deepEqual(chosen(detailsForm(page), "status"), ["cancelled"]);
     assert.match(page, /value="other_event"[^>]*checked/);
     assert.ok((await (await req(`/admin/events/${d}/?tab=post`, { cookie: admin.cookie })).text()).includes("No report for a cancelled event"));
 
@@ -655,6 +662,81 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
       const old = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action, cancelReason: "weather" } });
       assert.equal(old.status, 400, `the old ${action} action is gone`);
     }
+  });
+
+  test("Status and Location are labelled dropdowns, preselected from the stored event", async () => {
+    const d = pastDate();
+    const blank = detailsForm(await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text());
+    assert.deepEqual(options(blank, "status").map((o) => [o.value, o.label]),
+      [["scheduled", "Scheduled"], ["held", "Held"], ["cancelled", "Cancelled"]]);
+    assert.deepEqual(options(blank, "location").map((o) => [o.value, o.label]),
+      [["", "Not set"], ["lobby", "Lobby"], ["food_hall", "Food hall"], ["other", "Other"]]);
+    assert.deepEqual([chosen(blank, "status"), chosen(blank, "location")], [["scheduled"], [""]]);
+    assert.ok(!/type="radio" name="(status|location)"/.test(blank), "no radio buttons for Status or Location");
+    for (const name of ["status", "location"]) {
+      const id = dropdown(blank, name).match(/\sid="([^"]+)"/)?.[1];
+      assert.ok(id && blank.includes(`<label for="${id}"`), `${name} has a label`);
+    }
+
+    await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "save", status: "held", location: "other", locationOther: "Rooftop" } });
+    const held = detailsForm(await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text());
+    assert.deepEqual([chosen(held, "status"), chosen(held, "location")], [["held"], ["other"]]);
+    assert.match(held, /name="locationOther"[^>]*value="Rooftop"/);
+  });
+
+  test("a refused save re-fills the dropdowns with what was posted; Other's text is checked as before", async () => {
+    const d = pastDate();
+    const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "save", status: "held", location: "other", locationOther: "  " } });
+    assert.equal(bad.status, 400);
+    const form = detailsForm(await bad.text());
+    assert.deepEqual([chosen(form, "status"), chosen(form, "location")], [["held"], ["other"]]);
+    const other = form.match(/<div class="location-other"[^>]*>[\s\S]*?<\/div>/)?.[0] ?? "";
+    assert.match(other, /name="locationOther"[^>]*aria-invalid="true"/);
+    assert.match(other, /<p class="error" role="alert"[^>]*>[^<]+<\/p>/, "the message sits next to the Other text box");
+    assert.equal(await eventRow(d), null);
+
+    const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "save", status: "held", location: "food_hall", locationOther: "left over" } });
+    assert.equal(ok.status, 303);
+    assert.deepEqual([(await eventRow(d)).location, (await eventRow(d)).location_other], ["food_hall", null], "text with a non-Other choice is dropped");
+  });
+
+  test("the Other text boxes show only while Other is chosen (CSS, no script), and nothing hidden is required", async () => {
+    const html = await (await req(`/admin/events/${pastDate()}/?tab=info`, { cookie: admin.cookie })).text();
+    const form = detailsForm(html);
+    assert.ok(!/\srequired\b/.test(form), "no field in the form is required in the browser");
+    assert.match(form, /<div class="location-other"[^>]*>[\s\S]*?<label for="locationOther"/);
+    assert.match(form, /<div class="cancel-reason-other"[^>]*>[\s\S]*?<label for="cancelReasonOther"/);
+    assert.ok(!/<script(?![^>]*\ssrc=)[^>]*>/.test(form), "no inline script");
+    // The page's scoped CSS, with Astro's scoping attributes, quotes and spaces taken out.
+    const css = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]).join("\n")
+      .replace(/\[data-astro-cid-[\w-]+\]/g, "").replace(/["'\s]/g, "");
+    for (const rule of [
+      ".event-details.location-other{display:none",
+      ".event-details:has(select[name=location]option[value=other]:checked).location-other{display:block",
+      ".event-details.cancel-fields{display:none",
+      ".event-details:has(select[name=status]option[value=cancelled]:checked).cancel-fields{display:block",
+      ".event-details.cancel-reason-other{display:none",
+      ".event-details:has(input[name=cancelReason][value=other]:checked).cancel-reason-other{display:block",
+    ]) assert.ok(css.includes(rule), `CSS has ${rule}`);
+  });
+
+  test("each status saves from the dropdown", async () => {
+    const d = pastDate();
+    const save = (form) => req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", ...form } });
+    for (const [form, status] of [
+      [{ status: "held", location: "lobby" }, "held"],
+      [{ status: "cancelled", location: "lobby", cancelReason: "other", cancelReasonOther: "Parade" }, "cancelled"],
+      [{ status: "scheduled", location: "lobby", cancelReason: "other", cancelReasonOther: "Parade" }, "scheduled"],
+    ]) {
+      const res = await save(form);
+      assert.equal(res.status, 303, status);
+      const page = detailsForm(await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text());
+      assert.deepEqual([(await eventRow(d)).status, chosen(page, "status")], [status, [status]]);
+    }
+    assert.equal((await eventRow(d)).cancel_reason_other, null, "leaving Cancelled clears the reason");
   });
 
   test("the list's open-a-date form redirects to the event page; a bad date stays on the list", async () => {
