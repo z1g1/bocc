@@ -408,7 +408,8 @@ const DEFINITE_NO = new Set(["expired", "page_role", "validation", "hidden_post"
  * @returns {{ step: string, kind: string, message: string, nothingCreated: boolean }}
  */
 function failureOf(step, err) {
-  const known = err instanceof LinkedInError;
+  // By shape, not instanceof: under astro dev a test's client comes from another copy of client.mjs.
+  const known = err instanceof LinkedInError || (err?.name === "LinkedInError" && typeof err.kind === "string" && typeof err.userMessage === "string");
   const kind = known ? err.kind : "unknown";
   log("error", `linkedin ${step} failed: ${describeError(err)}`, { step, kind });
   let message = known ? err.userMessage : new LinkedInError("unknown", "").userMessage;

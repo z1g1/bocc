@@ -14,6 +14,14 @@
 //   Without JavaScript the button submits without confirm=live; the server refuses it
 //   (409) and the page shows the same dialog open inline, with the confirm button.
 // - After a dry run: the requests that would have been sent. After a refusal: why.
+// - The live ledger (#26), by status:
+//     posted   links to the event and the post, and the reminder to reshare it from
+//              the BOCC page (the listing was filled when it was posted)
+//     created  the event link and "Publish event" (action linkedin_publish), which
+//              retries only the post
+//     pending  check LinkedIn, then "I checked: nothing was created, allow retry"
+//              (action linkedin_allow_retry)
+//   After a failed live step (`result.failure`): LinkedIn's error in plain language.
 import { hasRole } from "../../lib/admin/roles.mjs";
 import { getStorage, isIsoDate } from "../../lib/admin/storage.mjs";
 import { EVENT_ADDRESS, EXTERNAL_URL } from "../../lib/linkedin/rules.mjs";
@@ -34,7 +42,9 @@ if (allowed) {
   }
 }
 const dryRun = p?.mode !== "live";
-const refusals: { code: string; message: string }[] = result && !result.ok ? result.refusals : (p?.refusals ?? []);
+// With a ledger row the ledger block says what to do, so its "ledger" refusal isn't repeated.
+const refusals: { code: string; message: string }[] = result && !result.ok ? result.refusals
+  : (p?.refusals ?? []).filter((r: { code: string }) => r.code !== "ledger");
 const needsConfirm = Boolean(result && !result.ok && result.refusals.length === 1 && result.refusals[0].code === "confirm");
 const canCreate = p?.action === "create" && (p.refusals.length === 0);
 
@@ -56,9 +66,13 @@ if (cover) {
 const SOURCE: Record<string, string> = { uploaded: "the uploaded Event Image", referenced: "the picked Photo from Event", default: "the BOCC logo default" };
 const STATUS: Record<string, string> = {
   pending: "Pending: a create was started and its outcome is unknown. Check LinkedIn before doing anything else.",
-  created: "Created on LinkedIn, but the post isn't published yet.",
+  created: "Created on LinkedIn, but the post isn't published yet, so LinkedIn keeps the event hidden.",
   posted: "Posted on LinkedIn.",
 };
+const STEP: Record<string, string> = {
+  image_init: "starting the cover upload", image_upload: "uploading the cover", create: "creating the event", post: "publishing the post",
+};
+const failure = result && !result.ok ? result.failure ?? null : null;
 const json = (v: unknown) => JSON.stringify(v, null, 2);
 const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (connect first)";
 ---
@@ -72,17 +86,49 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
             : <>Live: Create live event sends to LinkedIn.</>}
         </p>
 
+        {failure && (
+          <div class="refusals" role="alert" data-failure={failure.step}>
+            <p><strong>LinkedIn failed while {STEP[failure.step] ?? failure.step}:</strong> {failure.message}</p>
+            {failure.step !== "post" && failure.nothingCreated && (
+              <p>LinkedIn refused before creating the event, so nothing was created. Fix the cause, then allow retry below.</p>
+            )}
+            {result.postUrl && <p>The post may be out: <a href={result.postUrl} rel="noopener noreferrer">check it on LinkedIn</a> before publishing again.</p>}
+          </div>
+        )}
+
         {p.ledger && (
-          <p class="ledger">
-            <strong>Ledger:</strong> {STATUS[p.ledger.status] ?? p.ledger.status}
-            {p.ledger.eventUrl && <> <a href={p.ledger.eventUrl} rel="noopener noreferrer">LinkedIn event</a></>}
-            {p.ledger.postUrl && <> · <a href={p.ledger.postUrl} rel="noopener noreferrer">post</a></>}
-          </p>
+          <div class="ledger" data-ledger={p.ledger.status}>
+            <p>
+              <strong>Ledger:</strong> {STATUS[p.ledger.status] ?? p.ledger.status}
+              {p.ledger.eventUrl && <> <a href={p.ledger.eventUrl} rel="noopener noreferrer">LinkedIn event</a></>}
+              {p.ledger.postUrl && <> · <a href={p.ledger.postUrl} rel="noopener noreferrer">post</a></>}
+            </p>
+            {p.ledger.status === "posted" && (
+              <p class="next"><strong>Next:</strong> reshare your post from the BOCC page on LinkedIn. The LinkedIn listing is filled in.</p>
+            )}
+            {p.ledger.status === "created" && (
+              <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
+                <input type="hidden" name="action" value="linkedin_publish">
+                <input type="hidden" name="confirm" value="live">
+                <p class="muted">Publish event retries only the post, as a PUBLIC post from your profile ({postedAs}). The event already
+                  exists and LinkedIn can't delete it, so it is never created again.</p>
+                <button type="submit">Publish event</button>
+              </form>
+            )}
+            {p.ledger.status === "pending" && (
+              <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
+                <input type="hidden" name="action" value="linkedin_allow_retry">
+                <p>Check LinkedIn first: open the BOCC page's events as a page admin and look for this date's event
+                  (an event that was never posted stays hidden from everyone else). If it's there, don't retry: ask for the ledger to be fixed.</p>
+                <button type="submit" class="secondary">I checked: nothing was created, allow retry</button>
+              </form>
+            )}
+          </div>
         )}
 
         {refusals.length > 0 && (
           <div class="refusals" role="alert">
-            {!needsConfirm && <p><strong>{p.ledger ? "Create isn't available:" : "Can't create the LinkedIn event:"}</strong></p>}
+            {!needsConfirm && <p><strong>{p.ledger ? "Not available:" : "Can't create the LinkedIn event:"}</strong></p>}
             <ul>{refusals.map((r) => <li data-refusal={r.code}>{r.message}</li>)}</ul>
             {result?.duplicates?.length > 0 && (
               <ul class="duplicates">
@@ -92,12 +138,12 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
           </div>
         )}
 
-        {result?.ok && (
+        {result?.ok && result.mode === "dry_run" && (
           <div class="result" role="status">
             <p><strong>Dry run: nothing was sent.</strong> These are the requests that would have been sent, in order.
               {result.duplicateCheck === "passed"
                 ? " The duplicate check against the BOCC page's LinkedIn events passed."
-                : " The duplicate check was skipped: connect LinkedIn to run it."}</p>
+                : result.duplicateCheck === "skipped" ? " The duplicate check was skipped: connect LinkedIn to run it." : ""}</p>
             {result.image?.warnings?.map((w: string) => <p class="warn">{w}</p>)}
             <ol class="requests">
               {result.requests.map((q: any) => (

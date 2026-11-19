@@ -6,8 +6,10 @@
 //   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011) and the
 //                LinkedIn event section (ADR 0012): the Admin's own LinkedIn
 //                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
-//                the event's preview, dialog and dry run (LinkedInEvent; action
-//                linkedin_create, rendered without a redirect, 409 when refused)
+//                the event's preview, dialog, dry run and live create with its
+//                recovery (LinkedInEvent; actions linkedin_create, linkedin_publish,
+//                linkedin_allow_retry: 303 once posted or retired, else rendered
+//                without a redirect, 409 when refused, 502 when a LinkedIn step failed)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -66,8 +68,11 @@ const NOTICES: Record<string, string> = {
   social_video: "Promo video attached to the social post.",
   social_cover: "Cover image saved.",
   social_channel: "Channel text saved.",
+  linkedin_posted: "LinkedIn event created and posted.",
+  linkedin_retry: "The pending LinkedIn create was cleared: you can create the event again.",
   unchanged: "Nothing changed.",
 };
+const LINKEDIN_ACTIONS = new Set(["linkedin_create", "linkedin_publish", "linkedin_allow_retry"]);
 const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>) => Promise<{ changed: boolean; eventCreated?: boolean }>> = {
   save: ev.saveEvent,
   cancel: ev.cancelEvent,
@@ -103,16 +108,36 @@ if (Astro.request.method === "POST") {
   }
   const action = String(data.get("action") ?? "");
   const run = ACTIONS[action];
-  if (action === "linkedin_create") {
-    // Rendered straight away, no redirect: a dry run changes nothing, and its result
-    // (the requests that would have been sent) only exists in this response.
+  if (LINKEDIN_ACTIONS.has(action)) {
+    // A live success that reached `posted`, and allow-retry, 303 back to the section
+    // (post/redirect/get). Anything else renders straight away: a dry run changes
+    // nothing and its result (the requests that would have been sent) only exists in
+    // this response; a refusal is 409, a failed LinkedIn step 502 with the ledger left
+    // in its last committed state and the matching recovery shown.
     const li = await import("../../../lib/linkedin/linkedin.mjs");
     const env = li.linkedInEnv();
     if (!env.enabled) return new Response(env.message, { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
-    const { getStorage } = await import("../../../lib/admin/storage.mjs");
-    linkedInResult = await li.createLinkedInEvent(user!.id, date, { confirm: String(data.get("confirm") ?? "") }, { storage: getStorage().storage });
+    const confirm = String(data.get("confirm") ?? "");
+    if (action === "linkedin_create") {
+      const { getStorage } = await import("../../../lib/admin/storage.mjs");
+      linkedInResult = await li.createLinkedInEvent(user!.id, date, { confirm }, { storage: getStorage().storage });
+    } else if (action === "linkedin_publish") {
+      linkedInResult = await li.publishRetry(user!.id, date, { confirm });
+    } else {
+      linkedInResult = await li.allowRetry(user!.id, date);
+      if (linkedInResult.ok) return Astro.redirect(`/admin/events/${date}/?tab=social&notice=linkedin_retry#linkedin-event`, 303);
+    }
+    if (linkedInResult.ok && linkedInResult.status === "posted") {
+      // The linkedin_event listing was filled: the public page shows listings.
+      try {
+        await purgeEventPages([date], { locals: Astro.locals });
+      } catch (err) {
+        log("error", "event page purge failed", { date, error: String(err) });
+      }
+      return Astro.redirect(`/admin/events/${date}/?tab=social&notice=linkedin_posted#linkedin-event`, 303);
+    }
     posted = { action, values: {} };
-    Astro.response.status = linkedInResult.ok ? 200 : 409;
+    Astro.response.status = linkedInResult.ok ? 200 : linkedInResult.failure ? 502 : 409;
   } else if (!run) {
     return new Response("Bad Request: unknown action", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
   } else {

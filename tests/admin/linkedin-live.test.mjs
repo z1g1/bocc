@@ -311,3 +311,127 @@ describe("live create, recovery and errors (use-case, fake client)", () => {
     assert.deepEqual(await audits(date), []);
   });
 });
+
+// ── 2. Over HTTP ────────────────────────────────────────────────────────────
+let ipCounter = 0;
+const nextIp = () => `198.26.${Math.floor(++ipCounter / 250)}.${ipCounter % 250 + 1}`;
+async function signedIn(roles) {
+  const user = await newUser();
+  for (const r of roles) await withAudit(null, (c) => grantRole(c, user.id, r), { action: "test.grant" });
+  const res = await handleAuthRequest(new Request(`${BASE}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: BASE, "x-nf-client-connection-ip": nextIp() },
+    body: JSON.stringify({ email: user.email, password: PASSWORD }),
+  }));
+  assert.equal(res.status, 200);
+  const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).filter((c) => !c.endsWith("=")).join("; ");
+  return { user, cookie };
+}
+
+describe("the live create, Publish event and allow-retry forms over HTTP", { timeout: 300_000 }, () => {
+  let server, admin, social, fake;
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+
+  before(async () => {
+    const { dev } = await import("astro");
+    server = await dev({ root, logLevel: "error", server: { port, host: "localhost" } });
+    admin = await signedIn(["admin"]);
+    await connectUser(admin.user, { now: new Date() });
+    social = await signedIn(["social"]);
+    fake = createFakeLinkedInClient();
+    setLinkedInClientForTests(fake);
+  });
+  after(async () => { setLinkedInClientForTests(undefined); await server?.stop(); });
+
+  const req = (path, { cookie, method = "GET", form, origin = BASE } = {}) => {
+    const headers = {};
+    if (cookie) headers.cookie = cookie;
+    let body;
+    if (method === "POST") {
+      if (origin) headers.origin = origin;
+      headers["content-type"] = "application/x-www-form-urlencoded";
+      body = new URLSearchParams(form ?? {}).toString();
+    }
+    return fetch(`${BASE}${path}`, { method, headers, body, redirect: "manual" });
+  };
+  const page = (date) => req(`/admin/events/${date}/?tab=social`, { cookie: admin.cookie }).then((r) => r.text());
+  const post = (date, action, who = admin, form = {}, opts = {}) =>
+    req(`/admin/events/${date}/`, { cookie: who.cookie, method: "POST", form: { action, ...form }, ...opts });
+
+  test("Create live event: 303 to the section, which links the event and post and reminds to reshare", async () => {
+    const date = await nextDate();
+    await seedEvent(date, { location: "lobby" });
+    const res = await post(date, "linkedin_create", admin, { confirm: "live" });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), `/admin/events/${date}/?tab=social&notice=linkedin_posted#linkedin-event`);
+    assert.equal((await ledger(date))[0].status, "posted");
+    assert.equal(await listing(date), EVENT_URL);
+    const html = await page(date);
+    assert.ok(html.includes(`href="${EVENT_URL}"`), "links the event");
+    assert.ok(html.includes(`href="${POST_URL}"`), "links the post");
+    assert.match(html, /reshare/i);
+    assert.ok(html.includes("BOCC page"));
+    assert.doesNotMatch(html, /name="action" value="linkedin_(create|publish|allow_retry)"/);
+  });
+
+  test("a failed post: 502 with the message, then Publish event posts only and lands posted", async () => {
+    const date = await nextDate();
+    await seedEvent(date);
+    fake.fail("createPost", new LinkedInError("page_role", "403", { status: 403 }));
+    const before = fake.ops().length;
+    const res = await post(date, "linkedin_create", admin, { confirm: "live" });
+    assert.equal(res.status, 502);
+    const html = await res.text();
+    assert.ok(html.includes("ADMINISTRATOR or CONTENT_ADMINISTRATOR"));
+    assert.match(html, /name="action" value="linkedin_publish"/);
+    assert.match(html, />Publish event</);
+    assert.equal((await ledger(date))[0].status, "created");
+
+    const shown = await page(date);
+    assert.match(shown, /name="action" value="linkedin_publish"/);
+    assert.ok(shown.includes(`href="${EVENT_URL}"`), "links the created event");
+
+    const retry = await post(date, "linkedin_publish", admin, { confirm: "live" });
+    assert.equal(retry.status, 303);
+    assert.equal(retry.headers.get("location"), `/admin/events/${date}/?tab=social&notice=linkedin_posted#linkedin-event`);
+    const sent = fake.ops().slice(before).filter((o) => o !== "listOrganizerEvents");
+    assert.deepEqual(sent, ["initializeImageUpload", "uploadImage", "createEvent", "createPost", "createPost"]);
+    assert.equal((await ledger(date))[0].status, "posted");
+    assert.equal(await listing(date), EVENT_URL);
+  });
+
+  test("an unknown create outcome: the page says to check LinkedIn and offers allow-retry, which retires the row", async () => {
+    const date = await nextDate();
+    await seedEvent(date);
+    fake.fail("createEvent", new LinkedInError("uncertain", "timed out"));
+    const res = await post(date, "linkedin_create", admin, { confirm: "live" });
+    assert.equal(res.status, 502);
+    const html = await page(date);
+    assert.match(html, /Check LinkedIn/i);
+    assert.match(html, /name="action" value="linkedin_allow_retry"/);
+    assert.ok(html.includes("I checked: nothing was created, allow retry"));
+
+    assert.equal((await post(date, "linkedin_allow_retry", social)).status, 403);
+    assert.equal((await post(date, "linkedin_allow_retry", admin, {}, { origin: "https://evil.example" })).status, 403);
+    const ok = await post(date, "linkedin_allow_retry", admin);
+    assert.equal(ok.status, 303);
+    assert.equal(ok.headers.get("location"), `/admin/events/${date}/?tab=social&notice=linkedin_retry#linkedin-event`);
+    const [row] = await ledger(date);
+    assert.equal(row.status, "retired");
+    assert.equal(row.retired_by, admin.user.id);
+    assert.ok((await audits(date)).some((x) => x.action === "linkedin_event.retire" && x.actor_user_id === admin.user.id));
+    assert.match(await page(date), /name="action" value="linkedin_create"/);
+
+    // Nothing pending any more: refused.
+    assert.equal((await post(date, "linkedin_allow_retry", admin)).status, 409);
+  });
+
+  test("Publish event without a created row, or without confirm=live, is refused (409) and sends nothing", async () => {
+    const date = await nextDate();
+    await seedEvent(date);
+    const before = fake.ops().length;
+    assert.equal((await post(date, "linkedin_publish", admin, { confirm: "live" })).status, 409);
+    assert.equal((await post(date, "linkedin_publish", social, { confirm: "live" })).status, 403);
+    assert.deepEqual(fake.ops().slice(before), []);
+  });
+});
