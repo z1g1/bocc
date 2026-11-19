@@ -40,7 +40,8 @@
 //       the cover image override: a ready, publicly usable social_photo of any event
 //       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
 //       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
-//       SET NULL, migration 20261127120000).
+//       SET NULL, migration 20261127120000_social_post_cover). A photo that is also an
+//       Event Image (ticket #21) can't be deleted at all, so the cover stays.
 //   saveChannel(actor, date, channel, input)     social_post_channel.update
 //       caption / firstComment overrides; blank, or exactly the default, stores NULL
 //       (so the channel keeps following the default). On a ready post, a caption over
@@ -85,7 +86,7 @@ import { withAudit } from "./db.mjs";
 import { ConflictError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
 import { isUuid } from "./attendees.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
-import { getEventImage } from "./event-image.mjs";
+import { getEventImage, PICK_EVENTS } from "./event-image.mjs";
 import {
   CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, STATUSES, TRANSITIONS, buildWorkOrder, canTransition,
   defaultPublishAt, defaultTexts, easternToUtc, isChannel, normaliseHashtags, postUrlProblem, publishAtProblem,
@@ -159,7 +160,7 @@ async function getCoverMedia(db, id) {
 }
 
 /** How many recent event dates' photos the cover picker offers. */
-export const COVER_CHOICE_DATES = 8;
+export const COVER_CHOICE_DATES = PICK_EVENTS;
 
 /**
  * Photos the Social Post cover can be set to: ready, publicly usable Photos from Event

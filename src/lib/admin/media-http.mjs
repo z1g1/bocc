@@ -36,6 +36,8 @@ export async function mediaRoute({ locals, request }, handler, deps = {}) {
   } catch (err) {
     const e = /** @type {any} */ (err);
     if (e?.status === 400) return json(400, { error: "Invalid request", errors: e.errors ?? [e.message] });
+    // A refused delete (media.mjs InUseError: the photo is an Event Image).
+    if (e?.status === 409) return json(409, { error: e.message, errors: e.errors ?? [e.message], eventDates: e.eventDates });
     if (e?.status === 404) return json(404, { error: "Photo not found" });
     return adminFailure("api/admin/media", err);
   }
@@ -67,13 +69,15 @@ export async function readJson(request) {
  * @param {Record<string, unknown>} body
  * @param {"event-media"|"social"|"event-image"} [anchor]  the section to land on
  *   (social: the promo video, on Social Posts; event-image: the Event Image, on Event Info)
+ * @param {Record<string, string>} [extra]  more query parameters (values are URL-encoded)
  */
-export function formOrJson(form, eventDate, notice, body, anchor = "event-media") {
+export function formOrJson(form, eventDate, notice, body, anchor = "event-media", extra = {}) {
   if (!form) return json(200, body);
   if (!isIsoDate(eventDate)) throw new Error("formOrJson: eventDate must be YYYY-MM-DD");
   if (!Object.hasOwn(ANCHOR_TABS, anchor)) throw new Error("formOrJson: unknown anchor");
   const tab = ANCHOR_TABS[anchor];
-  const location = `/admin/events/${eventDate}/?tab=${tab}&media=${encodeURIComponent(notice)}#${anchor}`;
+  const more = Object.entries(extra).map(([k, v]) => `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("");
+  const location = `/admin/events/${eventDate}/?tab=${tab}&media=${encodeURIComponent(notice)}${more}#${anchor}`;
   return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
 

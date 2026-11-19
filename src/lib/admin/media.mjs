@@ -36,7 +36,8 @@
 // the `media.upload` audit row written in the same transaction as the row.
 
 import { randomUUID } from "node:crypto";
-import { withAudit, writeAudit } from "./db.mjs";
+import { pool, withAudit, writeAudit } from "./db.mjs";
+import { inUseMessage } from "./event-image-rules.mjs";
 import { NotFoundError, ValidationError, isUuid } from "./attendees.mjs";
 import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
 
@@ -288,9 +289,18 @@ export async function completeUpload(actorUserId, storage, id, { db, log }) {
     const r = await client.query(
       "update public.event_media set status = 'ready' where id = $1 and status = 'pending'", [id]);
     if (eventImage && r.rowCount === 1) {
+      // The upload also takes over from a picked photo (ticket #21): drop the reference.
+      const { rows: unpicked } = await client.query(
+        `update public.events e set event_image_media_id = null
+           from public.events old
+          where e.event_date = $1 and old.event_date = e.event_date and e.event_image_media_id is not null
+          returning old.event_image_media_id as id`, [row.eventDate]);
       await writeAudit(client, actorUserId, {
         action: "event_image.set", targetTable: "event_media", targetId: id,
-        details: { eventDate: row.eventDate, mediaId: id, replaced: replaced?.id ?? null },
+        details: {
+          eventDate: row.eventDate, mediaId: id, replaced: replaced?.id ?? null,
+          ...(unpicked.length ? { unpicked: unpicked[0].id } : {}),
+        },
       });
     }
     return { updated: r.rowCount, replaced };
@@ -317,6 +327,13 @@ export async function completeUpload(actorUserId, storage, id, { db, log }) {
 export async function deleteMedia(actorUserId, storage, id, { log = (m) => console.error(m) } = {}) {
   if (!isUuid(id)) throw new NotFoundError("media not found");
   const row = await withAudit(actorUserId, async (client) => {
+    // A photo picked as an event's Event Image (events.event_image_media_id, ticket
+    // #21) is refused, naming the events; the FK would refuse it too, without names.
+    const { rows: users } = await client.query(
+      `select e.event_date::text as d, m.event_date::text as "photoDate"
+         from public.events e join public.event_media m on m.id = e.event_image_media_id
+        where e.event_image_media_id = $1 order by e.event_date for share of e`, [id]);
+    if (users.length) throw new InUseError(users.map((u) => u.d), users[0].photoDate);
     // A promo video may be a social post's video: clear it there first (the FK would
     // refuse the delete), and un-ready the post, which needs a video (its CHECK).
     const { rows: detached } = await client.query(
@@ -336,8 +353,103 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
     },
   }));
 
-  const leftovers = await deleteObjects(storage, `media delete ${id}`, rowKeys(row), log);
+  // A social photo's cover is at a known key: also delete it when a cover upload was
+  // started but never completed (deleting a missing object is not an error).
+  const keys = rowKeys(row);
+  const coverKey = row.kind === "social_photo" ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
+  if (coverKey && !keys.includes(coverKey)) keys.push(coverKey);
+  const leftovers = await deleteObjects(storage, `media delete ${id}`, keys, log);
   return { id, eventDate: row.eventDate, kind: row.kind, leftovers };
+}
+
+/** deleteMedia refused: the photo is the Event Image of these events (409). */
+export class InUseError extends Error {
+  status = 409;
+  /**
+   * @param {string[]} eventDates  the events that use the photo
+   * @param {string} photoDate     the photo's own event (where its gallery is)
+   */
+  constructor(eventDates, photoDate) {
+    super(inUseMessage(eventDates));
+    this.eventDates = eventDates;
+    this.photoDate = photoDate;
+    this.errors = [this.message];
+  }
+}
+
+// ─── A Photo from Event's 16:9 cover (ticket #21) ───────────────────────────
+// A photo picked as an Event Image needs a 16:9 cover copy. The browser makes it
+// (a centre crop of the display copy, as for an uploaded Event Image) and PUTs it:
+//   startCover(actor, storage, id, { size })  -> { id, eventDate, key, expiresInSeconds, upload }
+//       a ready social_photo without a cover: one presigned PUT for
+//       events/<date>/<id>/cover.jpg (type and size signed), audited
+//       `media.cover_upload` with what was signed
+//   completeCover(actor, storage, id, { db }) -> { status: "ready", coverKey } | { status: "pending", problems }
+//       HEADs the object, checks it against what was signed, then sets cover_key
+//       (audited `media.cover`)
+
+/**
+ * @param {string} actorUserId
+ * @param {import("./storage.mjs").Storage} storage
+ * @param {string} id
+ * @param {unknown} input  { size }
+ */
+export async function startCover(actorUserId, storage, id, input) {
+  const size = /** @type {any} */ (input)?.size;
+  const row = await getRow(pool, id);
+  const errors = [];
+  if (row.kind !== "social_photo" || row.status !== "ready") errors.push("only a ready Photo from Event can be given a 16:9 cover");
+  else if (row.coverKey) errors.push("this photo already has a 16:9 cover");
+  if (!isSize(size, LIMITS.cover)) errors.push(`size must be 1 to ${LIMITS.cover} bytes`);
+  if (errors.length) throw new ValidationError(errors);
+  const key = mediaKey(row.eventDate, id, "cover", "jpg");
+  const p = storage.presignPut({ key, contentType: COPY_TYPE, contentLength: size, expiresIn: PUT_EXPIRES });
+  await withAudit(actorUserId, async () => {}, {
+    action: "media.cover_upload", targetTable: "event_media", targetId: id,
+    details: { eventDate: row.eventDate, key, signed: { contentType: COPY_TYPE, size } },
+  });
+  return { id, eventDate: row.eventDate, key, expiresInSeconds: PUT_EXPIRES, upload: { method: p.method, url: p.url, headers: p.headers } };
+}
+
+/**
+ * @param {string} actorUserId
+ * @param {import("./storage.mjs").Storage} storage
+ * @param {string} id
+ * @param {{ db: { query: Function } }} deps
+ * @returns {Promise<{ id: string, status: "ready", coverKey: string } | { id: string, status: "pending", problems: string[] }>}
+ */
+export async function completeCover(actorUserId, storage, id, { db }) {
+  const row = await getRow(db, id);
+  if (row.coverKey) return { id, status: "ready", coverKey: row.coverKey };
+  const { rows: audit } = await db.query(
+    `select details from public.audit_log
+      where action = 'media.cover_upload' and target_table = 'event_media' and target_id = $1
+      order by id desc limit 1`, [id]);
+  const started = audit[0]?.details;
+  if (!started) return { id, status: "pending", problems: ["cover: not started"] };
+  const h = await storage.headObject({ key: started.key });
+  const problems = [];
+  if (!h) problems.push("cover: not uploaded");
+  else {
+    const type = (h.contentType ?? "").split(";")[0].trim().toLowerCase();
+    if (type !== COPY_TYPE) problems.push(`cover: content type ${type || "missing"}, expected ${COPY_TYPE}`);
+    if (h.contentLength !== started.signed.size) problems.push(`cover: ${h.contentLength} bytes, expected ${started.signed.size}`);
+  }
+  if (problems.length) return { id, status: "pending", problems };
+  const raced = Symbol("raced");
+  const updated = await withAudit(actorUserId, async (client) => {
+    const r = await client.query(
+      "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, started.key]);
+    // Nothing changed (a race with another complete, or a delete): roll back, no audit row.
+    if (r.rowCount !== 1) throw raced;
+    return true;
+  }, { action: "media.cover", targetTable: "event_media", targetId: id, details: { eventDate: row.eventDate, key: started.key } })
+    .catch((err) => { if (err === raced) return false; throw err; });
+  if (!updated) {
+    const again = await getRow(db, id);
+    return again.coverKey ? { id, status: "ready", coverKey: again.coverKey } : { id, status: "pending", problems: ["state changed, try again"] };
+  }
+  return { id, status: "ready", coverKey: started.key };
 }
 
 /** A deleted row's object keys (snake_case, from `returning`). */

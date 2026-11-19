@@ -17,6 +17,14 @@
 // takes one file. On pick it is decoded and checked (PNG/JPEG, at least 480x270, at
 // most 8 MiB) and a warning shows when it isn't 16:9; the upload adds a fourth copy,
 // the 16:9 centre-crop cover (at most 1920 wide), drawn from the decoded original.
+//
+// The Event Image picker (form[data-event-image-pick], ticket #21) is a plain form
+// post. When the chosen Photo from Event has no 16:9 cover copy yet (data-needs-cover),
+// the cover is made first: the photo's display copy is fetched from the bucket
+// (presigned GET in data-display-url; the bucket's CORS allows GET), centre-cropped to
+// 16:9, and PUT through /api/admin/media/{id}/cover and /cover-complete; then the form
+// is submitted. form[data-make-cover] does the same for a photo already picked without
+// one, then reloads.
 
 import {
   COVER_QUALITY, DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
@@ -35,6 +43,8 @@ if (forms.length) {
     if (busy) { e.preventDefault(); e.returnValue = ""; }
   });
 }
+for (const form of document.querySelectorAll("form[data-event-image-pick]")) setUpPick(form);
+for (const form of document.querySelectorAll("form[data-make-cover]")) setUpMakeCover(form);
 for (const form of document.querySelectorAll("form[data-confirm]")) {
   form.addEventListener("submit", (e) => {
     if (!window.confirm(form.getAttribute("data-confirm"))) e.preventDefault();
@@ -99,6 +109,93 @@ function setUpUpload(form) {
     say(`Uploaded ${done} of ${files.length}. Not uploaded: ${failed.join(" · ")}` +
       (done ? " Reload the page to see the ones that did upload." : ""));
   });
+}
+
+function setUpPick(form) {
+  const status = document.getElementById(form.getAttribute("data-status"));
+  const button = form.querySelector('button[type="submit"]');
+  const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
+  form.addEventListener("submit", async (e) => {
+    const chosen = form.querySelector('input[name="mediaId"]:checked');
+    if (!chosen || !chosen.hasAttribute("data-needs-cover")) return; // a plain post
+    e.preventDefault();
+    if (busy) { say("Wait for the upload to finish."); return; }
+    busy = true;
+    button.disabled = true;
+    try {
+      await makePhotoCover(chosen.value, chosen.getAttribute("data-display-url"), say);
+      say("Using this photo…");
+      busy = false;
+      form.submit(); // doesn't fire "submit" again
+    } catch (err) {
+      busy = false;
+      button.disabled = false;
+      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
+    }
+  });
+}
+
+function setUpMakeCover(form) {
+  const status = document.getElementById(form.getAttribute("data-status"));
+  const button = form.querySelector('button[type="submit"]');
+  const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
+  form.hidden = false;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (busy) { say("Wait for the upload to finish."); return; }
+    busy = true;
+    button.disabled = true;
+    try {
+      await makePhotoCover(form.getAttribute("data-media-id"), form.getAttribute("data-display-url"), say);
+      busy = false;
+      say("16:9 version made. Refreshing…");
+      window.location.reload();
+    } catch (err) {
+      busy = false;
+      button.disabled = false;
+      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
+    }
+  });
+}
+
+/** A picked photo's 16:9 cover: crop its display copy, PUT it, confirm it. */
+async function makePhotoCover(mediaId, displayUrl, step) {
+  step("making the 16:9 version…");
+  let res;
+  try {
+    res = await fetch(displayUrl, { credentials: "omit" });
+  } catch {
+    throw new UserError("the photo couldn't be downloaded to make its 16:9 version. Check your connection and try again.");
+  }
+  if (!res.ok) throw new UserError(`the photo couldn't be downloaded (${res.status}). Reload the page and try again.`);
+  const src = await decode(await res.blob());
+  let canvas;
+  try {
+    const crop = centreCrop16x9(src.width, src.height);
+    canvas = drawScaled(src.image, coverSize(crop.sw, crop.sh), crop);
+  } finally {
+    src.close();
+  }
+  let cover;
+  try {
+    cover = await toJpeg(canvas, COVER_QUALITY);
+  } finally {
+    canvas.width = 0; canvas.height = 0;
+  }
+
+  step("uploading the 16:9 version…");
+  const start = await postJson(`/api/admin/media/${mediaId}/cover`, { size: cover.size });
+  if (start.status !== 201) throw new UserError(await serverMessage(start, "the 16:9 version couldn't start"));
+  const plan = await start.json();
+  let put;
+  try {
+    put = await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: cover, credentials: "omit" });
+  } catch {
+    throw new UserError("the 16:9 version upload failed (network). Try again.");
+  }
+  if (!put.ok) throw new UserError(`the 16:9 version upload was refused (${put.status}). Try again.`);
+  const done = await postJson(`/api/admin/media/${mediaId}/cover-complete`, {});
+  if (done.status !== 200) throw new UserError(await serverMessage(done, "the 16:9 version couldn't be confirmed"));
 }
 
 /** Decode the picked Event Image just to measure it, and check it. */

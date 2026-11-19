@@ -60,6 +60,17 @@ function fromRow(row, source) {
   };
 }
 
+/**
+ * Why a Photo from Event can't be deleted: it is the Event Image of these events.
+ * @param {string[]} eventDates  YYYY-MM-DD, at least one
+ */
+export function inUseMessage(eventDates) {
+  const list = eventDates.length === 1 ? eventDates[0]
+    : `${eventDates.slice(0, -1).join(", ")} and ${eventDates.at(-1)}`;
+  const those = eventDates.length === 1 ? "that event" : "those events";
+  return `This photo is the Event Image for ${list}, so it wasn't deleted. Pick another image for ${those} first.`;
+}
+
 const isReady = (row) => Boolean(row) && row.status === "ready";
 
 /**
