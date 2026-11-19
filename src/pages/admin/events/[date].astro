@@ -1,10 +1,12 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
 // The Readiness checklist (Phase 4) sits above three tabs (ADR 0012 decision 1):
-//   ?tab=info    Event Info: status and location, the Online Event Listings, the Event
-//                Image (EventImage, ADR 0012 decision 3), cancel (with, for a cancelled
-//                event that was posted on LinkedIn, the red "Cancel the LinkedIn event on
-//                LinkedIn" item and its "Done on LinkedIn" form, action linkedin_cancel_done, #27)
+//   ?tab=info    Event Info: status (scheduled, held or cancelled, with the cancel reason
+//                fields shown only while Cancelled is selected) and location in one form;
+//                below it, for a cancelled event that was posted on LinkedIn, the red
+//                "Cancel the LinkedIn event on LinkedIn" item and its "Done on LinkedIn"
+//                form (action linkedin_cancel_done, #27); the Online Event Listings; the
+//                Event Image (EventImage, ADR 0012 decision 3)
 //   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011) and the
 //                LinkedIn event section (ADR 0012): the Admin's own LinkedIn
 //                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
@@ -63,8 +65,6 @@ if (!date) return notFound();
 
 const NOTICES: Record<string, string> = {
   saved: "Saved.",
-  cancelled: "Event cancelled.",
-  uncancelled: "Event un-cancelled. It is scheduled again.",
   report: "Report saved. The event is marked held.",
   link: "Listing saved.",
   unlink: "Listing cleared.",
@@ -80,8 +80,6 @@ const NOTICES: Record<string, string> = {
 const LINKEDIN_ACTIONS = new Set(["linkedin_create", "linkedin_publish", "linkedin_allow_retry"]);
 const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>) => Promise<{ changed: boolean; eventCreated?: boolean }>> = {
   save: ev.saveEvent,
-  cancel: ev.cancelEvent,
-  uncancel: (actor, d) => ev.uncancelEvent(actor, d),
   report: ev.submitReport,
   link: (actor, d, input) => el.setLink(actor, d, input.platform, input),
   unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
@@ -95,9 +93,9 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
 const NO_PURGE = new Set(["linkedin_cancel_done"]);
 const SOCIAL = new Set(["social_post", "social_video", "social_cover", "social_channel"]);
 // Where a social form's redirect lands: its own block, else the section.
-const ANCHORS: Record<string, string> = { social_cover: "#social-cover", linkedin_cancel_done: "#cancel" };
+const ANCHORS: Record<string, string> = { social_cover: "#social-cover", linkedin_cancel_done: "#linkedin-cancel" };
 const DONE: Record<string, string> = {
-  save: "saved", cancel: "cancelled", uncancel: "uncancelled", report: "report", link: "link", unlink: "unlink",
+  save: "saved", report: "report", link: "link", unlink: "unlink",
   social_post: "social_post", social_video: "social_video", social_cover: "social_cover", social_channel: "social_channel",
   linkedin_cancel_done: "linkedin_cancel_done",
 };
@@ -191,11 +189,9 @@ const tab = posted ? ACTION_TABS[posted.action] : pickTab(Astro.url.searchParams
 // Form values: what was just posted (on an error), else what is stored.
 const from = (action: string) => (posted?.action === action ? posted.values : null);
 const det = from("save") ?? {
-  status: event.status === "cancelled" ? "" : event.status,
+  status: event.status,
   location: event.location ?? "",
   locationOther: event.locationOther ?? "",
-};
-const can = from("cancel") ?? {
   cancelReason: event.cancelReason ?? "",
   cancelReasonOther: event.cancelReasonOther ?? "",
   cancelAnnounced: event.cancelAnnounced ? "on" : "",
@@ -209,7 +205,6 @@ const rep = from("report") ?? {
 };
 const errFor = (action: string) => (posted?.action === action ? errors : {});
 const detErr = errFor("save");
-const canErr = errFor("cancel");
 const liCancelErr = errFor("linkedin_cancel_done");
 const repErr = errFor("report");
 const SOURCES: Record<string, string> = { admin: "the admin", google_form: "the Google Form import", pre_form: "the pre-Form history import" };
@@ -265,18 +260,29 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   {tab === "info" && (<>
   <section aria-labelledby="h-details">
     <h2 id="h-details">Status and location</h2>
-    <form method="post" class="narrow">
+    <form method="post" class="narrow event-details">
       <input type="hidden" name="action" value="save">
-      {event.status === "cancelled"
-        ? <p class="muted">Status: cancelled. Un-cancel below to change it.</p>
-        : (
-          <fieldset>
-            <legend>Status</legend>
-            <label class="check"><input type="radio" name="status" value="scheduled" checked={det.status === "scheduled"}> Scheduled</label>
-            <label class="check"><input type="radio" name="status" value="held" checked={det.status === "held"}> Held</label>
-            {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
-          </fieldset>
-        )}
+      <fieldset>
+        <legend>Status</legend>
+        <label class="check"><input type="radio" name="status" value="scheduled" checked={det.status === "scheduled"}> Scheduled</label>
+        <label class="check"><input type="radio" name="status" value="held" checked={det.status === "held"}> Held</label>
+        <label class="check"><input type="radio" name="status" value="cancelled" checked={det.status === "cancelled"}> Cancelled</label>
+        {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
+      </fieldset>
+      {/* Shown only while Cancelled is selected (CSS :has, no script). Not `required`:
+          a hidden required field would block every save; the server checks the reason. */}
+      <fieldset class="cancel-fields">
+        <legend>Why was it cancelled?</legend>
+        {Object.entries(CANCEL_REASONS).map(([v, label]) => (
+          <label class="check"><input type="radio" name="cancelReason" value={v} checked={det.cancelReason === v}> {label}</label>
+        ))}
+        {detErr.cancelReason && <p class="error" role="alert">{detErr.cancelReason}</p>}
+        <label for="cancelReasonOther">Reason, if Other</label>
+        <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={det.cancelReasonOther}
+          aria-invalid={detErr.cancelReasonOther ? "true" : undefined}>
+        {detErr.cancelReasonOther && <p class="error" role="alert">{detErr.cancelReasonOther}</p>}
+        <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={det.cancelAnnounced === "on"}> Announced on all socials</label>
+      </fieldset>
       <fieldset>
         <legend>Location</legend>
         <label class="check"><input type="radio" name="location" value="" checked={det.location === ""}> Not set</label>
@@ -291,6 +297,20 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
       </fieldset>
       <button type="submit">Save status and location</button>
     </form>
+    <div id="linkedin-cancel">
+      {linkedIn.cancel?.due && (
+        <form method="post" class="linkedin-cancel" role="alert">
+          <input type="hidden" name="action" value="linkedin_cancel_done">
+          <p><strong>{linkedIn.cancel.message}</strong>: this event was posted on LinkedIn and is still live there.
+            <a href={linkedIn.cancel.href} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
+          <button type="submit">Done on LinkedIn</button>
+        </form>
+      )}
+      {linkedIn.cancel && !linkedIn.cancel.due && (
+        <p class="muted">The <a href={linkedIn.cancel.href} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
+      )}
+      {liCancelErr.linkedin && <p class="error" role="alert">{liCancelErr.linkedin}</p>}
+    </div>
   </section>
 
   <section aria-labelledby="h-links">
@@ -330,49 +350,6 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 
   <EventImage date={date} image={eventImage} />
 
-  <section aria-labelledby="h-cancel" id="cancel">
-    <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
-    {r && event.status !== "cancelled"
-      ? <p class="muted">This event has a report, so it was held.</p>
-      : (
-        <form method="post" class="narrow">
-          <input type="hidden" name="action" value="cancel">
-          <fieldset>
-            <legend>Why?</legend>
-            {Object.entries(CANCEL_REASONS).map(([v, label]) => (
-              <label class="check"><input type="radio" name="cancelReason" value={v} checked={can.cancelReason === v} required> {label}</label>
-            ))}
-            {canErr.cancelReason && <p class="error" role="alert">{canErr.cancelReason}</p>}
-            <label for="cancelReasonOther">Reason, if Other</label>
-            <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={can.cancelReasonOther}
-              aria-invalid={canErr.cancelReasonOther ? "true" : undefined}>
-            {canErr.cancelReasonOther && <p class="error" role="alert">{canErr.cancelReasonOther}</p>}
-          </fieldset>
-          <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={can.cancelAnnounced === "on"}> Announced on all socials</label>
-          <button type="submit" class={event.status === "cancelled" ? undefined : "secondary"}>
-            {event.status === "cancelled" ? "Save cancellation" : "Cancel event"}
-          </button>
-        </form>
-      )}
-    {linkedIn.cancel?.due && (
-      <form method="post" class="linkedin-cancel" role="alert">
-        <input type="hidden" name="action" value="linkedin_cancel_done">
-        <p><strong>{linkedIn.cancel.message}</strong>: this event was posted on LinkedIn and is still live there.
-          <a href={linkedIn.cancel.href} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
-        <button type="submit">Done on LinkedIn</button>
-      </form>
-    )}
-    {linkedIn.cancel && !linkedIn.cancel.due && (
-      <p class="muted">The <a href={linkedIn.cancel.href} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
-    )}
-    {liCancelErr.linkedin && <p class="error" role="alert">{liCancelErr.linkedin}</p>}
-    {event.status === "cancelled" && (
-      <form method="post">
-        <input type="hidden" name="action" value="uncancel">
-        <button type="submit" class="secondary">Un-cancel (back to scheduled)</button>
-      </form>
-    )}
-  </section>
   </>)}
 
   {tab === "social" && (<>
@@ -396,7 +373,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
       </p>
     )}
     {event.status === "cancelled"
-      ? <p class="muted">No report for a cancelled event. Un-cancel it first if it went ahead.</p>
+      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Held (Event Info tab) first.</p>
       : isFuture
         ? <p class="muted">The report opens on the day of the event.</p>
         : (
@@ -440,6 +417,8 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 
 <style>
   section { margin-top: 2rem; }
+  .event-details .cancel-fields { display: none; }
+  .event-details:has(input[name="status"][value="cancelled"]:checked) .cancel-fields { display: block; }
   .tabs { margin-top: 1.25rem; border-bottom: 1px solid var(--line); }
   .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; }
   .tabs a { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; text-decoration: none; }

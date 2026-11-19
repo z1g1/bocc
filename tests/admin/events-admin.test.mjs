@@ -1,7 +1,7 @@
 // Phase 3 admin events (ADR 0009): /admin/events/, /admin/events/YYYY-MM-DD/ and the
 // dashboard block, against the throwaway database (npm run test:db):
-//   1. src/lib/admin/events.mjs as admin_app: first save creates the event, cancel and
-//      un-cancel within the CHECK constraints, a report moves the event to held with an
+//   1. src/lib/admin/events.mjs as admin_app: first save creates the event, cancelling
+//      and leaving cancelled within the CHECK constraints, a report moves the event to held with an
 //      audit row, validation, refused states, "report missing" in Eastern time, and the
 //      check-in count leaving out test rows
 //   2. the routes over HTTP through a real `astro dev` server: roles, Origin, methods,
@@ -102,7 +102,7 @@ describe("events module", () => {
     await assert.rejects(ev.saveEvent(actor.id, d, { location: "other", locationOther: "   " }),
       (e) => e instanceof ValidationError && "locationOther" in e.errors);
     await assert.rejects(ev.saveEvent(actor.id, d, { location: "basement" }), (e) => "location" in e.errors);
-    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled" }), (e) => "status" in e.errors);
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled" }), (e) => "cancelReason" in e.errors);
     assert.equal(await eventRow(d), null, "nothing created by refused saves");
 
     await ev.saveEvent(actor.id, d, { location: "other", locationOther: "  Rooftop   patio " });
@@ -121,41 +121,65 @@ describe("events module", () => {
     });
   });
 
-  test("cancel and un-cancel stay within the CHECK constraints", async () => {
+  test("cancelling and leaving cancelled go through the one save, within the CHECK constraints", async () => {
     const d = pastDate();
-    await assert.rejects(ev.cancelEvent(actor.id, d, { cancelReason: "" }), (e) => "cancelReason" in e.errors);
-    await assert.rejects(ev.cancelEvent(actor.id, d, { cancelReason: "other", cancelReasonOther: " " }),
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "" }), (e) => "cancelReason" in e.errors);
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "other", cancelReasonOther: " " }),
       (e) => "cancelReasonOther" in e.errors);
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "postponed" }), (e) => "status" in e.errors);
+    assert.equal(await eventRow(d), null, "nothing created by refused saves");
 
-    // First save is a cancel: creates the row as cancelled.
-    await ev.cancelEvent(actor.id, d, { cancelReason: "other", cancelReasonOther: "Parade", cancelAnnounced: "on" });
+    // First save is a cancel, with a location: one row, one audit row.
+    assert.deepEqual(await ev.saveEvent(actor.id, d,
+      { status: "cancelled", location: "lobby", cancelReason: "other", cancelReasonOther: " Parade ", cancelAnnounced: "on" }),
+      { changed: true });
     assert.deepEqual(await eventRow(d), {
-      status: "cancelled", location: null, location_other: null,
+      status: "cancelled", location: "lobby", location_other: null,
       cancel_reason: "other", cancel_reason_other: "Parade", cancel_announced: true,
     });
     // Changing the reason away from other clears its text.
-    await ev.cancelEvent(actor.id, d, { cancelReason: "weather", cancelReasonOther: "stale", cancelAnnounced: "on" });
+    await ev.saveEvent(actor.id, d, { status: "cancelled", location: "lobby", cancelReason: "weather", cancelReasonOther: "stale", cancelAnnounced: "on" });
     let row = await eventRow(d);
     assert.deepEqual([row.cancel_reason, row.cancel_reason_other, row.cancel_announced], ["weather", null, true]);
-    // A cancelled event keeps its status through the details form.
-    await assert.rejects(ev.saveEvent(actor.id, d, { status: "held" }), ConflictError);
-    await ev.saveEvent(actor.id, d, { location: "lobby" });
-    assert.equal((await eventRow(d)).status, "cancelled");
-
-    assert.deepEqual(await ev.uncancelEvent(actor.id, d), { changed: true });
+    // Same values again: nothing written.
+    assert.deepEqual(await ev.saveEvent(actor.id, d, { status: "cancelled", location: "lobby", cancelReason: "weather", cancelAnnounced: "on" }),
+      { changed: false });
+    // A location-only change keeps the cancellation.
+    await ev.saveEvent(actor.id, d, { location: "food_hall" });
     row = await eventRow(d);
-    assert.deepEqual(row, {
-      status: "scheduled", location: "lobby", location_other: null,
+    assert.deepEqual([row.status, row.cancel_reason, row.cancel_announced], ["cancelled", "weather", true]);
+
+    // Back to scheduled: the cancel fields are cleared; posted cancel fields are ignored.
+    assert.deepEqual(await ev.saveEvent(actor.id, d, { status: "scheduled", location: "food_hall", cancelReason: "facility", cancelAnnounced: "on" }),
+      { changed: true });
+    assert.deepEqual(await eventRow(d), {
+      status: "scheduled", location: "food_hall", location_other: null,
       cancel_reason: null, cancel_reason_other: null, cancel_announced: false,
     });
-    assert.deepEqual(await ev.uncancelEvent(actor.id, d), { changed: false }, "un-cancel of a scheduled event is a no-op");
     assert.deepEqual((await auditRows(d)).map((a) => a.action),
       ["event.cancel", "event.cancel", "event.update", "event.uncancel"]);
-    const uncancel = (await auditRows(d)).at(-1);
-    assert.deepEqual(uncancel.details, {
-      before: { status: "cancelled", cancel_reason: "weather", cancel_reason_other: null, cancel_announced: true },
-      after: { status: "scheduled" },
+    assert.deepEqual((await auditRows(d)).at(-1).details, {
+      created: false,
+      before: { status: "cancelled", cancel_reason: "weather", cancel_announced: true },
+      after: { status: "scheduled", cancel_reason: null, cancel_announced: false },
     });
+  });
+
+  test("a cancelled event can go straight to held (past dates only)", async () => {
+    const d = pastDate();
+    await ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "facility" });
+    const dayBefore = new Date(Date.parse(`${d}T00:00:00Z`) - 86400_000).toISOString().slice(0, 10);
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "held" }, { today: dayBefore }), ConflictError);
+    assert.equal((await eventRow(d)).status, "cancelled");
+
+    await ev.saveEvent(actor.id, d, { status: "held", location: "lobby" }, { today: TODAY });
+    assert.deepEqual(await eventRow(d), {
+      status: "held", location: "lobby", location_other: null,
+      cancel_reason: null, cancel_reason_other: null, cancel_announced: false,
+    });
+    assert.equal((await auditRows(d)).at(-1).action, "event.uncancel");
+    // And it can take a report now.
+    assert.deepEqual(await ev.submitReport(actor.id, d, REPORT, { today: TODAY }), { changed: true });
   });
 
   test("submitting a report moves the event to held and writes an audit row", async () => {
@@ -184,7 +208,8 @@ describe("events module", () => {
     assert.deepEqual([got.exists, got.status, got.report.givesAsksCount, got.report.by], [true, "held", 31, "Report Writer"]);
     // Held with a report: can't go back to scheduled, can't be cancelled.
     await assert.rejects(ev.saveEvent(actor.id, d, { status: "scheduled", location: "lobby" }), ConflictError);
-    await assert.rejects(ev.cancelEvent(actor.id, d, { cancelReason: "weather" }), ConflictError);
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "weather" }, { today: TODAY }),
+      (e) => e instanceof ConflictError && /can't be cancelled/.test(e.errors.status));
     assert.equal((await eventRow(d)).status, "held");
   });
 
@@ -214,7 +239,7 @@ describe("events module", () => {
 
   test("reports are refused on a cancelled event and on a future date", async () => {
     const d = pastDate();
-    await ev.cancelEvent(actor.id, d, { cancelReason: "facility" });
+    await ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "facility" });
     await assert.rejects(ev.submitReport(actor.id, d, REPORT, { today: TODAY }), ConflictError);
     assert.equal(await reportRow(d), null);
     assert.equal((await eventRow(d)).status, "cancelled");
@@ -295,7 +320,7 @@ describe("events module", () => {
     const [a, b, c, d] = [pastDate(), pastDate(), pastDate(), pastDate()];
     await ev.saveEvent(actor.id, a, { status: "scheduled" });      // past, scheduled -> missing
     await ev.submitReport(actor.id, b, REPORT, { today: TODAY });  // held
-    await ev.cancelEvent(actor.id, c, { cancelReason: "weather" }); // cancelled
+    await ev.saveEvent(actor.id, c, { status: "cancelled", cancelReason: "weather" }); // cancelled
     await ev.saveEvent(actor.id, d, { status: "scheduled" });      // "today"
 
     // At 11:30 PM Eastern on day d, d is today: not missing yet (UTC would say it is).
@@ -589,23 +614,47 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const [audit] = await auditRows(d);
     assert.deepEqual([audit.action, audit.actor_user_id], ["event_report.submit", admin.user.id]);
 
-    const cancel = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "cancel", cancelReason: "weather" } });
+    const cancel = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", status: "cancelled", cancelReason: "weather" } });
     assert.equal(cancel.status, 409);
+    assert.match(await cancel.text(), /so it was held and can(&#39;|')t be cancelled/);
   });
 
-  test("cancel and un-cancel over HTTP", async () => {
+  test("Status and location: Cancelled is a third status, its reason fields in the same form", async () => {
     const d = pastDate();
+    const blank = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
+    assert.match(blank, /<input type="radio" name="status" value="cancelled"[^>]*>/);
+    const form = blank.match(/<form method="post" class="narrow event-details"[\s\S]*?<\/form>/)?.[0] ?? "";
+    assert.ok(form.includes('name="cancelReason"') && form.includes('name="cancelAnnounced"') && form.includes('name="location"'),
+      "one form: status, cancel fields and location");
+    assert.ok(!blank.includes('value="uncancel"') && !blank.includes('value="cancel"'), "no separate cancel forms");
+
+    const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "save", status: "cancelled", location: "lobby", cancelReason: "other", cancelReasonOther: "" } });
+    assert.equal(bad.status, 400);
+    const badHtml = await bad.text();
+    assert.ok(badHtml.includes("Say why the event was cancelled."));
+    assert.match(badHtml, /value="cancelled"[^>]*checked/, "Cancelled stays selected, so the reason fields stay open");
+    assert.equal(await eventRow(d), null);
+
     const c = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "cancel", cancelReason: "other_event", cancelAnnounced: "on" } });
-    assert.equal(c.headers.get("location"), `/admin/events/${d}/?tab=info&notice=cancelled`);
-    const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
-    assert.ok(page.includes("Un-cancel") && page.includes("No report for a cancelled event"));
-    const u = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "uncancel" } });
-    assert.equal(u.headers.get("location"), `/admin/events/${d}/?tab=info&notice=uncancelled`);
+      form: { action: "save", status: "cancelled", location: "lobby", cancelReason: "other_event", cancelAnnounced: "on" } });
+    assert.equal(c.headers.get("location"), `/admin/events/${d}/?tab=info&notice=saved`);
+    const page = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
+    assert.match(page, /value="cancelled"[^>]*checked/);
+    assert.match(page, /value="other_event"[^>]*checked/);
+    assert.ok((await (await req(`/admin/events/${d}/?tab=post`, { cookie: admin.cookie })).text()).includes("No report for a cancelled event"));
+
+    const u = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "save", status: "scheduled", location: "lobby", cancelReason: "other_event", cancelAnnounced: "on" } });
+    assert.equal(u.headers.get("location"), `/admin/events/${d}/?tab=info&notice=saved`);
     assert.deepEqual(await eventRow(d), {
-      status: "scheduled", location: null, location_other: null,
+      status: "scheduled", location: "lobby", location_other: null,
       cancel_reason: null, cancel_reason_other: null, cancel_announced: false,
     });
+    for (const action of ["cancel", "uncancel"]) {
+      const old = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action, cancelReason: "weather" } });
+      assert.equal(old.status, 400, `the old ${action} action is gone`);
+    }
   });
 
   test("the list's open-a-date form redirects to the event page; a bad date stays on the list", async () => {

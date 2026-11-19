@@ -41,7 +41,7 @@ let m = randomInt(0, 7000);
 const futureDate = () => day(2040, m++);
 
 const SECTIONS = {
-  info: ["h-details", "h-links", "h-cancel"],
+  info: ["h-details", "h-links"],
   social: ["h-social"],
   post: ["h-report", "h-media-signin", "h-media-social"],
 };
@@ -172,8 +172,8 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "save", status: "scheduled", location: "lobby" }, "info", "saved"],
       [future, { action: "link", platform: "luma", url: "https://luma.com/tabs-test" }, "info", "link"],
       [future, { action: "unlink", platform: "luma" }, "info", "unlink"],
-      [future, { action: "cancel", cancelReason: "weather" }, "info", "cancelled"],
-      [future, { action: "uncancel" }, "info", "uncancelled"],
+      [future, { action: "save", status: "cancelled", location: "lobby", cancelReason: "weather" }, "info", "saved"],
+      [future, { action: "save", status: "scheduled", location: "lobby" }, "info", "saved"],
       [future, { action: "social_post", baseCaption: "Tabs caption" }, "social", "social_post", "#social"],
       [future, { action: "social_video", videoMediaId: video }, "social", "social_video", "#social"],
       [future, { action: "social_channel", channel: "threads", caption: "Threads tabs", firstComment: "" }, "social", "social_channel", "#social"],
@@ -197,7 +197,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     const cases = [
       [future, { action: "save", location: "basement" }, "info"],
       [future, { action: "link", platform: "luma", url: "https://evil.example/x" }, "info"],
-      [future, { action: "cancel", cancelReason: "" }, "info"],
+      [future, { action: "save", status: "cancelled", cancelReason: "" }, "info"],
       [future, { action: "social_post", baseCaption: "x", ready: "on" }, "social"],
       [future, { action: "social_video", videoMediaId: "nope" }, "social"],
       [past, { action: "report", givesAsksCount: "-1", blingGiven: "" }, "post"],
