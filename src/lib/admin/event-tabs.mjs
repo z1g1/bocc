@@ -28,5 +28,6 @@ export const ACTION_TABS = Object.freeze({
   save: "info", link: "info", unlink: "info", cancel: "info", uncancel: "info",
   social_post: "social", social_video: "social", social_cover: "social", social_channel: "social",
   linkedin_create: "social", linkedin_publish: "social", linkedin_allow_retry: "social",
+  linkedin_cancel_done: "info",
   report: "post",
 });
