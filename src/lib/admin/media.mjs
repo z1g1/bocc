@@ -330,8 +330,10 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
     // A photo picked as an event's Event Image (events.event_image_media_id, ticket
     // #21) is refused, naming the events; the FK would refuse it too, without names.
     const { rows: users } = await client.query(
-      `select event_date::text as d from public.events where event_image_media_id = $1 order by event_date for share`, [id]);
-    if (users.length) throw new InUseError(users.map((u) => u.d));
+      `select e.event_date::text as d, m.event_date::text as "photoDate"
+         from public.events e join public.event_media m on m.id = e.event_image_media_id
+        where e.event_image_media_id = $1 order by e.event_date for share of e`, [id]);
+    if (users.length) throw new InUseError(users.map((u) => u.d), users[0].photoDate);
     // A promo video may be a social post's video: clear it there first (the FK would
     // refuse the delete), and un-ready the post, which needs a video (its CHECK).
     const { rows: detached } = await client.query(
@@ -363,10 +365,14 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
 /** deleteMedia refused: the photo is the Event Image of these events (409). */
 export class InUseError extends Error {
   status = 409;
-  /** @param {string[]} eventDates */
-  constructor(eventDates) {
+  /**
+   * @param {string[]} eventDates  the events that use the photo
+   * @param {string} photoDate     the photo's own event (where its gallery is)
+   */
+  constructor(eventDates, photoDate) {
     super(inUseMessage(eventDates));
     this.eventDates = eventDates;
+    this.photoDate = photoDate;
     this.errors = [this.message];
   }
 }

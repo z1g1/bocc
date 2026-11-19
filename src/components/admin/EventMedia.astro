@@ -19,6 +19,7 @@
 import { hasRole } from "../../lib/admin/roles.mjs";
 import { getStorage, isIsoDate } from "../../lib/admin/storage.mjs";
 import { STORAGE_OFF_MESSAGE } from "../../lib/admin/media-http.mjs";
+import { inUseMessage } from "../../lib/admin/event-image-rules.mjs";
 
 interface Props {
   /** The event's date, YYYY-MM-DD. */
@@ -32,7 +33,11 @@ const NOTICES: Record<string, string> = {
   deleted: "Photo deleted.",
   "deleted-partial": "Photo deleted. Some of its files couldn't be removed from storage; they are logged for cleanup.",
 };
-const notice = NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+// A refused delete names the events that use the photo as their Event Image (ticket
+// #21): ?media=in-use&used-by=<date,…>, each date checked before it is shown.
+const usedBy = (Astro.url.searchParams.get("used-by") ?? "").split(",").filter((d) => isIsoDate(d));
+const mediaParam = Astro.url.searchParams.get("media") ?? "";
+const notice = mediaParam === "in-use" && usedBy.length ? inUseMessage(usedBy) : NOTICES[mediaParam] ?? null;
 
 // One section per kind, each with its own upload form (the kind is fixed: a hidden
 // `kind` field), status line and gallery.

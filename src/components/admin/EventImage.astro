@@ -12,7 +12,14 @@
 //   480x270, at most 8 MiB; a warning when it isn't 16:9), makes the display,
 //   thumbnail and 16:9 centre-crop cover copies and PUTs all four to the bucket.
 //   Hidden until that script runs. The new image replaces the old one on complete.
-// - Clear: a plain form post to /api/admin/media/event-image/clear (back to the logo).
+// - Pick (ticket #21): the recent Photos from Event (event-image.mjs listPickablePhotos)
+//   as thumbnails in a plain form post to /api/admin/media/event-image/pick: the event
+//   then references the photo. When the picked photo has no 16:9 cover copy
+//   (data-needs-cover), /js/admin-media.js makes one first (a centre crop of its display
+//   copy, PUT through /api/admin/media/{id}/cover). Without the script the pick still
+//   works, and the section then offers "Make the 16:9 version" (which needs it).
+// - Clear: a plain form post to /api/admin/media/event-image/clear (back to the logo;
+//   a picked photo is only un-referenced, never deleted).
 // - Unfinished Event Image uploads over a day old, with a delete button.
 // - Storage not configured: the message, and the previews only when it's the logo.
 import { hasRole } from "../../lib/admin/roles.mjs";
@@ -33,6 +40,9 @@ const NOTICES: Record<string, string> = {
   "event-image-cleared": "Event Image cleared. The event uses the BOCC logo.",
   "event-image-cleared-partial": "Event Image cleared. Some of its files couldn't be removed from storage; they are logged for cleanup.",
   "event-image-unchanged": "There was no Event Image to clear.",
+  "event-image-picked": "Event Image set to a photo from the event.",
+  "event-image-picked-partial": "Event Image set to a photo from the event. Some files of the uploaded image it replaced couldn't be removed from storage; they are logged for cleanup.",
+  "event-image-unchanged-pick": "That photo is already the Event Image.",
   deleted: "Unfinished upload deleted.",
   "deleted-partial": "Unfinished upload deleted. Some of its files couldn't be removed from storage; they are logged for cleanup.",
 };
@@ -54,6 +64,7 @@ function links(file: any, downloadName: string) {
 let square: ReturnType<typeof links> = null;
 let cover: ReturnType<typeof links> = null;
 let stale: any[] = [];
+let pickable: any[] = [];
 if (allowed && image) {
   const sq = links(image.display, "");
   const orig = links(image.original, `bocc-${date}-event-image.${"key" in image.original ? ext(image.original.key) : "png"}`);
@@ -63,9 +74,21 @@ if (allowed && image) {
     const { listStalePending } = await import("../../lib/admin/media.mjs");
     const { pool } = await import("../../lib/admin/db.mjs");
     stale = (await listStalePending(pool, { date })).filter((m: any) => m.kind === "event_image");
+    const { listPickablePhotos } = await import("../../lib/admin/event-image.mjs");
+    pickable = (await listPickablePhotos(pool, date)).map((m: any) => ({
+      ...m,
+      thumbUrl: storage.presignGet({ key: m.thumbKey }).url,
+      // The script crops the 16:9 cover from the display copy (CORS GET from the bucket).
+      displayUrl: m.coverKey ? null : storage.presignGet({ key: m.displayKey }).url,
+      current: image.source === "referenced" && image.mediaId === m.id,
+    }));
   }
 }
 const statusId = `event-image-status-${date}`;
+const pickStatusId = `event-image-pick-status-${date}`;
+// A picked photo without its 16:9 copy (picked without the script): offer to make it.
+const referencedNeedsCover = image?.source === "referenced" && !image.cover && storage
+  ? { id: image.mediaId, displayUrl: storage.presignGet({ key: image.display.key }).url } : null;
 const warningId = `event-image-warning-${date}`;
 const inputId = `event-image-file-${date}`;
 const fmtTime = (d: Date) =>
@@ -107,8 +130,40 @@ const fmtTime = (d: Date) =>
         </form>
         <p class="media-status" id={statusId} role="status" aria-live="polite"></p>
 
-        {!isDefault && image.source === "uploaded" && (
-          <form method="post" action="/api/admin/media/event-image/clear" class="inline" data-confirm="Clear the Event Image? The event goes back to the BOCC logo, and the uploaded image is deleted.">
+        {referencedNeedsCover && (
+          <form class="inline" data-make-cover data-media-id={referencedNeedsCover.id} data-display-url={referencedNeedsCover.displayUrl} data-status={pickStatusId} hidden>
+            <button type="submit">Make the 16:9 version</button>
+          </form>
+        )}
+
+        {pickable.length > 0 && (
+          <form method="post" action="/api/admin/media/event-image/pick" class="event-image-pick" data-event-image-pick data-status={pickStatusId}>
+            <fieldset>
+              <legend>Or pick a Photo from Event <span class="muted">(recent events; the event uses the photo itself, not a copy)</span></legend>
+              <input type="hidden" name="eventDate" value={date}>
+              <ul class="plain pick-grid">
+                {pickable.map((m: any) => (
+                  <li>
+                    <label>
+                      {m.coverKey
+                        ? <input type="radio" name="mediaId" value={m.id} checked={m.current} required>
+                        : <input type="radio" name="mediaId" value={m.id} data-needs-cover data-display-url={m.displayUrl} checked={m.current} required>}
+                      <img src={m.thumbUrl} alt={`Photo from the ${m.eventDate} event`} loading="lazy" decoding="async">
+                      <span class="muted">{m.eventDate}{m.current ? " (in use)" : ""}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <button type="submit">Use this photo</button>
+            </fieldset>
+          </form>
+        )}
+        <p class="media-status" id={pickStatusId} role="status" aria-live="polite"></p>
+
+        {!isDefault && (
+          <form method="post" action="/api/admin/media/event-image/clear" class="inline" data-confirm={image.source === "uploaded"
+            ? "Clear the Event Image? The event goes back to the BOCC logo, and the uploaded image is deleted."
+            : "Clear the Event Image? The event goes back to the BOCC logo. The photo itself stays in its gallery."}>
             <input type="hidden" name="eventDate" value={date}>
             <button type="submit" class="secondary">Clear (use the BOCC logo)</button>
           </form>
@@ -143,4 +198,8 @@ const fmtTime = (d: Date) =>
   .previews p { margin: 0.25rem 0; }
   .warning { min-height: 1.2em; color: var(--err); }
   .media-status { min-height: 1.5em; }
+  .pick-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .pick-grid label { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; cursor: pointer; }
+  .pick-grid img { display: block; width: 8rem; height: 6rem; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
+  .event-image-pick fieldset { border: 0; padding: 0; margin: 1rem 0 0.5rem; }
 </style>

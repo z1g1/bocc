@@ -361,3 +361,134 @@ describe("switching and the 16:9 cover against MinIO", { skip }, () => {
     await assert.rejects(media.startCover(actor.id, storage(), randomUUID(), { size: 10 }), { status: 404 });
   });
 });
+
+// ── 3. Over HTTP ────────────────────────────────────────────────────────────
+describe("the picker form, the cover routes and the delete refusal over HTTP", { skip, timeout: 300_000 }, () => {
+  let server;
+  let admin;
+  let social;
+
+  let ipCounter = 0;
+  const nextIp = () => `198.22.${Math.floor(++ipCounter / 250)}.${ipCounter % 250 + 1}`;
+  async function signedIn(roles) {
+    const user = await createUser({ email: `${unique("pick")}@example.com`, name: "Pick User", password: PASSWORD });
+    for (const r of roles) await withAudit(null, (c) => grantRole(c, user.id, r), { action: "test.grant" });
+    const res = await handleAuthRequest(new Request(`${BASE}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: BASE, "x-nf-client-connection-ip": nextIp() },
+      body: JSON.stringify({ email: user.email, password: PASSWORD }),
+    }));
+    assert.equal(res.status, 200);
+    const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).filter((c) => !c.endsWith("=")).join("; ");
+    return { user, cookie };
+  }
+  const req = (path, { cookie, method = "GET", form, json, origin = BASE } = {}) => fetch(`${BASE}${path}`, {
+    method,
+    redirect: "manual",
+    headers: {
+      ...(cookie ? { cookie } : {}),
+      ...(method === "POST" ? { origin, "content-type": json ? "application/json" : "application/x-www-form-urlencoded" } : {}),
+    },
+    body: json ? JSON.stringify(json) : form ? new URLSearchParams(form).toString() : undefined,
+  });
+
+  before(async () => {
+    const { dev } = await import("astro");
+    const root = fileURLToPath(new URL("../..", import.meta.url));
+    server = await dev({ root, logLevel: "error", server: { port, host: "localhost" } });
+    admin = await signedIn(["admin"]);
+    social = await signedIn(["social"]);
+  });
+  after(async () => { await server?.stop(); });
+
+  test("the Event Info tab lists the recent photos as thumbnails in a pick form", async () => {
+    const [p, d] = dates(2);
+    const withCover = await seedPhoto(p, { cover: true });
+    const without = await seedPhoto(p);
+    const board = await seedPhoto(p, { kind: "signin_board" });
+    const page = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
+    assert.match(page, /<form[^>]*action="\/api\/admin\/media\/event-image\/pick"/);
+    const origin = new URL(process.env.STORAGE_ENDPOINT).host;
+    const imgs = [...page.matchAll(/<img[^>]*src="([^"]+)"/g)].map((x) => x[1].replaceAll("&amp;", "&"));
+    assert.ok(imgs.some((u) => u.includes(origin) && u.includes(`${withCover}/thumb.jpg`)), "thumbnail");
+    assert.ok(imgs.some((u) => u.includes(`${without}/thumb.jpg`)));
+    assert.ok(!page.includes(board), "a sign-in board photo isn't offered");
+    assert.match(page, new RegExp(`<input[^>]*name="mediaId"[^>]*value="${without}"[^>]*data-needs-cover|data-needs-cover[^>]*value="${without}"`));
+    assert.ok(!new RegExp(`value="${withCover}"[^>]*data-needs-cover`).test(page));
+  });
+
+  test("picking posts back to the Event Info tab; the page shows the photo, and clear un-picks it", async () => {
+    const [p, d] = dates(2);
+    const photo = await seedPhoto(p, { cover: true });
+    const res = await req("/api/admin/media/event-image/pick", { cookie: admin.cookie, method: "POST", form: { eventDate: d, mediaId: photo } });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), `/admin/events/${d}/?tab=info&media=event-image-picked#event-image`);
+    assert.equal(await ref(d), photo);
+    const page = await (await req(res.headers.get("location"), { cookie: admin.cookie })).text();
+    assert.match(page, /Event Image set to a photo from the event\./);
+    assert.match(page, new RegExp(`A photo from the ${p} event`));
+    const imgs = [...page.matchAll(/<img[^>]*src="([^"]+)"/g)].map((x) => x[1].replaceAll("&amp;", "&"));
+    assert.ok(imgs.some((u) => u.includes(`${photo}/cover.jpg`)), "the 16:9 preview is the photo's cover");
+    const links = [...page.matchAll(/<a[^>]*href="([^"]+)"[^>]*download/g)].map((x) => x[1].replaceAll("&amp;", "&"));
+    assert.ok(links.some((u) => u.includes(`${photo}/original.jpg`)), "download the referenced photo's original");
+    assert.match(page, /action="\/api\/admin\/media\/event-image\/clear"/);
+
+    const cleared = await req("/api/admin/media/event-image/clear", { cookie: admin.cookie, method: "POST", form: { eventDate: d } });
+    assert.equal(cleared.headers.get("location"), `/admin/events/${d}/?tab=info&media=event-image-cleared#event-image`);
+    assert.equal(await ref(d), null);
+    assert.ok(await row(photo));
+  });
+
+  test("the pick form: admin only, Origin-checked, POST only; a photo not offered is 400", async () => {
+    const [p, d] = dates(2);
+    const photo = await seedPhoto(p);
+    const board = await seedPhoto(p, { kind: "signin_board" });
+    const form = { eventDate: d, mediaId: photo };
+    const path = "/api/admin/media/event-image/pick";
+    assert.equal((await req(path, { method: "POST", form })).status, 401);
+    assert.equal((await req(path, { cookie: social.cookie, method: "POST", form })).status, 403);
+    assert.equal((await req(path, { cookie: admin.cookie, method: "POST", form, origin: "https://evil.example" })).status, 403);
+    assert.equal((await req(path, { cookie: admin.cookie })).status, 405);
+    assert.equal((await req(path, { cookie: admin.cookie, method: "POST", form: { eventDate: d, mediaId: board } })).status, 400);
+    assert.equal((await req(path, { cookie: admin.cookie, method: "POST", form: { eventDate: "2077-02-30", mediaId: photo } })).status, 400);
+    assert.equal(await ref(d), null);
+  });
+
+  test("the cover routes: start gives a presigned PUT, complete sets the cover (JSON, admin only)", async () => {
+    const [p] = dates(1);
+    const photo = await seedPhoto(p);
+    assert.equal((await req(`/api/admin/media/${photo}/cover`, { cookie: social.cookie, method: "POST", json: { size: COVER.length } })).status, 403);
+    const start = await req(`/api/admin/media/${photo}/cover`, { cookie: admin.cookie, method: "POST", json: { size: COVER.length } });
+    assert.equal(start.status, 201);
+    const plan = await start.json();
+    const pending = await req(`/api/admin/media/${photo}/cover-complete`, { cookie: admin.cookie, method: "POST", json: {} });
+    assert.equal(pending.status, 409);
+    assert.equal((await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: COVER })).status, 200);
+    const done = await req(`/api/admin/media/${photo}/cover-complete`, { cookie: admin.cookie, method: "POST", json: {} });
+    assert.equal(done.status, 200);
+    assert.deepEqual(await done.json(), { id: photo, status: "ready", coverKey: `events/${p}/${photo}/cover.jpg` });
+    assert.equal((await req(`/api/admin/media/${photo}/cover`, { cookie: admin.cookie, method: "POST", json: { size: 5 } })).status, 400);
+  });
+
+  test("deleting a referenced photo from the gallery is refused with a message naming the event", async () => {
+    const [p, d] = dates(2);
+    const photo = await seedPhoto(p);
+    await ei.pickEventImage(actor.id, null, d, photo);
+    const res = await req(`/api/admin/media/${photo}/delete`, { cookie: admin.cookie, method: "POST", form: {} });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), `/admin/events/${p}/?tab=post&media=in-use&used-by=${d}#event-media`);
+    assert.ok(await row(photo));
+    const page = await (await req(res.headers.get("location"), { cookie: admin.cookie })).text();
+    assert.match(page, new RegExp(`This photo is the Event Image for ${d}, so it wasn&#39;t deleted\\.|This photo is the Event Image for ${d}, so it wasn't deleted\\.`));
+
+    const asJson = await req(`/api/admin/media/${photo}/delete`, { cookie: admin.cookie, method: "POST", json: {} });
+    assert.equal(asJson.status, 409);
+    assert.deepEqual((await asJson.json()).eventDates, [d]);
+
+    // Unreferenced: deletes as before.
+    await ei.clearEventImage(actor.id, storage(), d);
+    const ok = await req(`/api/admin/media/${photo}/delete`, { cookie: admin.cookie, method: "POST", form: {} });
+    assert.equal(ok.headers.get("location"), `/admin/events/${p}/?tab=post&media=deleted#event-media`);
+    assert.equal(await row(photo), undefined);
+  });
+});
