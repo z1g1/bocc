@@ -9,9 +9,9 @@
 // buildWorkOrder() the admin pages use (src/lib/admin/social-rules.mjs).
 //
 // A second, independent check (ADR 0012, issue #24) reads each LinkedIn connection's
-// expiry and its user's name (SELECT (user_id, expires_at) on linkedin_connections and
-// (id, name) on auth."user"; migration 20261126120000_social_checker_linkedin.sql,
-// never the token) and pushes a "reconnect at /admin/account/" alert for each one with
+// expiry and LinkedIn display name (SELECT (user_id, expires_at, display_name) on
+// linkedin_connections, nothing in auth; migration
+// 20261126120000_social_checker_linkedin.sql, never the token or member URN) and pushes a "reconnect at /admin/account/" alert for each one with
 // under 10 days left or expired. Each check runs and alerts on its own: a failure in one
 // never stops the other. The run's outcome is the worse of the two ("failed" > "sent" >
 // "ok"); `linkedin` in the result carries the LinkedIn check's own outcome.
@@ -84,15 +84,15 @@ export async function readWorkOrder(db, date) {
 }
 
 /**
- * Every LinkedIn connection's expiry and its user's name, soonest first. Never the token,
+ * Every LinkedIn connection's expiry and its LinkedIn display name, soonest first. Never the token,
  * the member URN or anything else in the row (social_checker can't read them).
  * @param {{ query: Function }} db  connected as social_checker
  * @returns {Promise<Array<{ name: string|null, expiresAt: Date }>>}
  */
 export async function readLinkedInConnections(db) {
   const { rows } = await db.query(
-    `select u.name, c.expires_at as "expiresAt"
-       from public.linkedin_connections c left join "auth"."user" u on u.id = c.user_id
+    `select c.display_name as name, c.expires_at as "expiresAt"
+       from public.linkedin_connections c
       order by c.expires_at, c.user_id`);
   return rows;
 }
