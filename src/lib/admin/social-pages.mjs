@@ -85,6 +85,10 @@ export function toJson(pick) {
     ...rest,
     order: {
       date: order.date,
+      status: order.status,
+      statusLabel: order.statusLabel,
+      // The Chrome task contract's name, kept: "offered to the Chrome tasks" (true for
+      // Ready for Posting and Error), not the post status Ready for Posting.
       ready: order.ready,
       actionable: order.actionable,
       problems: order.problems,

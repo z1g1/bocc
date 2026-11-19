@@ -27,7 +27,7 @@ let n = 0;
 const tuesday = () => new Date(Date.UTC(2085, 0, 2 + 7 * n++)).toISOString().slice(0, 10); // 2085-01-02 is a Tuesday
 
 /** Seed an event, optionally its Luma link, a ready video and a post with channel statuses. */
-async function seed(date, { status = "scheduled", luma = true, post = true, ready = true, statuses = {} } = {}) {
+async function seed(date, { status = "scheduled", luma = true, post = true, postStatus = "ready", statuses = {} } = {}) {
   await owner.query(`insert into events (event_date, status, cancel_reason) values ($1, $2, $3)`,
     [date, status, status === "cancelled" ? "weather" : null]);
   if (luma) await owner.query(`insert into event_links (event_date, platform, url) values ($1, 'luma', 'https://luma.com/bocc-test')`, [date]);
@@ -37,8 +37,8 @@ async function seed(date, { status = "scheduled", luma = true, post = true, read
     `insert into event_media (id, event_date, kind, original_key, content_type, size_bytes, status)
      values ($1, $2, 'promo_video', $3, 'video/mp4', 4800000, 'ready')`, [vid, date, `events/${date}/${vid}/original.mp4`]);
   await owner.query(
-    `insert into social_posts (event_date, video_media_id, base_caption, publish_at, ready)
-     values ($1, $2, 'Coffee on Tuesday', ($1::date - 1) + time '12:00' at time zone 'UTC', $3)`, [date, vid, ready]);
+    `insert into social_posts (event_date, video_media_id, base_caption, publish_at, status)
+     values ($1, $2, 'Coffee on Tuesday', ($1::date - 1) + time '12:00' at time zone 'UTC', $3)`, [date, vid, postStatus]);
   for (const c of CHANNELS) {
     await owner.query(`insert into social_post_channels (event_date, channel, status) values ($1, $2, $3)`, [date, c, statuses[c] ?? "scheduled"]);
   }
@@ -108,7 +108,7 @@ describe("social_checker permissions", () => {
 
   test("may not write anything", async () => {
     await assertRefused(checker, "insert into events (event_date) values ('2031-01-07')");
-    await assertRefused(checker, "update social_posts set ready = false");
+    await assertRefused(checker, "update social_posts set status = 'todo'");
     await assertRefused(checker, "update social_post_channels set status = 'scheduled'");
     await assertRefused(checker, "delete from event_links");
     await assertRefused(checker, "update event_media set status = 'ready'");
@@ -161,9 +161,23 @@ describe("readWorkOrder as social_checker", () => {
     assert.match(socialAlert({ order: o, date: d }).title, /post not ready/);
   });
 
+  test("the post status (ticket #39): Posted counts as ready; Error alerts as channels not scheduled; To do isn't ready", async () => {
+    const [p, e, t] = [tuesday(), tuesday(), tuesday()];
+    await seed(p, { postStatus: "posted", statuses: { tiktok: "live" } });
+    await seed(e, { postStatus: "error", statuses: { threads: "failed" } });
+    await seed(t, { postStatus: "todo" });
+    const posted = await readWorkOrder(checker, p);
+    assert.equal(posted.status, "posted");
+    assert.equal(socialAlert({ order: posted, date: p }), null);
+    const error = socialAlert({ order: await readWorkOrder(checker, e), date: e });
+    assert.match(error.title, /1 of 5 channels not scheduled/);
+    assert.match(error.message, /status is Error: Threads failed[\s\S]*- Threads: failed/);
+    assert.match(socialAlert({ order: await readWorkOrder(checker, t), date: t }).message, /isn't set to Ready for Posting \(it is To do\)/);
+  });
+
   test("a cancelled event: no alert", async () => {
     const d = tuesday();
-    await seed(d, { status: "cancelled", ready: false, statuses: { facebook: "pending" } });
+    await seed(d, { status: "cancelled", postStatus: "todo", statuses: { facebook: "pending" } });
     const o = await readWorkOrder(checker, d);
     assert.equal(o.eventStatus, "cancelled");
     assert.equal(socialAlert({ order: o, date: d }), null);

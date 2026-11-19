@@ -375,6 +375,9 @@ const coverRef = (eventImage) => {
   return c ? ("path" in c ? c.path : c.key) : null;
 };
 
+/** Where the follow-up lines point: the LinkedIn section on the event page's Event Info tab. */
+export const LINKEDIN_SECTION_HREF = "?tab=info#h-linkedin";
+
 /**
  * What LinkedIn needs from the Admin by hand, for a date's active ledger row.
  * Only a `posted` row counts: an event never posted shows nothing.
@@ -382,6 +385,8 @@ const coverRef = (eventImage) => {
  *           then the event is to be cancelled, not fixed). A row with no image recorded
  *           (imported from the CLI's ledger, #28) only compares the location.
  *   cancel  the event is cancelled: `due` until the Admin ticks "Done on LinkedIn"
+ * Both carry `href`, LINKEDIN_SECTION_HREF (the one source for the Readiness lines and
+ * the page); the LinkedIn event itself is `eventUrl`.
  * @param {{ ledger: null | { status: string, location: string|null, imageSource: string|null,
  *   imageRef: string|null, eventUrl: string|null, cancelledOnLinkedInAt: Date|null },
  *   event: { status: string, location: string|null },
@@ -392,20 +397,21 @@ const coverRef = (eventImage) => {
  */
 export function linkedInFollowUp({ ledger, event, eventImage }) {
   if (ledger?.status !== "posted") return { eventUrl: null, drift: null, cancel: null };
-  const href = ledger.eventUrl;
+  const eventUrl = ledger.eventUrl;
+  const href = LINKEDIN_SECTION_HREF;
   if (event.status === "cancelled") {
     const doneAt = ledger.cancelledOnLinkedInAt ?? null;
-    return { eventUrl: href, drift: null, cancel: { due: doneAt === null, doneAt, message: CANCEL_ON_LINKEDIN, href } };
+    return { eventUrl, drift: null, cancel: { due: doneAt === null, doneAt, message: CANCEL_ON_LINKEDIN, href } };
   }
   const changes = [];
   if (wording(ledger.location) !== wording(event.location)) changes.push("location");
   if (ledger.imageSource != null && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== coverRef(eventImage))) {
     changes.push("image");
   }
-  if (!changes.length) return { eventUrl: href, drift: null, cancel: null };
+  if (!changes.length) return { eventUrl, drift: null, cancel: null };
   const what = changes.map((c) => (c === "location" ? "location" : "Event Image")).join(" and the ");
   return {
-    eventUrl: href, cancel: null,
+    eventUrl, cancel: null,
     drift: { changes, href, message: `LinkedIn is out of date: the ${what} changed after the event was posted. Fix it on LinkedIn by hand.` },
   };
 }

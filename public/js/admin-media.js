@@ -15,20 +15,25 @@
 //
 // The Event Image form (kind event_image, on the Event Info tab, ADR 0012 decision 3)
 // takes one file. On pick it is decoded and checked (PNG/JPEG, at least 480x270, at
-// most 8 MiB) and a warning shows when it isn't 16:9; the upload adds a fourth copy,
-// the 16:9 centre-crop cover (at most 1920 wide), drawn from the decoded original.
+// most 8 MiB), a warning shows when it isn't square, and the 16:9 version is drawn
+// into the preview; the upload adds that as a fourth copy, the cover: 1920x1080, the
+// decoded original at full height centred on the "Just the Beans" background
+// (COVER_BACKGROUND, from the site itself), never cropped (ticket #40).
 //
 // The Event Image picker (form[data-event-image-pick], ticket #21) is a plain form
 // post. When the chosen Photo from Event has no 16:9 cover copy yet (data-needs-cover),
 // the cover is made first: the photo's display copy is fetched from the bucket
-// (presigned GET in data-display-url; the bucket's CORS allows GET), centre-cropped to
-// 16:9, and PUT through /api/admin/media/{id}/cover and /cover-complete; then the form
-// is submitted. form[data-make-cover] does the same for a photo already picked without
-// one, then reloads.
+// (presigned GET in data-display-url; the bucket's CORS allows GET), composed on the
+// beans background, and PUT through /api/admin/media/{id}/cover and /cover-complete;
+// then the form is submitted. form[data-make-cover] does the same for a photo already
+// picked without one, then reloads; with data-auto it runs as soon as the page opens
+// (a 16:9 version made under the old centre-crop rule, being remade).
+// form[data-remake-covers] (the /admin/media/covers page) remakes every such version,
+// one after another.
 
 import {
-  COVER_QUALITY, DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
-  centreCrop16x9, checkEventImage, checkFile, coverSize, eventImageRequestBody, fitWithin, formatBytes,
+  COVER_BACKGROUND, COVER_QUALITY, DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
+  checkEventImage, checkFile, composeCover, eventImageRequestBody, fitWithin, formatBytes,
   uploadRequestBody,
 } from "./admin-media-lib.js";
 
@@ -45,6 +50,7 @@ if (forms.length) {
 }
 for (const form of document.querySelectorAll("form[data-event-image-pick]")) setUpPick(form);
 for (const form of document.querySelectorAll("form[data-make-cover]")) setUpMakeCover(form);
+for (const form of document.querySelectorAll("form[data-remake-covers]")) setUpRemakeCovers(form);
 for (const form of document.querySelectorAll("form[data-confirm]")) {
   form.addEventListener("submit", (e) => {
     if (!window.confirm(form.getAttribute("data-confirm"))) e.preventDefault();
@@ -59,15 +65,33 @@ function setUpUpload(form) {
 
   const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
   const warning = form.hasAttribute("data-warning") ? document.getElementById(form.getAttribute("data-warning")) : null;
+  const preview = form.hasAttribute("data-preview") ? document.getElementById(form.getAttribute("data-preview")) : null;
+  let previewUrl = null;
+  const clearPreview = () => {
+    if (!preview) return;
+    preview.hidden = true;
+    preview.removeAttribute("src");
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+  };
   if (kind === "event_image" && warning) {
-    // Check on pick, so the not-16:9 warning shows before the upload.
+    // Check on pick, so the not-square warning and the 16:9 preview show before the upload.
     input.addEventListener("change", async () => {
       warning.textContent = "";
+      clearPreview();
       const file = input.files && input.files[0];
       if (!file) return;
       try {
         const r = await checkPicked(file);
         warning.textContent = r.ok ? r.warning || "" : r.message;
+        if (r.ok && preview) {
+          const blob = await composedCover(file);
+          if (input.files && input.files[0] === file) {
+            previewUrl = URL.createObjectURL(blob);
+            preview.src = previewUrl;
+            preview.hidden = false;
+          }
+        }
       } catch (err) {
         warning.textContent = err instanceof UserError ? err.message : UNREADABLE_MESSAGE;
       }
@@ -156,9 +180,50 @@ function setUpMakeCover(form) {
       say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
     }
   });
+  // A 16:9 version made under the old rule is remade as soon as the page opens.
+  if (form.hasAttribute("data-auto")) form.requestSubmit();
 }
 
-/** A picked photo's 16:9 cover: crop its display copy, PUT it, confirm it. */
+/**
+ * The /admin/media/covers page: remake every 16:9 version still made under the old
+ * centre-crop rule, one at a time (li[data-cover-id][data-display-url] in the form's
+ * list), then reload. One failure doesn't stop the rest.
+ */
+function setUpRemakeCovers(form) {
+  const status = document.getElementById(form.getAttribute("data-status"));
+  const button = form.querySelector('button[type="submit"]');
+  const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
+  for (const el of document.querySelectorAll("[data-media-nojs]")) el.hidden = true;
+  form.hidden = false;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const items = Array.from(document.querySelectorAll("li[data-cover-id]"));
+    if (items.length === 0) { say("Nothing to remake."); return; }
+    busy = true;
+    button.disabled = true;
+    const failed = [];
+    for (let i = 0; i < items.length; i++) {
+      const li = items[i];
+      const prefix = `${i + 1} of ${items.length}: `;
+      try {
+        await makePhotoCover(li.getAttribute("data-cover-id"), li.getAttribute("data-display-url"), (t) => say(prefix + t));
+        li.setAttribute("data-done", "");
+      } catch (err) {
+        failed.push(`${li.getAttribute("data-label")}: ${err instanceof UserError ? err.message : "something went wrong"}`);
+      }
+    }
+    busy = false;
+    if (failed.length === 0) {
+      say(`Remade ${items.length}. Refreshing…`);
+      window.location.reload();
+      return;
+    }
+    button.disabled = false;
+    say(`Remade ${items.length - failed.length} of ${items.length}. Not remade: ${failed.join(" · ")} Reload and try again for those.`);
+  });
+}
+
+/** A photo's (or an uploaded Event Image's) 16:9 version: compose its display copy, PUT it, confirm it. */
 async function makePhotoCover(mediaId, displayUrl, step) {
   step("making the 16:9 version…");
   let res;
@@ -171,8 +236,7 @@ async function makePhotoCover(mediaId, displayUrl, step) {
   const src = await decode(await res.blob());
   let canvas;
   try {
-    const crop = centreCrop16x9(src.width, src.height);
-    canvas = drawScaled(src.image, coverSize(crop.sw, crop.sh), crop);
+    canvas = await drawCover(src);
   } finally {
     src.close();
   }
@@ -312,11 +376,8 @@ async function makeCopies(file, { cover: withCover = false } = {}) {
   try {
     const d = fitWithin(src.width, src.height, DISPLAY_EDGE);
     displayCanvas = drawScaled(src.image, d);
-    if (withCover) {
-      // The 16:9 cover is cropped from the decoded original, not the display copy.
-      const crop = centreCrop16x9(src.width, src.height);
-      coverCanvas = drawScaled(src.image, coverSize(crop.sw, crop.sh), crop);
-    }
+    // The 16:9 version is drawn from the decoded original, not the display copy.
+    if (withCover) coverCanvas = await drawCover(src);
   } finally {
     src.close();
   }
@@ -358,8 +419,58 @@ async function decode(file) {
   }
 }
 
-/** Draw `source` (or its `crop` rectangle) scaled to width x height on a new canvas. */
-function drawScaled(source, { width, height }, crop = null) {
+/** The 16:9 version of a picked file, as a JPEG blob (for the preview). */
+async function composedCover(file) {
+  const src = await decode(file);
+  let canvas;
+  try {
+    canvas = await drawCover(src);
+  } finally {
+    src.close();
+  }
+  try {
+    return await toJpeg(canvas, COVER_QUALITY);
+  } finally {
+    canvas.width = 0; canvas.height = 0;
+  }
+}
+
+let background = null;
+/** The beans background, decoded once per page. */
+function loadBackground() {
+  if (!background) {
+    background = (async () => {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = COVER_BACKGROUND;
+      await (img.decode ? img.decode() : new Promise((ok, no) => { img.onload = ok; img.onerror = no; }));
+      return img;
+    })().catch(() => {
+      background = null;
+      throw new UserError("the 16:9 background couldn't be loaded. Check your connection and try again.");
+    });
+  }
+  return background;
+}
+
+/** The 16:9 version of a decoded image: the beans background, the image at full height, centred. */
+async function drawCover(src) {
+  const bg = await loadBackground();
+  const c = composeCover(src.width, src.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = c.canvas.width;
+  canvas.height = c.canvas.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new UserError("this browser couldn't make the 16:9 version. Try another browser.");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(src.image, c.dx, c.dy, c.dw, c.dh);
+  return canvas;
+}
+
+/** Draw `source` scaled to width x height on a new canvas. */
+function drawScaled(source, { width, height }) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -369,8 +480,7 @@ function drawScaled(source, { width, height }, crop = null) {
   ctx.fillRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  if (crop) ctx.drawImage(source, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
-  else ctx.drawImage(source, 0, 0, width, height);
+  ctx.drawImage(source, 0, 0, width, height);
   return canvas;
 }
 

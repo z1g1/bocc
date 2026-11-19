@@ -73,7 +73,7 @@ const hasComment = (c: string) => so.COMMENT_CHANNELS.includes(c);
           <dt>Published at (Eastern)</dt><dd id="publish-at-eastern">{order.publishAtDisplay.et}</dd>
           <dt>Published at (UTC)</dt><dd id="publish-at-utc" data-iso={order.publishAtDisplay.iso}>{order.publishAtDisplay.utc}</dd>
         </dl>
-        {!order.ready && <p class="error" id="not-ready">This post was not marked ready, so it may never have been scheduled.</p>}
+        {order.status === "todo" && <p class="error" id="not-ready">This post is To do (not Ready for Posting), so it may never have been scheduled.</p>}
       </section>
 
       <section id="todo" aria-labelledby="h-todo" data-all-done={pick.allDone ? "true" : "false"}>

@@ -354,12 +354,12 @@ describe("the LinkedIn event section and its create form over HTTP", { timeout: 
     }
     return fetch(`${BASE}${path}`, { method, headers, body, redirect: "manual" });
   };
-  const page = (date) => `/admin/events/${date}/?tab=social`;
+  const page = (date) => `/admin/events/${date}/?tab=info`;
   const create = (date, who, form = {}, opts = {}) =>
     req(`/admin/events/${date}/`, { cookie: who.cookie, method: "POST", form: { action: "linkedin_create", ...form }, ...opts });
   const writes = () => fake.ops().filter((op) => op !== "listOrganizerEvents");
 
-  test("the Social Posts tab shows the full preview and the confirmation dialog", async () => {
+  test("the Event Info tab shows the full preview and the confirmation dialog", async () => {
     const date = "2087-09-02";
     await seedEvent(date, { location: "lobby" });
     const res = await req(page(date), { cookie: admin.cookie });
@@ -385,6 +385,7 @@ describe("the LinkedIn event section and its create form over HTTP", { timeout: 
     assert.equal(res.status, 409);
     const html = await res.text();
     assert.ok(html.includes(rules.REFUSALS.confirm));
+    assert.match(html, /<a\b[^>]*href="\?tab=info"[^>]*aria-current="page"/, "rendered on the Event Info tab");
     assert.match(html, /<dialog[^>]*id="linkedin-confirm"[^>]*open/);
     assert.deepEqual(writes(), []);
     assert.deepEqual(await ledgerRows(date), []);
@@ -397,6 +398,7 @@ describe("the LinkedIn event section and its create form over HTTP", { timeout: 
     assert.equal(res.status, 200);
     const html = await res.text();
     assert.ok(html.includes("Dry run: nothing was sent"));
+    assert.match(html, /<a\b[^>]*href="\?tab=info"[^>]*aria-current="page"/, "rendered on the Event Info tab");
     for (const url of ["https://api.linkedin.com/rest/images?action=initializeUpload", "https://api.linkedin.com/rest/events", "https://api.linkedin.com/rest/posts"]) {
       assert.ok(html.includes(url), url);
     }

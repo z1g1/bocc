@@ -3,11 +3,11 @@
 // requireRole(locals, "admin") and, for changes, checkOrigin; after a change it purges
 // the public page (src/lib/site/purge.mjs). Parameterized SQL only, as admin_app
 // (SELECT/INSERT/UPDATE/DELETE on event_links, migration 20261121120000).
-// The URL and id rules, and the readiness checklist, are in ./event-links-rules.mjs.
+// The URL and id rules, and the Readiness section (readiness()), are in ./event-links-rules.mjs.
 //
 // Reads (take `db`, the pool or a client, first):
 //   getLinks(db, date)            -> { luma: { url, externalId, updatedAt } | null, eventbrite: …, … }
-//   linkSummaries(db, dates)      -> Map date -> { listings, lumaId } for the lists
+//   linkSummaries(db, dates)      -> Map date -> { listings } (platforms listed) for the lists
 //
 // Writes (the change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }; target_id is the
@@ -41,15 +41,14 @@ export async function getLinks(db, date) {
   return out;
 }
 
-/** Listings count and whether Luma has its embed id, for each date (missing dates: 0). */
+/** How many platforms are listed, for each date (missing dates: 0). The lists add the public page (listingsDone). */
 export async function linkSummaries(db, dates) {
-  const out = new Map(dates.map((d) => [d, { listings: 0, lumaId: false }]));
+  const out = new Map(dates.map((d) => [d, { listings: 0 }]));
   if (dates.length === 0) return out;
   const { rows } = await db.query(
-    `select event_date::text as date, count(*)::int as n,
-            bool_or(platform = 'luma' and external_id is not null) as "lumaId"
+    `select event_date::text as date, count(*)::int as n
        from public.event_links where event_date = any($1::date[]) group by event_date`, [dates]);
-  for (const r of rows) out.set(r.date, { listings: r.n, lumaId: r.lumaId });
+  for (const r of rows) out.set(r.date, { listings: r.n });
   return out;
 }
 

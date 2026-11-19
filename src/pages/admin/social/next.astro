@@ -7,8 +7,9 @@
 // channel with a single "Save <Channel>" button.
 //
 // Which post: the EARLIEST upcoming, not cancelled event whose publish time is still
-// ahead and that still has work (no post, not ready, or a channel pending; findNext,
-// src/lib/admin/social.mjs). If that week's post is actionable (ready, no problems),
+// ahead and that still has work (no post, To do, or a channel pending; findNext,
+// src/lib/admin/social.mjs). If that week's post is actionable (Ready for Posting or
+// Error, no problems),
 // its work order; otherwise a "Nothing ready" section (id="nothing", data-date,
 // data-reason no_post | not_ready | problems) that says why and lists what needs
 // fixing. A later week is never offered while an earlier one is stuck.
@@ -79,7 +80,7 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
           <h3>Upcoming social posts</h3>
           <ul id="upcoming">
             {pick.upcoming.map((u: any) => (
-              <li>{u.date} ({longDay(u.date)}): {u.ready ? "ready" : "not ready"}, {u.pendingChannels} channel{u.pendingChannels === 1 ? "" : "s"} pending</li>
+              <li>{u.date} ({longDay(u.date)}): {u.statusLabel}, {u.pendingChannels} channel{u.pendingChannels === 1 ? "" : "s"} pending</li>
             ))}
           </ul>
         </>
@@ -117,10 +118,10 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
           )
           : <p id="cover-download-unavailable" class="error">{cover?.unavailable ?? "No cover image."}</p>}
         <p class="muted">Set it as the video's cover only on the channels whose step says so (docs/social/CHROME_TASKS.md).</p>
-        <h3>Cover note</h3>
+        <h3>Thumbnail timecode</h3>
         {order.coverNote
           ? <pre id="cover-note">{order.coverNote}</pre>
-          : <p id="cover-note" class="muted">No cover note: keep the platform's default cover frame.</p>}
+          : <p id="cover-note" class="muted">No thumbnail timecode: keep the platform's default thumbnail frame.</p>}
       </section>
 
       <section id="channels" aria-labelledby="h-channels">

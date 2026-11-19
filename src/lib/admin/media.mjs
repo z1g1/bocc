@@ -224,8 +224,8 @@ export async function startUpload(actorUserId, storage, input, { today = new Dat
 
 const MEDIA_COLUMNS = `
   id, event_date::text as "eventDate", kind, original_key as "originalKey", display_key as "displayKey",
-  thumb_key as "thumbKey", cover_key as "coverKey", content_type as "contentType", size_bytes::int8 as "sizeBytes",
-  publicly_usable as "publiclyUsable", status, uploaded_by as "uploadedBy", created_at as "createdAt"`;
+  thumb_key as "thumbKey", cover_key as "coverKey", cover_outdated as "coverOutdated",
+  content_type as "contentType", size_bytes::int8 as "sizeBytes", publicly_usable as "publiclyUsable", status, uploaded_by as "uploadedBy", created_at as "createdAt"`;
 
 async function getRow(db, id) {
   if (!isUuid(id)) throw new NotFoundError("media not found");
@@ -340,9 +340,11 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
         where e.event_image_media_id = $1 order by e.event_date for share of e`, [id]);
     if (users.length) throw new InUseError(users.map((u) => u.d), users[0].photoDate);
     // A promo video may be a social post's video: clear it there first (the FK would
-    // refuse the delete), and un-ready the post, which needs a video (its CHECK).
+    // refuse the delete), and move a Ready for Posting post back to To do: it needs a
+    // video (its CHECK). Posted and Error stay (ticket #39).
     const { rows: detached } = await client.query(
-      `update public.social_posts set video_media_id = null, ready = false
+      `update public.social_posts
+          set video_media_id = null, status = case when status = 'ready' then 'todo' else status end
         where video_media_id = $1
         returning event_date::text as "eventDate"`, [id]);
     const { rows } = await client.query(
@@ -382,16 +384,24 @@ export class InUseError extends Error {
   }
 }
 
-// ─── A Photo from Event's 16:9 cover (ticket #21) ───────────────────────────
-// A photo picked as an Event Image needs a 16:9 cover copy. The browser makes it
-// (a centre crop of the display copy, as for an uploaded Event Image) and PUTs it:
+// ─── A 16:9 version made after the upload (tickets #21, #40) ─────────────────
+// A photo picked as an Event Image needs a 16:9 version (the cover copy), and a
+// version made under the old centre-crop rule (cover_outdated, migration 20261202120000)
+// is remade. The browser makes it (its display copy at full height on the beans
+// background, public/js/admin-media-lib.js composeCover) and PUTs it:
 //   startCover(actor, storage, id, { size })  -> { id, eventDate, key, expiresInSeconds, upload }
-//       a ready social_photo without a cover: one presigned PUT for
-//       events/<date>/<id>/cover.jpg (type and size signed), audited
-//       `media.cover_upload` with what was signed
+//       a ready social_photo without a cover, or a ready social_photo / event_image
+//       whose cover is outdated: one presigned PUT for events/<date>/<id>/cover.jpg
+//       (the same key when remaking; type and size signed), audited
+//       `media.cover_upload` with what was signed, COVER_LAYOUT, and when remaking the
+//       old file's ETag (so complete can tell the new file from the old)
 //   completeCover(actor, storage, id, { db }) -> { status: "ready", coverKey } | { status: "pending", problems }
-//       HEADs the object, checks it against what was signed, then sets cover_key
-//       (audited `media.cover`)
+//       HEADs the object, checks it against what was signed, then sets cover_key and
+//       clears cover_outdated (audited `media.cover`, remade: true when remaking)
+
+/** The rule the browser composes the 16:9 version by; recorded with each cover upload. */
+export const COVER_LAYOUT = "beans-full-height";
+const COVER_KINDS = Object.freeze(["social_photo", EVENT_IMAGE_KIND]);
 
 /**
  * @param {string} actorUserId
@@ -403,15 +413,22 @@ export async function startCover(actorUserId, storage, id, input) {
   const size = /** @type {any} */ (input)?.size;
   const row = await getRow(pool, id);
   const errors = [];
-  if (row.kind !== "social_photo" || row.status !== "ready") errors.push("only a ready Photo from Event can be given a 16:9 cover");
-  else if (row.coverKey) errors.push("this photo already has a 16:9 cover");
+  if (!COVER_KINDS.includes(row.kind) || row.status !== "ready") {
+    errors.push("only a ready Photo from Event or Event Image can be given a 16:9 version");
+  } else if (row.coverKey && !row.coverOutdated) errors.push("this image already has a current 16:9 version");
+  else if (!row.coverKey && row.kind !== "social_photo") errors.push("this image has no 16:9 version to remake");
   if (!isSize(size, LIMITS.cover)) errors.push(`size must be 1 to ${LIMITS.cover} bytes`);
   if (errors.length) throw new ValidationError(errors);
-  const key = mediaKey(row.eventDate, id, "cover", "jpg");
+  const key = row.coverKey ?? mediaKey(row.eventDate, id, "cover", "jpg");
+  // Remaking overwrites the old file: note its ETag so complete doesn't take it for the new one.
+  const replaces = row.coverKey ? (await storage.headObject({ key }))?.etag ?? null : null;
   const p = storage.presignPut({ key, contentType: COPY_TYPE, contentLength: size, expiresIn: PUT_EXPIRES });
   await withAudit(actorUserId, async () => {}, {
     action: "media.cover_upload", targetTable: "event_media", targetId: id,
-    details: { eventDate: row.eventDate, key, signed: { contentType: COPY_TYPE, size } },
+    details: {
+      eventDate: row.eventDate, key, signed: { contentType: COPY_TYPE, size }, layout: COVER_LAYOUT,
+      ...(row.coverKey ? { replacesEtag: replaces } : {}),
+    },
   });
   return { id, eventDate: row.eventDate, key, expiresInSeconds: PUT_EXPIRES, upload: { method: p.method, url: p.url, headers: p.headers } };
 }
@@ -425,16 +442,18 @@ export async function startCover(actorUserId, storage, id, input) {
  */
 export async function completeCover(actorUserId, storage, id, { db }) {
   const row = await getRow(db, id);
-  if (row.coverKey) return { id, status: "ready", coverKey: row.coverKey };
+  if (row.coverKey && !row.coverOutdated) return { id, status: "ready", coverKey: row.coverKey };
+  const remake = Boolean(row.coverKey);
   const { rows: audit } = await db.query(
     `select details from public.audit_log
       where action = 'media.cover_upload' and target_table = 'event_media' and target_id = $1
       order by id desc limit 1`, [id]);
   const started = audit[0]?.details;
-  if (!started) return { id, status: "pending", problems: ["cover: not started"] };
+  // Only an upload started under the current rule counts (not one of the old crop).
+  if (!started || started.layout !== COVER_LAYOUT) return { id, status: "pending", problems: ["cover: not started"] };
   const h = await storage.headObject({ key: started.key });
   const problems = [];
-  if (!h) problems.push("cover: not uploaded");
+  if (!h || (remake && started.replacesEtag && h.etag === started.replacesEtag)) problems.push("cover: not uploaded");
   else {
     const type = (h.contentType ?? "").split(";")[0].trim().toLowerCase();
     if (type !== COPY_TYPE) problems.push(`cover: content type ${type || "missing"}, expected ${COPY_TYPE}`);
@@ -443,18 +462,42 @@ export async function completeCover(actorUserId, storage, id, { db }) {
   if (problems.length) return { id, status: "pending", problems };
   const raced = Symbol("raced");
   const updated = await withAudit(actorUserId, async (client) => {
-    const r = await client.query(
-      "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, started.key]);
+    const r = remake
+      ? await client.query(
+        "update public.event_media set cover_outdated = false where id = $1 and cover_key = $2 and cover_outdated", [id, started.key])
+      : await client.query(
+        "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, started.key]);
     // Nothing changed (a race with another complete, or a delete): roll back, no audit row.
     if (r.rowCount !== 1) throw raced;
     return true;
-  }, { action: "media.cover", targetTable: "event_media", targetId: id, details: { eventDate: row.eventDate, key: started.key } })
+  }, {
+    action: "media.cover", targetTable: "event_media", targetId: id,
+    details: { eventDate: row.eventDate, key: started.key, ...(remake ? { remade: true } : {}) },
+  })
     .catch((err) => { if (err === raced) return false; throw err; });
   if (!updated) {
     const again = await getRow(db, id);
-    return again.coverKey ? { id, status: "ready", coverKey: again.coverKey } : { id, status: "pending", problems: ["state changed, try again"] };
+    return again.coverKey && !again.coverOutdated
+      ? { id, status: "ready", coverKey: again.coverKey } : { id, status: "pending", problems: ["state changed, try again"] };
   }
   return { id, status: "ready", coverKey: started.key };
+}
+
+/**
+ * Every ready Event Image and Photo from Event whose 16:9 version is still outdated
+ * (made under the old centre-crop rule), newest event first: what
+ * /admin/media/covers/ remakes.
+ * @param {{ query: Function }} db
+ * @returns {Promise<Array<{ id: string, eventDate: string, kind: string, displayKey: string, thumbKey: string, coverKey: string }>>}
+ */
+export async function listOutdatedCovers(db) {
+  const { rows } = await db.query(
+    `select id, event_date::text as "eventDate", kind, display_key as "displayKey", thumb_key as "thumbKey",
+            cover_key as "coverKey"
+       from public.event_media
+      where cover_outdated and status = 'ready' and kind = any($1::text[])
+      order by event_date desc, created_at, id`, [COVER_KINDS]);
+  return rows;
 }
 
 /** A deleted row's object keys (snake_case, from `returning`). */

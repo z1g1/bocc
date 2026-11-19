@@ -47,6 +47,8 @@ import { isHolidayWeek } from "../holiday-weeks.mjs";
 export { parseDate };
 
 export const STATUSES = Object.freeze(["scheduled", "held", "cancelled"]);
+/** Each status's label, in STATUSES order (the Status dropdown, badges and lists). */
+export const STATUS_LABELS = Object.freeze({ scheduled: "Scheduled", held: "Held", cancelled: "Cancelled" });
 export const LOCATIONS = Object.freeze({ lobby: "Lobby", food_hall: "Food hall", other: "Other" });
 export const CANCEL_REASONS = Object.freeze({
   weather: "Weather",

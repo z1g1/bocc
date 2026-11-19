@@ -44,9 +44,9 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
 | `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`; covers `events.event_image_media_id`, the Event Image picked from a Photo from Event, migration `20261128120000_event_image_reference.sql`, no new grant) |
-| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its `cover_key`, migration `20261125120000_event_image.sql`, no new grant) |
+| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its `cover_key`, migration `20261125120000_event_image.sql`, and `cover_outdated`, migration `20261202120000_event_media_cover_outdated.sql`, no new grant) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
-| `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed; covers the cover image override `cover_media_id`, migration `20261127120000_social_post_cover.sql`, no new grant) |
+| `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is never removed (set its status back to To do instead); covers the cover image override `cover_media_id`, migration `20261127120000_social_post_cover.sql`, no new grant, and the post `status` that replaced `ready`, migration `20261201120000_social_post_status.sql`, which restates the table grants and keeps the deprecated `ready` column for now: see "Contract later" below) |
 | `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
 | `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261129120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves. `post_claimed_at`, migration `20261130120000_linkedin_events_post_claim.sql`, is the one-Publish-at-a-time claim; no new grant) |
 
@@ -68,6 +68,12 @@ no `site_reader` grant. `linkedin_connections` (Phase 6) is granted to `admin_ap
 `20261126120000_social_checker_linkedin.sql`), never the token or member URN. The database holds only ciphertext; the key
 is in Netlify env, never in Postgres. `linkedin_events` (Phase 6) is
 `admin_app` only, and without DELETE.
+
+**Contract later: `social_posts.ready`.** Migration `20261201120000_social_post_status.sql`
+is expand-only: it adds and backfills `status` and drops the old `social_posts_ready_ck`, but
+keeps the `ready` column (and the table grants that cover it), marked deprecated, so the code
+live before the deploy keeps working between migrate and deploy. The current code never reads
+or writes `ready`. A follow-up migration drops the column after the production release.
 
 ### site_reader
 
@@ -105,7 +111,7 @@ Its grants, exactly:
 | Object | Privileges |
 |---|---|
 | schema `public` | `USAGE` |
-| `events`, `event_links`, `social_posts`, `social_post_channels` | `SELECT` |
+| `events`, `event_links`, `social_posts`, `social_post_channels` | `SELECT` (on `social_posts` this includes `status`, restated by migration `20261201120000_social_post_status.sql`: the Thursday check counts `ready`, `posted` and `error` as ready) |
 | `event_media` columns `id`, `event_date`, `kind`, `status` | `SELECT` (enough to tell whether the attached promo video is ready; no object keys, sizes or uploader) |
 | `linkedin_connections` columns `user_id`, `expires_at`, `display_name` | `SELECT` (the LinkedIn expiry alert, #24, names the connection by its LinkedIn display name; never the token, member URN or scope) |
 

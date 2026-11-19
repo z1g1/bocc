@@ -14,8 +14,10 @@
 // - Cover image (#social-cover, ticket #22): the promo video's cover, the Event Image
 //   unless overridden with a publicly usable Photo from Event (social.mjs
 //   listCoverChoices; action social_cover, mediaId "" = back to the Event Image).
-// - The post form: base caption, TikTok's extra hashtags, cover note, publish time
-//   (an Eastern datetime-local; shown in Eastern and UTC), and the ready toggle.
+// - The post form: base caption, TikTok's extra hashtags, thumbnail timecode (stored as cover_note), publish time
+//   (an Eastern datetime-local; shown in Eastern and UTC), and the status dropdown
+//   (ticket #39: To do / Ready for Posting / Posted / Error, rules.POST_STATUSES;
+//   Posted and Error are also set by the social role's channel updates).
 // - One form per channel: its status (set by the social role's pages), the caption and
 //   first-comment overrides with the code default shown, and the final text.
 import { hasRole } from "../../lib/admin/roles.mjs";
@@ -77,7 +79,7 @@ const pv = from("social_post") ?? {
   extraHashtags: order.extraHashtags.join(" "),
   coverNote: order.coverNote ?? "",
   publishAt: order.publishAtDisplay.local,
-  ready: order.ready ? "on" : "",
+  status: order.status,
 };
 const pe = errFor("social_post");
 const videoErr = errFor("social_video");
@@ -88,8 +90,6 @@ const chVal = (c: any) => chPosted(c.channel)?.values ?? {
 };
 const chErr = (c: string) => (chPosted(c) ? errors : {});
 const started = order.channels.filter((c: any) => c.status && c.status !== "pending");
-const def = rules.defaultPublishAt(date);
-const defDisplay = rules.formatPublishAt(def);
 const STATUS_LABEL: Record<string, string> = { pending: "pending", scheduled: "scheduled", live: "live", failed: "failed" };
 const formatBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 const MEDIA_NOTICES: Record<string, string> = {
@@ -97,24 +97,27 @@ const MEDIA_NOTICES: Record<string, string> = {
   "video-deleted-partial": "Video deleted. Its file couldn't be removed from storage; it is logged for cleanup.",
 };
 const mediaNotice = MEDIA_NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+// The intro's facts come from the rules: the channels and the Ready for Posting label.
+const channelList = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(Object.values(rules.CHANNELS));
 const fmtTime = (d: Date) =>
   new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
 ---
 {allowed && (
   <section aria-labelledby="h-social" id="social" class="social">
     <h2 id="h-social">Social post</h2>
-    <p class="muted">
-      The weekly promo video, posted on {Object.values(rules.CHANNELS).join(", ")} by the Chrome tasks
-      from the work order (ADR 0011). The app never posts. Luma is the only link the posts use.
+    <p class="muted" id="social-intro">
+      The weekly promo video, posted on {channelList} is done by work order.<br>
+      It is only posted when the status is set to '{rules.POST_STATUS_LABELS.ready}'<br>
+      Automated posting requires a logged in AI Agent with the Social role and a scheduled task to look for posts
     </p>
     <p class="social-state">
       {!order.exists
         ? <span class="muted">Not set up yet: the first save below creates it.</span>
         : order.actionable
-          ? <strong class="ok">Ready: in the work order.</strong>
+          ? <strong class="ok">{order.statusLabel}: in the work order.</strong>
           : order.ready
-            ? <strong class="todo">Marked ready, but not in the work order until this is fixed:</strong>
-            : <span>Not marked ready.</span>}
+            ? <strong class="todo">{order.statusLabel}, but not in the work order until this is fixed:</strong>
+            : <span>Status: {order.statusLabel}.</span>}
     </p>
     {order.problems.length > 0 && (order.ready || order.exists) && (
       <ul class="problems">{order.problems.map((p: any) => <li>{p.message}</li>)}</ul>
@@ -198,8 +201,7 @@ const fmtTime = (d: Date) =>
     <div id="social-cover" class="cover-block">
       <h3 id="h-social-cover">Cover image</h3>
       <p class="muted">
-        The promo video's cover on the platforms that allow a custom one (docs/social/CHROME_TASKS.md).
-        It is the Event Image unless you choose a Photo from Event here.
+        The video's cover image on the platforms that support this feature
       </p>
       {coverErr.cover && <p class="error" role="alert">{coverErr.cover}</p>}
       {cover && (
@@ -253,12 +255,12 @@ const fmtTime = (d: Date) =>
         placeholder="#SmallBusiness #Founders" aria-invalid={pe.extraHashtags ? "true" : undefined}>
       {pe.extraHashtags && <p class="error" role="alert">{pe.extraHashtags}</p>}
 
-      <label for="coverNote">Cover note <span class="muted">(which frame or text to use as the cover)</span></label>
+      <label for="coverNote">Thumbnail timecode <span class="muted">(the frame of the video to use where a cover image can't be uploaded, for example "0:03")</span></label>
       <textarea id="coverNote" name="coverNote" rows="2" maxlength={rules.LIMITS.coverNote}
         aria-invalid={pe.coverNote ? "true" : undefined}>{pv.coverNote}</textarea>
       {pe.coverNote && <p class="error" role="alert">{pe.coverNote}</p>}
 
-      <label for="publishAt">Publish at, Eastern time <span class="muted">(blank = {defDisplay.et})</span></label>
+      <label for="publishAt">Publish at, Eastern time <span class="muted">(blank = {rules.publishAtDefaultHint(date)})</span></label>
       <input id="publishAt" name="publishAt" type="datetime-local" step="60" value={pv.publishAt}
         aria-invalid={pe.publishAt ? "true" : undefined} aria-describedby="publishAt-now">
       <p id="publishAt-now" class="muted">
@@ -266,8 +268,12 @@ const fmtTime = (d: Date) =>
       </p>
       {pe.publishAt && <p class="error" role="alert">{pe.publishAt}</p>}
 
-      <label class="check"><input type="checkbox" name="ready" value="on" checked={pv.ready === "on"}> Ready: put it in the work order</label>
-      {pe.ready && <p class="error" role="alert">{pe.ready}</p>}
+      <label for="social-status">Status <span class="muted">(Posted and Error are also set from the channel updates)</span></label>
+      <select id="social-status" name="status" aria-invalid={pe.status ? "true" : undefined}
+        aria-describedby={pe.status ? "status-error" : undefined}>
+        {rules.POST_STATUSES.map((s) => <option value={s} selected={pv.status === s}>{rules.POST_STATUS_LABELS[s]}</option>)}
+      </select>
+      {pe.status && <p class="error" role="alert" id="status-error">{pe.status}</p>}
       <button type="submit">Save social post</button>
     </form>
 

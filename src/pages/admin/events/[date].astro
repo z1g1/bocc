@@ -1,14 +1,15 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
-// The Readiness checklist (Phase 4) sits above three tabs (ADR 0012 decision 1):
+// The Readiness section (#42: Online Event Listings x/5 with the cover image, and Social
+// Posts: <status>) sits above three tabs (ADR 0012 decision 1):
 //   ?tab=info    Event Info: status (scheduled, held or cancelled, with the cancel reason
 //                fields shown only while Cancelled is selected) and location in one form;
 //                below it, for a cancelled event that was posted on LinkedIn, the red
 //                "Cancel the LinkedIn event on LinkedIn" item and its "Done on LinkedIn"
 //                form (action linkedin_cancel_done, #27); the Online Event Listings; the
-//                Event Image (EventImage, ADR 0012 decision 3)
-//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011) and the
-//                LinkedIn event section (ADR 0012): the Admin's own LinkedIn
+//                Event Image (EventImage, ADR 0012 decision 3); then the LinkedIn event
+//                section (ADR 0012, #38: made Tuesday afternoon for the next week's
+//                event, alongside the other listings): the Admin's own LinkedIn
 //                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
 //                the event's preview, dialog, dry run and live create with its
 //                recovery (LinkedInEvent; actions linkedin_create, linkedin_publish,
@@ -16,6 +17,7 @@
 //                without a redirect, 409 when refused, 502 when a LinkedIn step failed),
 //                and the "LinkedIn is out of date…" notice when the location or Event
 //                Image changed after it was posted (#27: flagged, not synced)
+//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -58,6 +60,7 @@ const el = await import("../../../lib/admin/event-links.mjs");
 const so = await import("../../../lib/admin/social.mjs");
 const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
+const STATUS_LABELS: Record<string, string> = ev.STATUS_LABELS;
 
 const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
 const date = ev.parseDate(Astro.params.date ?? "");
@@ -217,12 +220,12 @@ const linkVal = (p: string) => {
     : { url: links[p]?.url ?? "", externalId: links[p]?.externalId ?? "" };
 };
 const linkErr = (p: string) => (linkPosted(p) ? errors : {});
-const mark = (ok: boolean | null) => (ok === null ? "–" : ok ? "✓" : "✗");
-const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status === "held" ? "Held" : "Scheduled";
+const mark = (ok: boolean) => (ok ? "✓" : "✗");
+const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
   <p><a href="/admin/events/">← Events</a></p>
-  <h1>{longDay(date)}</h1>
+  <h1 class="pinned">{longDay(date)}</h1>
   <p class="status">
     <span class={`badge ${event.status}`}>{statusLabel}</span>
     {missing && <span class="badge missing">Report missing</span>}
@@ -235,21 +238,37 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 
   {upcoming && (
     <section aria-labelledby="h-ready" class="ready">
-      <h2 id="h-ready">Readiness <span class="muted">{ready.listings}/{ready.total} listings{ready.social.exists && <> · {ready.social.scheduled}/{ready.social.total} channels scheduled</>}</span></h2>
-      <ul class="checklist">
-        {ready.items.map((i) => (
-          <li class={i.ok === null ? "later" : i.ok ? "ok" : "todo"}>
-            <span class="mark" aria-hidden="true">{mark(i.ok)}</span>
-            {i.href ? <a href={i.href} target="_blank" rel="noopener">{i.label}</a> : i.label}
-            <span class="visually-hidden">{i.ok === null ? " (not yet)" : i.ok ? " (done)" : " (missing)"}</span>
-            {i.note && <span class="muted"> · {i.note}</span>}
+      <h2 id="h-ready">Readiness</h2>
+      <ul class="bullets">
+        {[
+          { ...ready.listings, extra: null },
+          { ...ready.social, extra: ready.social.exists ? `${ready.social.scheduled}/${ready.social.total} channels scheduled` : null },
+        ].map((b) => (
+          <li class={`bullet ${b.ok ? "ok" : "todo"}`}>
+            <span class="mark" aria-hidden="true">{mark(b.ok)}</span>
+            <strong>{b.label}</strong>
+            <span class="visually-hidden">{b.ok ? " (done)" : " (to do)"}</span>
+            {b.publicHref && <span class="muted"> · <a href={b.publicHref} target="_blank" rel="noopener">public page</a></span>}
+            {b.extra && <span class="muted"> · {b.extra}</span>}
+            {b.items.length > 0 && (
+              <ul class="checklist">
+                {b.items.map((i) => (
+                  <li class={i.ok ? "ok" : "todo"}>
+                    <span class="mark" aria-hidden="true">{mark(i.ok)}</span>
+                    {i.href ? (/^https?:/.test(i.href) ? <a href={i.href} target="_blank" rel="noopener">{i.label}</a> : <a href={i.href}>{i.label}</a>) : i.label}
+                    <span class="visually-hidden">{i.ok ? " (done)" : " (missing)"}</span>
+                    {i.note && <span class="muted"> · {i.note}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </li>
         ))}
       </ul>
     </section>
   )}
 
-  <nav aria-label="Event page tabs" class="tabs">
+  <nav aria-label="Event page tabs" class="tabs pinned">
     <ul>
       {Object.entries(TABS).map(([key, label]) => (
         <li><a href={`?tab=${key}`} aria-current={key === tab ? "page" : undefined}>{label}</a></li>
@@ -262,39 +281,40 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     <h2 id="h-details">Status and location</h2>
     <form method="post" class="narrow event-details">
       <input type="hidden" name="action" value="save">
-      <fieldset>
-        <legend>Status</legend>
-        <label class="check"><input type="radio" name="status" value="scheduled" checked={det.status === "scheduled"}> Scheduled</label>
-        <label class="check"><input type="radio" name="status" value="held" checked={det.status === "held"}> Held</label>
-        <label class="check"><input type="radio" name="status" value="cancelled" checked={det.status === "cancelled"}> Cancelled</label>
-        {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
-      </fieldset>
-      {/* Shown only while Cancelled is selected (CSS :has, no script). Not `required`:
-          a hidden required field would block every save; the server checks the reason. */}
+      <label for="status">Status</label>
+      <select id="status" name="status" aria-invalid={detErr.status ? "true" : undefined}>
+        {Object.entries(STATUS_LABELS).map(([v, label]) => <option value={v} selected={det.status === v}>{label}</option>)}
+      </select>
+      {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
+      {/* Shown only while Cancelled is selected, and each "if Other" text box only while
+          Other is chosen (CSS :has, no script). Not `required`: a hidden required field
+          would block every save; the server checks the reason and the Other text. */}
       <fieldset class="cancel-fields">
         <legend>Why was it cancelled?</legend>
         {Object.entries(CANCEL_REASONS).map(([v, label]) => (
           <label class="check"><input type="radio" name="cancelReason" value={v} checked={det.cancelReason === v}> {label}</label>
         ))}
         {detErr.cancelReason && <p class="error" role="alert">{detErr.cancelReason}</p>}
-        <label for="cancelReasonOther">Reason, if Other</label>
-        <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={det.cancelReasonOther}
-          aria-invalid={detErr.cancelReasonOther ? "true" : undefined}>
-        {detErr.cancelReasonOther && <p class="error" role="alert">{detErr.cancelReasonOther}</p>}
+        <div class="cancel-reason-other">
+          <label for="cancelReasonOther">Reason, if Other</label>
+          <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={det.cancelReasonOther}
+            aria-invalid={detErr.cancelReasonOther ? "true" : undefined}>
+          {detErr.cancelReasonOther && <p class="error" role="alert">{detErr.cancelReasonOther}</p>}
+        </div>
         <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={det.cancelAnnounced === "on"}> Announced on all socials</label>
       </fieldset>
-      <fieldset>
-        <legend>Location</legend>
-        <label class="check"><input type="radio" name="location" value="" checked={det.location === ""}> Not set</label>
-        {Object.entries(LOCATIONS).map(([v, label]) => (
-          <label class="check"><input type="radio" name="location" value={v} checked={det.location === v}> {label}</label>
-        ))}
-        {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
+      <label for="location">Location</label>
+      <select id="location" name="location" aria-invalid={detErr.location ? "true" : undefined}>
+        <option value="" selected={det.location === ""}>Not set</option>
+        {Object.entries(LOCATIONS).map(([v, label]) => <option value={v} selected={det.location === v}>{label}</option>)}
+      </select>
+      {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
+      <div class="location-other">
         <label for="locationOther">Where, if Other</label>
         <input id="locationOther" name="locationOther" maxlength={LIMITS.locationOther} value={det.locationOther}
           aria-invalid={detErr.locationOther ? "true" : undefined}>
         {detErr.locationOther && <p class="error" role="alert">{detErr.locationOther}</p>}
-      </fieldset>
+      </div>
       <button type="submit">Save status and location</button>
     </form>
     <div id="linkedin-cancel">
@@ -302,12 +322,12 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
         <form method="post" class="linkedin-cancel" role="alert">
           <input type="hidden" name="action" value="linkedin_cancel_done">
           <p><strong>{linkedIn.cancel.message}</strong>: this event was posted on LinkedIn and is still live there.
-            <a href={linkedIn.cancel.href} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
+            <a href={linkedIn.eventUrl} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
           <button type="submit">Done on LinkedIn</button>
         </form>
       )}
       {linkedIn.cancel && !linkedIn.cancel.due && (
-        <p class="muted">The <a href={linkedIn.cancel.href} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
+        <p class="muted">The <a href={linkedIn.eventUrl} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
       )}
       {liCancelErr.linkedin && <p class="error" role="alert">{liCancelErr.linkedin}</p>}
     </div>
@@ -324,9 +344,6 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
         <form method="post" class="link-row" id={`link-${p}`}>
           <input type="hidden" name="platform" value={p}>
           <label for={`url-${p}`}>{el.PLATFORMS[p]}</label>
-          {stored
-            ? <p class="current"><a href={stored.url} target="_blank" rel="noopener">{stored.url}</a></p>
-            : <p class="current muted">Not listed yet.</p>}
           <input id={`url-${p}`} name="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" maxlength={el.URL_MAX} value={v.url}
             placeholder={p === "luma" ? "https://luma.com/…" : p === "eventbrite" ? "https://www.eventbrite.com/e/…" : p === "facebook_event" ? "https://www.facebook.com/events/…" : "https://www.linkedin.com/events/…"}
             aria-invalid={e.url ? "true" : undefined}>
@@ -350,18 +367,19 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 
   <EventImage date={date} image={eventImage} />
 
+  <section aria-labelledby="h-linkedin">
+    <h2 id="h-linkedin">LinkedIn event</h2>
+    {linkedIn.drift && (
+      <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.eventUrl} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
+    )}
+    <LinkedInConnection returnTo={date} />
+    <LinkedInEvent date={date} result={linkedInResult} />
+  </section>
+
   </>)}
 
   {tab === "social" && (<>
     <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
-    <section aria-labelledby="h-linkedin">
-      <h2 id="h-linkedin">LinkedIn event</h2>
-      {linkedIn.drift && (
-        <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.drift.href} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
-      )}
-      <LinkedInConnection returnTo={date} />
-      <LinkedInEvent date={date} result={linkedInResult} />
-    </section>
   </>)}
 
   {tab === "post" && (<>
@@ -375,7 +393,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     {event.status === "cancelled"
       ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Held (Event Info tab) first.</p>
       : isFuture
-        ? <p class="muted">The report opens on the day of the event.</p>
+        ? null
         : (
           <form method="post" class="narrow">
             <input type="hidden" name="action" value="report">
@@ -418,7 +436,19 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
 <style>
   section { margin-top: 2rem; }
   .event-details .cancel-fields { display: none; }
-  .event-details:has(input[name="status"][value="cancelled"]:checked) .cancel-fields { display: block; }
+  .event-details:has(select[name="status"] option[value="cancelled"]:checked) .cancel-fields { display: block; }
+  .event-details .cancel-reason-other { display: none; }
+  .event-details:has(input[name="cancelReason"][value="other"]:checked) .cancel-reason-other { display: block; }
+  .event-details .location-other { display: none; }
+  .event-details:has(select[name="location"] option[value="other"]:checked) .location-other { display: block; }
+  .event-details select { display: block; }
+  /* #36: the title and the tabs stay at the top on scroll; Readiness (between them, ADR 0012)
+     scrolls under the title. The title is one line of fixed height so the tabs can pin right
+     below it; html's scroll-padding keeps anchor jumps and focused fields clear of both. */
+  :global(html) { --pin-title: 3rem; --pin-tabs: 2.5rem; scroll-padding-top: calc(var(--pin-title) + var(--pin-tabs) + 0.75rem); }
+  .pinned { position: sticky; z-index: 2; background: var(--bg); }
+  h1.pinned { top: 0; height: var(--pin-title); line-height: var(--pin-title); margin: 0 0 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs.pinned { top: var(--pin-title); }
   .tabs { margin-top: 1.25rem; border-bottom: 1px solid var(--line); }
   .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; }
   .tabs a { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; text-decoration: none; }
@@ -433,18 +463,22 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   .badge.cancelled, .badge.missing { color: var(--err); border-color: var(--err); }
   .badge.held { color: var(--accent); border-color: var(--accent); }
   .ready { margin-top: 1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
-  .ready h2 { margin: 0; font-size: 1rem; }
-  .checklist { list-style: none; padding: 0; margin: 0.25rem 0 0; display: flex; flex-wrap: wrap; gap: 0.15rem 1.25rem; }
-  .checklist .mark { display: inline-block; width: 1.1em; font-weight: 700; }
-  .checklist .ok .mark { color: var(--accent); }
-  .checklist .todo .mark { color: var(--err); }
-  .checklist .later { opacity: 0.55; }
+  .ready h2 { margin: 0; font-size: 1.1rem; }
+  .bullets { list-style: none; padding: 0; margin: 0.25rem 0 0; }
+  .bullets > li { margin: 0.2rem 0; }
+  .checklist { list-style: none; padding: 0 0 0 1.4em; margin: 0.15rem 0 0; display: flex; flex-wrap: wrap; gap: 0.15rem 1.25rem; font-size: 0.9375rem; }
+  .ready .mark { display: inline-block; width: 1.1em; font-weight: 700; }
+  .ready .ok > .mark { color: var(--accent); }
+  .ready .todo > .mark { color: var(--err); }
   .link-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
   .link-row label:first-of-type { font-weight: 600; }
-  .link-row .current { margin: 0.1rem 0 0.35rem; overflow-wrap: anywhere; }
   .link-row input { width: 100%; }
   .link-row .buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
   .linkedin-cancel, .linkedin-drift { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--err); border-left-width: 4px; border-radius: 6px; max-width: 40rem; }
   .linkedin-cancel strong { color: var(--err); }
+  @media (max-width: 30rem) {
+    h1.pinned { font-size: 1.25rem; }
+    .tabs a { padding: 0.4rem 0.55rem; font-size: 0.9375rem; }
+  }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

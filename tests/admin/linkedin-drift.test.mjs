@@ -98,12 +98,13 @@ describe("drift and cancellation (use-case, admin_app, fake client)", () => {
     assert.deepEqual(f, { eventUrl: EVENT_URL, drift: null, cancel: null });
   });
 
-  test("the location changed after posting: drift, linking the event", async () => {
+  test("the location changed after posting: drift, linking the LinkedIn section", async () => {
     const date = await postedDate(user);
     await ev.saveEvent(user.id, date, { status: "scheduled", location: "food_hall" });
     const f = await li.linkedInFollowUpFor(pool, date);
     assert.deepEqual(f.drift.changes, ["location"]);
-    assert.equal(f.drift.href, EVENT_URL);
+    assert.equal(f.drift.href, "?tab=info#h-linkedin");
+    assert.equal(f.eventUrl, EVENT_URL);
   });
 
   test("the Event Image changed after posting: drift", async () => {
@@ -125,7 +126,8 @@ describe("drift and cancellation (use-case, admin_app, fake client)", () => {
     await cancel(user, date);
     const due = await li.linkedInFollowUpFor(pool, date);
     assert.equal(due.cancel.due, true);
-    assert.equal(due.cancel.href, EVENT_URL);
+    assert.equal(due.cancel.href, "?tab=info#h-linkedin");
+    assert.equal(due.eventUrl, EVENT_URL);
 
     const other = await newUser();
     assert.deepEqual(await li.markCancelledOnLinkedIn(other.id, date, { now: NOW }), { changed: true });
@@ -197,10 +199,13 @@ describe("drift notice, cancel item and Done on LinkedIn over HTTP", { timeout: 
     await ev.saveEvent(admin.user.id, date, { status: "scheduled", location: "food_hall" });
     const info = await page(date, "info");
     assert.match(readinessOf(info), /LinkedIn is out of date/);
-    assert.ok(readinessOf(info).includes(`href="${EVENT_URL}"`), "readiness links the event");
-    const social = await page(date, "social");
-    const section = social.slice(social.indexOf('id="h-linkedin"'));
+    assert.ok(readinessOf(info).includes('href="?tab=info#h-linkedin"'), "readiness points at the LinkedIn section on Event Info");
+    assert.ok(info.includes('id="h-linkedin"'), "the LinkedIn section is on Event Info");
+    const section = info.slice(info.indexOf('id="h-linkedin"'));
     assert.match(section, /LinkedIn is out of date: the location changed/);
+    const social = await page(date, "social");
+    assert.ok(!social.includes('id="h-linkedin"'), "the LinkedIn section is not on Social Posts");
+    assert.doesNotMatch(social, /class="linkedin-drift"/, "nor its notice");
     assert.ok(section.includes(`href="${EVENT_URL}"`), "the notice links the event");
   });
 

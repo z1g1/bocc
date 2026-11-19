@@ -108,6 +108,13 @@ describe("publish time", () => {
     assert.equal(iso("2026-10-27"), "2026-10-26T11:00:00.000Z"); // the week before: still EDT
   });
 
+  test("the default's hint names the rule and that Monday's date, across DST (#41)", () => {
+    assert.equal(r.publishAtDefaultHint("2026-11-24"), "the Monday before the event, 7:00 AM Eastern (Mon, Nov 23)");
+    assert.equal(r.publishAtDefaultHint("2026-11-03"), "the Monday before the event, 7:00 AM Eastern (Mon, Nov 2)", "the day after clocks fall back");
+    assert.equal(r.publishAtDefaultHint("2026-03-10"), "the Monday before the event, 7:00 AM Eastern (Mon, Mar 9)", "the day after clocks spring forward");
+    assert.equal(r.publishAtDefaultHint("2027-01-05"), "the Monday before the event, 7:00 AM Eastern (Mon, Jan 4)");
+  });
+
   test("Eastern wall clock -> UTC: skipped hour refused, repeated hour is the first (EDT)", () => {
     assert.equal(r.easternToUtc("2026-11-23T07:00").toISOString(), "2026-11-23T12:00:00.000Z");
     assert.equal(r.easternToUtc("2026-06-01T23:59").toISOString(), "2026-06-02T03:59:00.000Z");
@@ -144,7 +151,7 @@ describe("ready and the work order", () => {
   const video = { id: "v1", kind: "promo_video", status: "ready", contentType: "video/mp4", sizeBytes: 5_000_000 };
   const stored = (over = {}) => ({
     videoMediaId: "v1", coverNote: "Frame at 0:03", baseCaption: "Coffee!", extraHashtags: ["#Founders"],
-    publishAt: new Date("2026-11-23T12:00:00Z"), ready: true,
+    publishAt: new Date("2026-11-23T12:00:00Z"), status: "ready",
     channels: Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, {
       caption: null, firstComment: null, status: "pending", postUrl: null, verifiedAt: null, commentPostedAt: null, notes: null,
     }])),
@@ -172,7 +179,7 @@ describe("ready and the work order", () => {
     assert.deepEqual(keys({ lumaUrl: null }), ["luma"]);
     assert.deepEqual(keys({ event: { status: "cancelled" } }), ["event"]);
     assert.deepEqual(keys({ post: stored({ baseCaption: "y".repeat(495) }) }), ["caption_threads"]);
-    const notReady = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored({ ready: false }), lumaUrl: LUMA, video });
+    const notReady = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored({ status: "todo" }), lumaUrl: LUMA, video });
     assert.deepEqual([notReady.problems, notReady.actionable], [[], false]);
     const msgs = r.readyProblems({ event: { status: "scheduled" }, post: null, video: null, lumaUrl: null }).map((p) => p.message);
     assert.deepEqual(msgs, ["Upload the promo video.", "Write the base caption.", "Add the Luma listing (under Online Event Listings): it is the only link the posts use."]);
@@ -184,29 +191,41 @@ describe("ready and the work order", () => {
     assert.ok(w.channels.every((c) => c.status === null && c.caption === null));
   });
 
-  test("the readiness checklist: one line until set up, then ready + one line per channel", () => {
+  test("Readiness: Social Posts: <status>, or not set up yet; the problems and channels under it", () => {
     const ev = { date: "2026-11-24", status: "scheduled" };
     const none = readiness(ev, {});
-    assert.deepEqual(none.items.filter((i) => i.key.startsWith("social")).map((i) => [i.key, i.label, i.ok]), [["social", "social post", false]]);
-    assert.deepEqual(none.social, { exists: false, ready: false, scheduled: 0, total: 0 });
+    assert.deepEqual([none.social.label, none.social.ok, none.social.items], ["Social Posts: not set up yet", false, []]);
 
     const p = stored();
     p.channels.facebook.status = "scheduled";
     p.channels.instagram.status = "live";
     p.channels.tiktok.status = "failed";
-    const w = r.buildWorkOrder({ date: ev.date, event: ev, post: p, lumaUrl: LUMA, video });
-    const s = readiness(ev, {}, w);
-    assert.deepEqual(s.items.filter((i) => i.key.startsWith("social")).map((i) => [i.key, i.label, i.ok]), [
-      ["social", "social post ready", true],
+    const at = (status, post = p, lumaUrl = LUMA) =>
+      readiness(ev, {}, r.buildWorkOrder({ date: ev.date, event: ev, post: { ...post, status }, lumaUrl, video })).social;
+    assert.deepEqual(["todo", "ready", "posted", "error"].map((s) => at(s).label),
+      ["Social Posts: To do", "Social Posts: Ready for Posting", "Social Posts: Posted", "Social Posts: Error"]);
+    const ready = at("ready");
+    assert.deepEqual(ready.items.map((i) => [i.key, i.label, i.ok]), [
       ["social_facebook", "Facebook: scheduled", true],
       ["social_instagram", "Instagram: live", true],
       ["social_threads", "Threads: pending", false],
       ["social_tiktok", "TikTok: failed", false],
       ["social_linkedin_page", "LinkedIn page: pending", false],
     ]);
-    assert.deepEqual(s.social, { exists: true, ready: true, scheduled: 2, total: 5 });
-    const notReady = readiness(ev, {}, r.buildWorkOrder({ date: ev.date, event: ev, post: stored(), lumaUrl: null, video }));
-    assert.match(notReady.items.find((i) => i.key === "social").note, /Luma listing/);
+    assert.deepEqual([ready.ok, ready.scheduled, ready.total], [true, 2, 5]);
+    assert.equal(at("todo").ok, false);
+    // A tick only for Posted, or Ready for Posting with no problems: never Error or To do.
+    assert.equal(at("error").ok, false, "Error is never ticked");
+    assert.equal(at("error", stored()).ok, false, "Error with no problems is still not ticked");
+    assert.equal(at("ready", stored(), null).ok, false, "Ready for Posting with a problem");
+    // The problems are listed (no "not marked ready" line any more)...
+    const noLuma = at("todo", stored(), null);
+    assert.match(noLuma.items[0].label, /Luma listing/);
+    assert.ok(!JSON.stringify(noLuma).includes("not marked ready"));
+    // ...but not once Posted: a Posted post is done.
+    const posted = at("posted", stored(), null);
+    assert.equal(posted.ok, true);
+    assert.ok(posted.items.every((i) => i.key.startsWith("social_") && !i.key.startsWith("social_problem")), "channels only");
   });
 });
 
@@ -254,7 +273,7 @@ describe("the Social Post cover image", () => {
   test("the work order carries the cover; the cover never changes what blocks ready", () => {
     const post = {
       videoMediaId: "v1", coverMediaId: photo.id, coverNote: null, baseCaption: "Coffee!", extraHashtags: [],
-      publishAt: new Date("2026-11-23T12:00:00Z"), ready: true, channels: {},
+      publishAt: new Date("2026-11-23T12:00:00Z"), status: "ready", channels: {},
     };
     const base = { date: "2026-11-24", event: { status: "scheduled" }, post, lumaUrl: LUMA, video };
     const w = r.buildWorkOrder({ ...base, coverMedia: photo, eventImage: uploaded });
@@ -263,6 +282,59 @@ describe("the Social Post cover image", () => {
     const d = r.buildWorkOrder({ ...base, coverMedia: null, eventImage: DEFAULT_EVENT_IMAGE });
     assert.equal(d.cover.eventImageSource, "default");
     assert.deepEqual(r.buildWorkOrder({ ...base, video: null, eventImage: uploaded }).problems.map((p) => p.key), ["video"]);
+  });
+});
+
+describe("the post status (ticket #39)", () => {
+  const video = { id: "v1", kind: "promo_video", status: "ready", contentType: "video/mp4", sizeBytes: 5_000_000 };
+  const stored = (status, statuses = {}) => ({
+    videoMediaId: "v1", coverNote: null, baseCaption: "Coffee!", extraHashtags: [],
+    publishAt: new Date("2026-11-23T12:00:00Z"), status,
+    channels: Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, {
+      caption: null, firstComment: null, status: statuses[c] ?? "pending", postUrl: null, verifiedAt: null, commentPostedAt: null, notes: null,
+    }])),
+  });
+  const order = (status, over = {}) =>
+    r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored(status), lumaUrl: LUMA, video, ...over });
+
+  test("four statuses, in dropdown order, with their labels", () => {
+    assert.deepEqual(r.POST_STATUSES, ["todo", "ready", "posted", "error"]);
+    assert.deepEqual(r.POST_STATUSES.map((s) => r.POST_STATUS_LABELS[s]), ["To do", "Ready for Posting", "Posted", "Error"]);
+    assert.equal(r.isPostStatus("posted"), true);
+    assert.equal(r.isPostStatus("on"), false);
+    assert.equal(r.isPostStatus(undefined), false);
+  });
+
+  test("the work order: Ready for Posting (and Error, to finish or retry its channels) is offered; To do and Posted aren't", () => {
+    assert.deepEqual(r.POST_STATUSES.map((s) => [s, order(s).status, order(s).statusLabel, order(s).actionable]), [
+      ["todo", "todo", "To do", false],
+      ["ready", "ready", "Ready for Posting", true],
+      ["posted", "posted", "Posted", false],
+      ["error", "error", "Error", true],
+    ]);
+    assert.equal(order("ready", { lumaUrl: null }).actionable, false);
+    const none = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: null, lumaUrl: null, video: null });
+    assert.deepEqual([none.status, none.statusLabel, none.actionable], ["todo", "To do", false]);
+  });
+
+  test("a channel update: Error when it records failed, Posted when every channel is scheduled or live", () => {
+    const all = (st, over = {}) => Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, over[c] ?? st]));
+    const auto = (status, changedTo, channels) => r.postStatusAfterChannelUpdate({ status, changedTo, channels });
+    // Still pending somewhere: no change.
+    assert.equal(auto("ready", "scheduled", all("pending", { facebook: "scheduled" })), null);
+    // The last one scheduled (live counts too).
+    assert.equal(auto("ready", "scheduled", all("scheduled", { instagram: "live" })), "posted");
+    assert.equal(auto("todo", "live", all("live")), "posted");
+    // Failed: Error, whatever the others are.
+    assert.equal(auto("ready", "failed", all("pending", { facebook: "failed" })), "error");
+    assert.equal(auto("posted", "failed", all("live", { tiktok: "failed" })), "error");
+    // A failed channel retried: Posted once nothing is failed or pending.
+    assert.equal(auto("error", "scheduled", all("scheduled")), "posted");
+    assert.equal(auto("error", "scheduled", all("scheduled", { tiktok: "failed" })), null);
+    // Already there, or the channel's status didn't change: nothing to do.
+    assert.equal(auto("posted", "live", all("live")), null);
+    assert.equal(auto("error", "failed", all("failed")), null);
+    assert.equal(auto("ready", null, all("scheduled")), null);
   });
 });
 

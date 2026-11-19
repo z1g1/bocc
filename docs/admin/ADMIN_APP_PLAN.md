@@ -430,7 +430,7 @@ on-device checks and production are open.
 - [x] Readiness checklist on the admin event page: four links, the public page, and the social
       channels (once Phase 5 lands). Built 2026-11-18: the Listings forms and the checklist on
       `/admin/events/YYYY-MM-DD/` (`src/lib/admin/event-links.mjs`), "n/4 listings" on the
-      events list and home. The social lines (post ready, then each channel's status) came with
+      events list and home (x/5 since #42: the four listings plus the public page). The social lines (post ready, then each channel's status) came with
       Phase 5 part A
 
 ## Phase 5: social work order (ADR 0011)
@@ -508,7 +508,16 @@ work (to save deploy credits); everything is verified on staging first.
       for Admins (#23: `/api/admin/linkedin/{connect,callback,disconnect}`, the LinkedIn client
       adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
       production and staging callback URLs
-- [ ] The LinkedIn event section on Social Posts: preview, "Create live event" with a confirm
+- [x] The Readiness section (#42): an H2 with two bullets, "Online Event Listings x/5
+      (Default Cover Image | Custom Cover Image)" counting the four listings and the public
+      page (the Luma embed id is no longer an item; the brackets follow the Event Image's
+      source), the missing parts and the LinkedIn lines under it (drift and cancel pointing at
+      the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
+      status, or "not set up yet"), its problems (not once Posted) and channels under it. The
+      events list and home tag became "x/5 listings" with the same count
+- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
+      Image; it is made Tuesday afternoon for the next week's event, alongside the other
+      online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
       dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
       the `linkedin_event` listing filled on post, drift and cancellation notices
@@ -557,7 +566,7 @@ work (to save deploy credits); everything is verified on staging first.
       with no `linkedin_event` listing gets one. A stored web row that disagrees is a
       CONFLICT and refuses `--apply` unless `--prefer-db` (keeps the stored row). One
       `linkedin_event.import` audit row per run that changed something. Afterwards each
-      imported week's Social Posts tab shows **Posted on LinkedIn** with the event and post
+      imported week's Event Info tab shows **Posted on LinkedIn** with the event and post
       links, and Create live event is refused for it
 - [ ] Release runbook (`PHASE6_RELEASE.md`): prefactor checked on staging, then production,
       **before** the first live create. Reminder: `LinkedIn-Version: 202609` sunsets

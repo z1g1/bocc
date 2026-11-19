@@ -31,9 +31,17 @@ LinkedIn facts that shape this (carried over from the CLI):
 
 1. **The event page prefactor (tabs).** The Readiness summary stays at the top, above three
    server-rendered tabs that work without JavaScript:
-   - **Event Info:** Status and location, Online Event Listings, Event Image, Cancel this event
-   - **Social Posts:** Social post, LinkedIn event
+   - **Event Info:** Status and location, Online Event Listings, Event Image, Cancel this event,
+     LinkedIn event
+   - **Social Posts:** Social post
    - **Post Event:** Report, Sign-in board, Photos from Event
+
+   *Amended 2026-11-19 (#38):* the LinkedIn event section (connection status, preview, dialog,
+   dry run and live create, Publish-retry and allow-retry, the "LinkedIn is out of date"
+   notice) is on Event Info, after the Event Image, not on Social Posts. The LinkedIn event
+   is made on Tuesday afternoon for the next week's BOCC, alongside the other online
+   listings; the social post is later in the week. Its actions and the OAuth return land on
+   `?tab=info`.
 
    The tab is picked by `?tab=info|social|post`. With no tab, or an unknown one, a future date
    opens Event Info and today or a past date opens Post Event, in Eastern time. Every form
@@ -43,10 +51,11 @@ LinkedIn facts that shape this (carried over from the CLI):
    becomes **Photos from Event**. The media kind stays `social_photo` and the `event_links`
    slots don't change: no schema or data change.
 3. **One Event Image per event.** A new media kind `event_image`, at most one per event: either
-   an uploaded image (original, display, thumb and a 16:9 centre-crop cover copy made in the
-   browser) or a reference to a publicly usable `social_photo` from one of about the last 8
+   an uploaded image (original, display, thumb and a 16:9 cover copy made in the
+   browser: since ticket #40 the image at full height centred on the "Just the Beans"
+   background, never cropped; it was a centre crop before) or a reference to a publicly usable `social_photo` from one of about the last 8
    events. Resolution: uploaded, then referenced, then the square BOCC logo (with a checked-in
-   16:9 version on brand cream). Deleting a photo some event uses as its Event Image is refused.
+   16:9 version, on brand cream until ticket #40 and now on the beans background). Deleting a photo some event uses as its Event Image is refused.
    The Social Post gains a cover image that defaults to the Event Image.
 4. **A per-user LinkedIn connection.** An Admin connects their own LinkedIn account once with the
    CLI's scopes (`r_events rw_events openid profile w_member_social`). The token is encrypted
@@ -126,3 +135,14 @@ Deliberate extras beyond the spec, recorded so they aren't mistaken for drift:
 - **`site_reader` and `social_checker` see `events.event_image_media_id`** through their
   table-level `SELECT` on `events`: an opaque uuid, reviewed and kept
   ([NEON_PERMISSIONS.md](../backend/NEON_PERMISSIONS.md)).
+- **The 16:9 version is composed, not cropped (ticket #40).** The Event Image is asked for as a
+  1:1 square (a warning when it isn't). Its 16:9 version is the image at full height (or full
+  width, if wider than 16:9) centred on the 1920x1080 "Just the Beans" background
+  (`public/assets/images/brand/just-the-beans-16x9.jpg`), made in the browser
+  (`admin-media-lib.js` `composeCover`), for an upload and for a picked Photo from Event alike.
+  Migration `20261202120000_event_media_cover_outdated.sql` marks every version made before
+  (`event_media.cover_outdated`); the event page remakes its own as it opens, and
+  **`/admin/media/covers/`** remakes them all at once (a one-off for an Admin after the
+  migration and deploy). A remake overwrites the same object key, so a LinkedIn event already
+  posted records no image drift and is not touched; while a version is outdated it is not sent
+  to LinkedIn.

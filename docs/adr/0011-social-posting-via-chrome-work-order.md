@@ -39,11 +39,37 @@ accounts at risk under the platforms' terms.
 1. **The app holds a work order. The app itself never posts.**
    - `social_posts` (one per event): `video_media_id`, `cover_note`, `base_caption`,
      `publish_at` (defaults to Monday 7:00 AM America/New_York, shown in both ET and UTC), and
-     `ready`
+     `ready` (replaced by `status`, see the amendment below)
    - `social_post_channels`: one row each for `facebook`, `instagram`, `threads`, `tiktok`,
      `linkedin_page`, with `caption`, `first_comment`, `status`
      (`pending → scheduled → live | failed`), `post_url`, `verified_at`, `comment_posted_at`
      and `notes`
+   - *Amended 2026-12-01 (#39, QA feedback on Phase 6):* **the post has a status instead of
+     the `ready` flag.** `social_posts.status` is the summary of the whole post, set with a
+     dropdown on the Social Posts tab (migration `20261201120000_social_post_status.sql`;
+     existing rows: ready → `ready`, not ready → `todo`). The channel statuses don't change.
+
+     | Status | Meaning | Set by |
+     |---|---|---|
+     | `todo` **To do** | being prepared; the Chrome tasks ignore it | an Admin (the default) |
+     | `ready` **Ready for Posting** | the work order is offered to the Chrome tasks | an Admin, only when nothing blocks it (the old `ready` checks: video, caption, Luma, caption limits, not cancelled, publish time ahead); the database keeps the video-and-caption rule |
+     | `posted` **Posted** | every channel is `scheduled` or `live` | automatically, when a channel update by the social role leaves every channel `scheduled`/`live`; an Admin can also set it |
+     | `error` **Error** | at least one channel failed | automatically, when a channel update records `failed`; an Admin can also set it |
+
+     The automatic changes happen in the channel update's transaction, each with its own
+     audit row (`social_post.status`, `details.automatic`); an Admin's changes are in the
+     post save's audit row (`social_post.update`). The Wednesday and Monday tasks treat
+     `ready` as they treated the flag. A post in `error` stays offered too, so the Wednesday
+     task can carry on with the other channels after one fails and a failed channel can be
+     scheduled again (which, once nothing is pending or failed, makes it `posted`). A `posted`
+     post is never handed out again: an Admin who sets Posted by hand ends the Chrome tasks'
+     work on that post even while channels are still pending (`findNext` skips it). That is
+     intended: it is how an Admin says "done, stop" (the channels were posted by hand, or the
+     rest are dropped). The Thursday check counts `ready`, `posted` and `error` as ready, as
+     the old flag did (it stayed on after a failure): an `error` post alerts as "N of 5
+     channels not scheduled", naming the failed channel, unless it also has problems. The rules are in
+     `src/lib/admin/social-rules.mjs` (`POST_STATUSES`, `POST_STATUS_LABELS`,
+     `OFFERED_STATUSES`, `postStatusAfterChannelUpdate`).
 2. **Caption rules are code defaults**, not settings.
    - FB and LinkedIn: the caption plus the Luma link.
    - IG and TikTok: the caption plus "Link in bio", with the Luma link as the first comment.
@@ -74,7 +100,7 @@ accounts at risk under the platforms' terms.
      `src/lib/social-alert/`). It runs Thursdays at 14:00 UTC, which is 9:00 AM EST or
      10:00 AM EDT.
    - It checks the next Tuesday and alerts when any of these is true: there is no post; the post
-     isn't ready, or has problems; or a channel isn't `scheduled` or `live`. A cancelled event
+     isn't ready (since #39: its status is To do; Ready for Posting, Posted and Error count as ready), or has problems; or a channel isn't `scheduled` or `live`. A cancelled event
      never alerts. When everything is fine it only logs. If it can't read the database, it sends
      a "check failed" push instead.
    - The Click link opens `/admin/social/next` on that context's site.
