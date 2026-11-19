@@ -10,12 +10,26 @@
 //   - canvas.toBlob wrapped in a Promise; canvas export drops EXIF/GPS
 //   - fetch PUT straight to the bucket with the presigned URL and its Content-Type
 // Several files upload one after another. The event page has one form per kind (sign-in
-// board, social photos), each with a hidden `kind` field and its own aria-live status
+// board, Photos from Event), each with a hidden `kind` field and its own aria-live status
 // line. One upload at a time across the forms: a finished upload reloads the page.
+//
+// The Event Image form (kind event_image, on the Event Info tab, ADR 0012 decision 3)
+// takes one file. On pick it is decoded and checked (PNG/JPEG, at least 480x270, at
+// most 8 MiB) and a warning shows when it isn't 16:9; the upload adds a fourth copy,
+// the 16:9 centre-crop cover (at most 1920 wide), drawn from the decoded original.
+//
+// The Event Image picker (form[data-event-image-pick], ticket #21) is a plain form
+// post. When the chosen Photo from Event has no 16:9 cover copy yet (data-needs-cover),
+// the cover is made first: the photo's display copy is fetched from the bucket
+// (presigned GET in data-display-url; the bucket's CORS allows GET), centre-cropped to
+// 16:9, and PUT through /api/admin/media/{id}/cover and /cover-complete; then the form
+// is submitted. form[data-make-cover] does the same for a photo already picked without
+// one, then reloads.
 
 import {
-  DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
-  checkFile, fitWithin, formatBytes, uploadRequestBody,
+  COVER_QUALITY, DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
+  centreCrop16x9, checkEventImage, checkFile, coverSize, eventImageRequestBody, fitWithin, formatBytes,
+  uploadRequestBody,
 } from "./admin-media-lib.js";
 
 class UserError extends Error {}
@@ -29,6 +43,8 @@ if (forms.length) {
     if (busy) { e.preventDefault(); e.returnValue = ""; }
   });
 }
+for (const form of document.querySelectorAll("form[data-event-image-pick]")) setUpPick(form);
+for (const form of document.querySelectorAll("form[data-make-cover]")) setUpMakeCover(form);
 for (const form of document.querySelectorAll("form[data-confirm]")) {
   form.addEventListener("submit", (e) => {
     if (!window.confirm(form.getAttribute("data-confirm"))) e.preventDefault();
@@ -42,6 +58,21 @@ function setUpUpload(form) {
   const eventDate = form.getAttribute("data-event-date");
 
   const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
+  const warning = form.hasAttribute("data-warning") ? document.getElementById(form.getAttribute("data-warning")) : null;
+  if (kind === "event_image" && warning) {
+    // Check on pick, so the not-16:9 warning shows before the upload.
+    input.addEventListener("change", async () => {
+      warning.textContent = "";
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        const r = await checkPicked(file);
+        warning.textContent = r.ok ? r.warning || "" : r.message;
+      } catch (err) {
+        warning.textContent = err instanceof UserError ? err.message : UNREADABLE_MESSAGE;
+      }
+    });
+  }
   const setBusy = (on) => {
     busy = on;
     for (const f of forms) f.querySelector('button[type="submit"]').disabled = on;
@@ -80,17 +111,131 @@ function setUpUpload(form) {
   });
 }
 
+function setUpPick(form) {
+  const status = document.getElementById(form.getAttribute("data-status"));
+  const button = form.querySelector('button[type="submit"]');
+  const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
+  form.addEventListener("submit", async (e) => {
+    const chosen = form.querySelector('input[name="mediaId"]:checked');
+    if (!chosen || !chosen.hasAttribute("data-needs-cover")) return; // a plain post
+    e.preventDefault();
+    if (busy) { say("Wait for the upload to finish."); return; }
+    busy = true;
+    button.disabled = true;
+    try {
+      await makePhotoCover(chosen.value, chosen.getAttribute("data-display-url"), say);
+      say("Using this photo…");
+      busy = false;
+      form.submit(); // doesn't fire "submit" again
+    } catch (err) {
+      busy = false;
+      button.disabled = false;
+      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
+    }
+  });
+}
+
+function setUpMakeCover(form) {
+  const status = document.getElementById(form.getAttribute("data-status"));
+  const button = form.querySelector('button[type="submit"]');
+  const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
+  form.hidden = false;
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (busy) { say("Wait for the upload to finish."); return; }
+    busy = true;
+    button.disabled = true;
+    try {
+      await makePhotoCover(form.getAttribute("data-media-id"), form.getAttribute("data-display-url"), say);
+      busy = false;
+      say("16:9 version made. Refreshing…");
+      window.location.reload();
+    } catch (err) {
+      busy = false;
+      button.disabled = false;
+      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
+    }
+  });
+}
+
+/** A picked photo's 16:9 cover: crop its display copy, PUT it, confirm it. */
+async function makePhotoCover(mediaId, displayUrl, step) {
+  step("making the 16:9 version…");
+  let res;
+  try {
+    res = await fetch(displayUrl, { credentials: "omit" });
+  } catch {
+    throw new UserError("the photo couldn't be downloaded to make its 16:9 version. Check your connection and try again.");
+  }
+  if (!res.ok) throw new UserError(`the photo couldn't be downloaded (${res.status}). Reload the page and try again.`);
+  const src = await decode(await res.blob());
+  let canvas;
+  try {
+    const crop = centreCrop16x9(src.width, src.height);
+    canvas = drawScaled(src.image, coverSize(crop.sw, crop.sh), crop);
+  } finally {
+    src.close();
+  }
+  let cover;
+  try {
+    cover = await toJpeg(canvas, COVER_QUALITY);
+  } finally {
+    canvas.width = 0; canvas.height = 0;
+  }
+
+  step("uploading the 16:9 version…");
+  const start = await postJson(`/api/admin/media/${mediaId}/cover`, { size: cover.size });
+  if (start.status !== 201) throw new UserError(await serverMessage(start, "the 16:9 version couldn't start"));
+  const plan = await start.json();
+  let put;
+  try {
+    put = await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: cover, credentials: "omit" });
+  } catch {
+    throw new UserError("the 16:9 version upload failed (network). Try again.");
+  }
+  if (!put.ok) throw new UserError(`the 16:9 version upload was refused (${put.status}). Try again.`);
+  const done = await postJson(`/api/admin/media/${mediaId}/cover-complete`, {});
+  if (done.status !== 200) throw new UserError(await serverMessage(done, "the 16:9 version couldn't be confirmed"));
+}
+
+/** Decode the picked Event Image just to measure it, and check it. */
+async function checkPicked(file) {
+  const quick = checkEventImage({ name: file.name, type: file.type, size: file.size, width: Infinity, height: Infinity });
+  if (!quick.ok) return quick; // type or size: no need to decode
+  const src = await decode(file);
+  try {
+    return checkEventImage({ name: file.name, type: file.type, size: file.size, width: src.width, height: src.height });
+  } finally {
+    src.close();
+  }
+}
+
 async function uploadOne(file, opts, step) {
+  const eventImage = opts.kind === "event_image";
   const check = checkFile(file);
   if (!check.ok) throw new UserError(check.message);
+  if (eventImage) {
+    // Type and size before the (slow) decode.
+    const quick = checkEventImage({ type: file.type, size: file.size, width: Infinity, height: Infinity });
+    if (!quick.ok) throw new UserError(quick.message);
+  }
 
-  step("preparing the photo…");
-  const { display, thumb } = await makeCopies(file);
+  step(eventImage ? "preparing the image…" : "preparing the photo…");
+  const { display, thumb, cover, width, height } = await makeCopies(file, { cover: eventImage });
+
+  let requestBody;
+  if (eventImage) {
+    const ok = checkEventImage({ type: file.type, size: file.size, width, height });
+    if (!ok.ok) throw new UserError(ok.message);
+    requestBody = eventImageRequestBody({
+      eventDate: opts.eventDate, original: { contentType: ok.contentType, size: file.size, width, height }, display, thumb, cover,
+    });
+  } else {
+    requestBody = uploadRequestBody({ ...opts, original: { contentType: check.contentType, size: file.size }, display, thumb });
+  }
 
   step("starting the upload…");
-  const start = await postJson("/api/admin/media/uploads", uploadRequestBody({
-    ...opts, original: { contentType: check.contentType, size: file.size }, display, thumb,
-  }));
+  const start = await postJson("/api/admin/media/uploads", requestBody);
   if (start.status !== 201) throw new UserError(await serverMessage(start, "the upload couldn't start"));
   const plan = await start.json();
 
@@ -102,6 +247,7 @@ async function uploadOne(file, opts, step) {
   const parts = [
     ["thumb", thumb, "thumbnail"],
     ["display", display, "display copy"],
+    ...(cover ? [["cover", cover, "16:9 cover"]] : []),
     ["original", file, `original (${formatBytes(file.size)})`],
   ];
   for (const [variant, blob, label] of parts) {
@@ -157,13 +303,20 @@ async function serverMessage(res, fallback) {
 
 // ── Resizing ────────────────────────────────────────────────────────────────
 
-async function makeCopies(file) {
+async function makeCopies(file, { cover: withCover = false } = {}) {
   const src = await decode(file);
+  const { width, height } = src;
   let displayCanvas;
   let thumbCanvas;
+  let coverCanvas;
   try {
     const d = fitWithin(src.width, src.height, DISPLAY_EDGE);
     displayCanvas = drawScaled(src.image, d);
+    if (withCover) {
+      // The 16:9 cover is cropped from the decoded original, not the display copy.
+      const crop = centreCrop16x9(src.width, src.height);
+      coverCanvas = drawScaled(src.image, coverSize(crop.sw, crop.sh), crop);
+    }
   } finally {
     src.close();
   }
@@ -172,10 +325,11 @@ async function makeCopies(file) {
     thumbCanvas = drawScaled(displayCanvas, t);
     const display = await toJpeg(displayCanvas, DISPLAY_QUALITY);
     const thumb = await toJpeg(thumbCanvas, THUMB_QUALITY);
-    return { display, thumb };
+    const cover = coverCanvas ? await toJpeg(coverCanvas, COVER_QUALITY) : null;
+    return { display, thumb, cover, width, height };
   } finally {
     // iOS keeps canvas memory until the canvas is shrunk.
-    for (const c of [displayCanvas, thumbCanvas]) if (c) { c.width = 0; c.height = 0; }
+    for (const c of [displayCanvas, thumbCanvas, coverCanvas]) if (c) { c.width = 0; c.height = 0; }
   }
 }
 
@@ -204,7 +358,8 @@ async function decode(file) {
   }
 }
 
-function drawScaled(source, { width, height }) {
+/** Draw `source` (or its `crop` rectangle) scaled to width x height on a new canvas. */
+function drawScaled(source, { width, height }, crop = null) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -214,7 +369,8 @@ function drawScaled(source, { width, height }) {
   ctx.fillRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(source, 0, 0, width, height);
+  if (crop) ctx.drawImage(source, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, width, height);
+  else ctx.drawImage(source, 0, 0, width, height);
   return canvas;
 }
 

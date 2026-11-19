@@ -41,7 +41,7 @@ if (Astro.request.method === "POST") {
   return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
 }
 
-const pick: any = await sp.loadPick("verify");
+const pick: any = await sp.loadPick("verify", { origin: Astro.url.origin });
 const order = pick.order ?? null;
 const notice = posted ? null : sp.noticeText(Astro.url.searchParams);
 const val = (c: any) => (posted?.channel === c.channel ? posted.values : { postUrl: c.postUrl ?? "", notes: c.notes ?? "" });

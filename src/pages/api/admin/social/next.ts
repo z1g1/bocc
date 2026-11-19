@@ -4,7 +4,9 @@
 //         publishAtEastern, publishAtUtc, coverNote, lumaUrl, channels: [{ channel,
 //         label, status, postUrl, verifiedAt, commentPostedAt, notes, caption,
 //         firstComment, captionLength, captionLimit }] },
-//         video: { fileName, downloadUrl, expiresAt, contentType, sizeBytes } | { unavailable } | null }
+//         video: { fileName, downloadUrl, expiresAt, contentType, sizeBytes } | { unavailable } | null,
+//         cover: { source: "event_image" | "override", eventImageSource, fileName, downloadUrl,
+//                  expiresAt (null for the logo default, a link on this site), contentType } | { unavailable } | null }
 //   200 { state: "nothing", reason: "no_post" | "not_ready" | "problems",
 //         message, date, problems[], upcoming[] }
 //         about the EARLIEST upcoming week that still has work (findNext): a later
@@ -16,5 +18,5 @@ import { socialApiGet, socialApiOther } from "../../../../lib/admin/social-api.m
 
 export const prerender = false;
 
-export const GET: APIRoute = ({ locals }) => requireRole(locals, "admin", "social") ?? socialApiGet("next");
+export const GET: APIRoute = ({ locals, request }) => requireRole(locals, "admin", "social") ?? socialApiGet("next", request);
 export const ALL: APIRoute = ({ locals }) => requireRole(locals, "admin", "social") ?? socialApiOther("GET");

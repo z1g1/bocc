@@ -34,6 +34,13 @@ describe("migrations", () => {
       "20261121120000_event_links_site_reader.sql",
       "20261122120000_social_posts.sql",
       "20261123120000_social_checker.sql",
+      "20261124120000_linkedin_connections.sql",
+      "20261125120000_event_image.sql",
+      "20261126120000_social_checker_linkedin.sql",
+      "20261127120000_social_post_cover.sql",
+      "20261128120000_event_image_reference.sql",
+      "20261129120000_linkedin_events.sql",
+      "20261130120000_linkedin_events_post_claim.sql",
     ]);
   });
 
@@ -146,6 +153,28 @@ describe("user_roles", () => {
       const { rows } = await admin.query("select 1 from user_roles where user_id = $1", [id]);
       assert.equal(rows.length, 0);
     }));
+});
+
+describe("social_checker and the auth schema (#24)", () => {
+  test("has no USAGE on auth and no table or column grant in it", async () => {
+    const { rows: [r] } = await owner.query("select has_schema_privilege('social_checker', 'auth', 'USAGE') as usage");
+    assert.equal(r.usage, false);
+    const { rows } = await owner.query(
+      `select table_name || ':' || privilege_type as g from information_schema.role_table_grants
+        where grantee = 'social_checker' and table_schema = 'auth'
+       union all
+       select table_name || ':' || column_name || ':' || privilege_type from information_schema.column_privileges
+        where grantee = 'social_checker' and table_schema = 'auth'`);
+    assert.deepEqual(rows, []);
+  });
+
+  test("on linkedin_connections: SELECT on user_id, expires_at and display_name only", async () => {
+    const { rows } = await owner.query(
+      `select column_name || ':' || privilege_type as g from information_schema.column_privileges
+        where grantee = 'social_checker' and table_schema = 'public' and table_name = 'linkedin_connections'
+        order by 1`);
+    assert.deepEqual(rows.map((r) => r.g), ["display_name:SELECT", "expires_at:SELECT", "user_id:SELECT"]);
+  });
 });
 
 describe("checkin_writer is unchanged", () => {

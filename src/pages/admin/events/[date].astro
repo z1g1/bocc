@@ -1,14 +1,31 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
-// Status and location, the listings and readiness checklist (Phase 4), the social
-// post (SocialPost, Phase 5, ADR 0011), the cancel flow, the after-event report (it
-// replaces the Google Form) and the photos (EventMedia, ADR 0010).
+// The Readiness checklist (Phase 4) sits above three tabs (ADR 0012 decision 1):
+//   ?tab=info    Event Info: status and location, the Online Event Listings, the Event
+//                Image (EventImage, ADR 0012 decision 3), cancel (with, for a cancelled
+//                event that was posted on LinkedIn, the red "Cancel the LinkedIn event on
+//                LinkedIn" item and its "Done on LinkedIn" form, action linkedin_cancel_done, #27)
+//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011) and the
+//                LinkedIn event section (ADR 0012): the Admin's own LinkedIn
+//                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
+//                the event's preview, dialog, dry run and live create with its
+//                recovery (LinkedInEvent; actions linkedin_create, linkedin_publish,
+//                linkedin_allow_retry: 303 once posted or retired, else rendered
+//                without a redirect, 409 when refused, 502 when a LinkedIn step failed),
+//                and the "LinkedIn is out of date…" notice when the location or Event
+//                Image changed after it was posted (#27: flagged, not synced)
+//   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
+//                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
+// The tabs are plain links and only the current tab is rendered, so they work without
+// JavaScript. No tab, or an unknown one: Event Info for a future date, Post Event for
+// today or earlier, in Eastern time (src/lib/admin/event-tabs.mjs).
 //
 // A date with no events row still renders, as a new scheduled event; the first save
 // of any form creates the row. Plain HTML forms, no client script: each POSTs back
 // here with an `action` field, is Origin-checked, and answers 303 to a GET with a
-// fixed ?notice= (post/redirect/get). Invalid input re-renders with 400 (409 for a
-// refused state change) and the messages next to the fields. All logic and the audit
+// fixed ?notice= on the tab the form lives on (ACTION_TABS; post/redirect/get). Invalid
+// input re-renders that tab with 400 (409 for a refused state change) and the messages
+// next to the fields. All logic and the audit
 // rows are in src/lib/admin/events.mjs, event-links.mjs and social.mjs. The social
 // post's video upload is the one part that needs JavaScript (/js/admin-video.js).
 //
@@ -17,11 +34,15 @@
 // doesn't show them) (src/lib/site/purge.mjs). It is awaited so it runs before the function ends, but
 // it never throws, and a failure is caught here: the save is already committed.
 import Admin from "../../../layouts/Admin.astro";
+import EventImage from "../../../components/admin/EventImage.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
 import SocialPost from "../../../components/admin/SocialPost.astro";
+import LinkedInConnection from "../../../components/admin/LinkedInConnection.astro";
+import LinkedInEvent from "../../../components/admin/LinkedInEvent.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
 import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+import { ACTION_TABS, LINKEDIN_TAB, TABS, pickTab } from "../../../lib/admin/event-tabs.mjs";
 import { purgeEventPages } from "../../../lib/site/purge.mjs";
 import { log } from "../../../lib/telemetry.mjs";
 export const prerender = false;
@@ -33,6 +54,7 @@ const { user, roles = [] } = Astro.locals;
 const ev = await import("../../../lib/admin/events.mjs");
 const el = await import("../../../lib/admin/event-links.mjs");
 const so = await import("../../../lib/admin/social.mjs");
+const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
 
 const notFound = () => new Response("Not a date", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
@@ -48,9 +70,14 @@ const NOTICES: Record<string, string> = {
   unlink: "Listing cleared.",
   social_post: "Social post saved.",
   social_video: "Promo video attached to the social post.",
+  social_cover: "Cover image saved.",
   social_channel: "Channel text saved.",
+  linkedin_posted: "LinkedIn event created and posted.",
+  linkedin_retry: "The pending LinkedIn create was cleared: you can create the event again.",
+  linkedin_cancel_done: "Marked as cancelled on LinkedIn.",
   unchanged: "Nothing changed.",
 };
+const LINKEDIN_ACTIONS = new Set(["linkedin_create", "linkedin_publish", "linkedin_allow_retry"]);
 const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>) => Promise<{ changed: boolean; eventCreated?: boolean }>> = {
   save: ev.saveEvent,
   cancel: ev.cancelEvent,
@@ -60,16 +87,33 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
   social_post: (actor, d, input) => so.savePost(actor, d, input),
   social_video: (actor, d, input) => so.setVideo(actor, d, input.videoMediaId),
+  social_cover: (actor, d, input) => so.setCover(actor, d, input.mediaId ?? ""),
   social_channel: (actor, d, input) => so.saveChannel(actor, d, input.channel, input),
+  linkedin_cancel_done: async (actor, d) => (await import("../../../lib/linkedin/linkedin.mjs")).markCancelledOnLinkedIn(actor, d),
 };
-const SOCIAL = new Set(["social_post", "social_video", "social_channel"]);
+// Saves the public page doesn't show: no purge.
+const NO_PURGE = new Set(["linkedin_cancel_done"]);
+const SOCIAL = new Set(["social_post", "social_video", "social_cover", "social_channel"]);
+// Where a social form's redirect lands: its own block, else the section.
+const ANCHORS: Record<string, string> = { social_cover: "#social-cover", linkedin_cancel_done: "#cancel" };
 const DONE: Record<string, string> = {
   save: "saved", cancel: "cancelled", uncancel: "uncancelled", report: "report", link: "link", unlink: "unlink",
-  social_post: "social_post", social_video: "social_video", social_channel: "social_channel",
+  social_post: "social_post", social_video: "social_video", social_cover: "social_cover", social_channel: "social_channel",
+  linkedin_cancel_done: "linkedin_cancel_done",
 };
+
+// Purge the public page; a failure is logged, never fails the save.
+async function purge() {
+  try {
+    await purgeEventPages([date!], { locals: Astro.locals });
+  } catch (err) {
+    log("error", "event page purge failed", { date, error: String(err) });
+  }
+}
 
 let errors: Record<string, string> = {};
 let posted: { action: string; values: Record<string, string> } | null = null;
+let linkedInResult: any = null;
 
 if (Astro.request.method === "POST") {
   const refused = checkOrigin(Astro.request);
@@ -82,38 +126,67 @@ if (Astro.request.method === "POST") {
   }
   const action = String(data.get("action") ?? "");
   const run = ACTIONS[action];
-  if (!run) return new Response("Bad Request: unknown action", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
+  if (LINKEDIN_ACTIONS.has(action)) {
+    // A live success that reached `posted`, and allow-retry, 303 back to the section
+    // (post/redirect/get). Anything else renders straight away: a dry run changes
+    // nothing and its result (the requests that would have been sent) only exists in
+    // this response; a refusal is 409, a failed LinkedIn step 502 with the ledger left
+    // in its last committed state and the matching recovery shown.
+    const li = await import("../../../lib/linkedin/linkedin.mjs");
+    const env = li.linkedInEnv();
+    if (!env.enabled) return new Response(env.message, { status: 503, headers: { "content-type": "text/plain; charset=utf-8" } });
+    const confirm = String(data.get("confirm") ?? "");
+    if (action === "linkedin_create") {
+      const { getStorage } = await import("../../../lib/admin/storage.mjs");
+      linkedInResult = await li.createLinkedInEvent(user!.id, date, { confirm }, { storage: getStorage().storage });
+    } else if (action === "linkedin_publish") {
+      linkedInResult = await li.publishRetry(user!.id, date, { confirm });
+    } else {
+      linkedInResult = await li.allowRetry(user!.id, date);
+      if (linkedInResult.ok) return Astro.redirect(`/admin/events/${date}/?tab=${LINKEDIN_TAB}&notice=linkedin_retry#linkedin-event`, 303);
+    }
+    if (linkedInResult.ok && linkedInResult.status === "posted") {
+      // The linkedin_event listing was filled: the public page shows listings.
+      await purge();
+      return Astro.redirect(`/admin/events/${date}/?tab=${LINKEDIN_TAB}&notice=linkedin_posted#linkedin-event`, 303);
+    }
+    posted = { action, values: {} };
+    Astro.response.status = linkedInResult.ok ? 200 : linkedInResult.failure ? 502 : 409;
+  } else if (!run) {
+    return new Response("Bad Request: unknown action", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
+  } else {
   const values: Record<string, string> = {};
   for (const [k, v] of data) if (typeof v === "string") values[k] = v;
   try {
     const { changed, eventCreated } = await run(user!.id, date, values);
-    if (changed && (!SOCIAL.has(action) || eventCreated)) {
-      try {
-        await purgeEventPages([date], { locals: Astro.locals });
-      } catch (err) {
-        log("error", "event page purge failed", { date, error: String(err) });
-      }
-    }
-    const anchor = SOCIAL.has(action) ? "#social" : "";
-    return Astro.redirect(`/admin/events/${date}/?notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
+    if (changed && !NO_PURGE.has(action) && (!SOCIAL.has(action) || eventCreated)) await purge();
+    const anchor = ANCHORS[action] ?? (SOCIAL.has(action) ? "#social" : "");
+    return Astro.redirect(`/admin/events/${date}/?tab=${ACTION_TABS[action]}&notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
   } catch (err: any) {
     if (!(err instanceof ev.ValidationError)) throw err;
     errors = (err as any).errors;
     posted = { action, values };
     Astro.response.status = err.status;
   }
+  }
 } else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
   return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
 }
 
 const { pool } = await import("../../../lib/admin/db.mjs");
-const [event, links, social] = await Promise.all([ev.getEvent(pool, date), el.getLinks(pool, date), so.getWorkOrder(pool, date)]);
+const [event, links, social, eventImage] = await Promise.all([
+  ev.getEvent(pool, date), el.getLinks(pool, date), so.getWorkOrder(pool, date), eim.getEventImage(pool, date),
+]);
+const { linkedInFollowUpFor } = await import("../../../lib/linkedin/linkedin.mjs");
+const linkedIn = await linkedInFollowUpFor(pool, date, { event, eventImage });
 const today = ev.todayEastern();
 const upcoming = date >= today;
-const ready = el.readiness(event, links, social);
+const ready = el.readiness(event, links, social, { eventImage, linkedIn });
 const isFuture = date > today;
 const missing = ev.isReportMissing(event, today);
 const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
+// A refused save shows the tab its form is on, whatever the URL says.
+const tab = posted ? ACTION_TABS[posted.action] : pickTab(Astro.url.searchParams.get("tab"), date);
 
 // Form values: what was just posted (on an error), else what is stored.
 const from = (action: string) => (posted?.action === action ? posted.values : null);
@@ -137,6 +210,7 @@ const rep = from("report") ?? {
 const errFor = (action: string) => (posted?.action === action ? errors : {});
 const detErr = errFor("save");
 const canErr = errFor("cancel");
+const liCancelErr = errFor("linkedin_cancel_done");
 const repErr = errFor("report");
 const SOURCES: Record<string, string> = { admin: "the admin", google_form: "the Google Form import", pre_form: "the pre-Form history import" };
 // Listings: the posted values (on an error) for that platform's row, else what is stored.
@@ -180,6 +254,15 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     </section>
   )}
 
+  <nav aria-label="Event page tabs" class="tabs">
+    <ul>
+      {Object.entries(TABS).map(([key, label]) => (
+        <li><a href={`?tab=${key}`} aria-current={key === tab ? "page" : undefined}>{label}</a></li>
+      ))}
+    </ul>
+  </nav>
+
+  {tab === "info" && (<>
   <section aria-labelledby="h-details">
     <h2 id="h-details">Status and location</h2>
     <form method="post" class="narrow">
@@ -211,7 +294,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   </section>
 
   <section aria-labelledby="h-links">
-    <h2 id="h-links">Listings</h2>
+    <h2 id="h-links">Online Event Listings</h2>
     <p class="muted">The event on each platform. Luma is the public page's call to action; the others are listed for search engines.</p>
     {el.PLATFORM_KEYS.map((p) => {
       const v = linkVal(p);
@@ -245,8 +328,66 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     })}
   </section>
 
-  <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
+  <EventImage date={date} image={eventImage} />
 
+  <section aria-labelledby="h-cancel" id="cancel">
+    <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
+    {r && event.status !== "cancelled"
+      ? <p class="muted">This event has a report, so it was held.</p>
+      : (
+        <form method="post" class="narrow">
+          <input type="hidden" name="action" value="cancel">
+          <fieldset>
+            <legend>Why?</legend>
+            {Object.entries(CANCEL_REASONS).map(([v, label]) => (
+              <label class="check"><input type="radio" name="cancelReason" value={v} checked={can.cancelReason === v} required> {label}</label>
+            ))}
+            {canErr.cancelReason && <p class="error" role="alert">{canErr.cancelReason}</p>}
+            <label for="cancelReasonOther">Reason, if Other</label>
+            <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={can.cancelReasonOther}
+              aria-invalid={canErr.cancelReasonOther ? "true" : undefined}>
+            {canErr.cancelReasonOther && <p class="error" role="alert">{canErr.cancelReasonOther}</p>}
+          </fieldset>
+          <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={can.cancelAnnounced === "on"}> Announced on all socials</label>
+          <button type="submit" class={event.status === "cancelled" ? undefined : "secondary"}>
+            {event.status === "cancelled" ? "Save cancellation" : "Cancel event"}
+          </button>
+        </form>
+      )}
+    {linkedIn.cancel?.due && (
+      <form method="post" class="linkedin-cancel" role="alert">
+        <input type="hidden" name="action" value="linkedin_cancel_done">
+        <p><strong>{linkedIn.cancel.message}</strong>: this event was posted on LinkedIn and is still live there.
+          <a href={linkedIn.cancel.href} target="_blank" rel="noopener">Open the LinkedIn event</a>, cancel it, then tick it off here.</p>
+        <button type="submit">Done on LinkedIn</button>
+      </form>
+    )}
+    {linkedIn.cancel && !linkedIn.cancel.due && (
+      <p class="muted">The <a href={linkedIn.cancel.href} target="_blank" rel="noopener">LinkedIn event</a> was marked done on LinkedIn (cancelled there), {easternDateTime(linkedIn.cancel.doneAt)}.</p>
+    )}
+    {liCancelErr.linkedin && <p class="error" role="alert">{liCancelErr.linkedin}</p>}
+    {event.status === "cancelled" && (
+      <form method="post">
+        <input type="hidden" name="action" value="uncancel">
+        <button type="submit" class="secondary">Un-cancel (back to scheduled)</button>
+      </form>
+    )}
+  </section>
+  </>)}
+
+  {tab === "social" && (<>
+    <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
+    <section aria-labelledby="h-linkedin">
+      <h2 id="h-linkedin">LinkedIn event</h2>
+      {linkedIn.drift && (
+        <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.drift.href} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
+      )}
+      <LinkedInConnection returnTo={date} />
+      <LinkedInEvent date={date} result={linkedInResult} />
+    </section>
+  </>)}
+
+  {tab === "post" && (<>
   <section aria-labelledby="h-report">
     <h2 id="h-report">Report</h2>
     {r && (
@@ -293,43 +434,16 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
         )}
   </section>
 
-  <section aria-labelledby="h-cancel">
-    <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
-    {r && event.status !== "cancelled"
-      ? <p class="muted">This event has a report, so it was held.</p>
-      : (
-        <form method="post" class="narrow">
-          <input type="hidden" name="action" value="cancel">
-          <fieldset>
-            <legend>Why?</legend>
-            {Object.entries(CANCEL_REASONS).map(([v, label]) => (
-              <label class="check"><input type="radio" name="cancelReason" value={v} checked={can.cancelReason === v} required> {label}</label>
-            ))}
-            {canErr.cancelReason && <p class="error" role="alert">{canErr.cancelReason}</p>}
-            <label for="cancelReasonOther">Reason, if Other</label>
-            <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={can.cancelReasonOther}
-              aria-invalid={canErr.cancelReasonOther ? "true" : undefined}>
-            {canErr.cancelReasonOther && <p class="error" role="alert">{canErr.cancelReasonOther}</p>}
-          </fieldset>
-          <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={can.cancelAnnounced === "on"}> Announced on all socials</label>
-          <button type="submit" class={event.status === "cancelled" ? undefined : "secondary"}>
-            {event.status === "cancelled" ? "Save cancellation" : "Cancel event"}
-          </button>
-        </form>
-      )}
-    {event.status === "cancelled" && (
-      <form method="post">
-        <input type="hidden" name="action" value="uncancel">
-        <button type="submit" class="secondary">Un-cancel (back to scheduled)</button>
-      </form>
-    )}
-  </section>
-
   <EventMedia date={date} />
+  </>)}
 </Admin>
 
 <style>
   section { margin-top: 2rem; }
+  .tabs { margin-top: 1.25rem; border-bottom: 1px solid var(--line); }
+  .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; }
+  .tabs a { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; text-decoration: none; }
+  .tabs a[aria-current="page"] { border-color: var(--line); font-weight: 600; }
   fieldset { border: 0; padding: 0; margin: 0.75rem 0 0; }
   legend { font-weight: 600; padding: 0; }
   textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
@@ -351,5 +465,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   .link-row .current { margin: 0.1rem 0 0.35rem; overflow-wrap: anywhere; }
   .link-row input { width: 100%; }
   .link-row .buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .linkedin-cancel, .linkedin-drift { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--err); border-left-width: 4px; border-radius: 6px; max-width: 40rem; }
+  .linkedin-cancel strong { color: var(--err); }
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

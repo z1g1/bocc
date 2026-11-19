@@ -9,6 +9,7 @@ import { requireRole } from "./roles.mjs";
 import { checkOrigin } from "./csrf.mjs";
 import { getStorage, isIsoDate } from "./storage.mjs";
 import { adminFailure } from "./log.mjs";
+import { ANCHOR_TABS } from "./event-tabs.mjs";
 
 export const STORAGE_OFF_MESSAGE = "Photo storage is not set up on this site, so photos can't be uploaded or changed.";
 const MAX_JSON_BYTES = 4096;
@@ -36,6 +37,8 @@ export async function mediaRoute({ locals, request }, handler, deps = {}) {
   } catch (err) {
     const e = /** @type {any} */ (err);
     if (e?.status === 400) return json(400, { error: "Invalid request", errors: e.errors ?? [e.message] });
+    // A refused delete (media.mjs InUseError: the photo is an Event Image).
+    if (e?.status === 409) return json(409, { error: e.message, errors: e.errors ?? [e.message], eventDates: e.eventDates });
     if (e?.status === 404) return json(404, { error: "Photo not found" });
     return adminFailure("api/admin/media", err);
   }
@@ -55,8 +58,9 @@ export async function readJson(request) {
 }
 
 /**
- * Answer a gallery form post: a 303 to the photo's own event page
- * (/admin/events/<date>/?media=<notice>), or JSON when the request was JSON. The
+ * Answer a gallery form post: a 303 to the photo's own event page, on the tab that
+ * shows it (/admin/events/<date>/?tab=post&media=<notice>#event-media; a promo video:
+ * ?tab=social…#social, ADR 0012), or JSON when the request was JSON. The
  * target is built from the row's event_date, never from a client-supplied value, so it
  * can't be turned into an open redirect (e.g. "/admin/..//evil.example" normalising to
  * a protocol-relative "//evil.example").
@@ -64,15 +68,20 @@ export async function readJson(request) {
  * @param {string} eventDate  YYYY-MM-DD, from the database row
  * @param {string} notice
  * @param {Record<string, unknown>} body
- * @param {"event-media"|"social"} [anchor]  the section to land on (social: the promo video)
+ * @param {"event-media"|"social"|"event-image"} [anchor]  the section to land on
+ *   (social: the promo video, on Social Posts; event-image: the Event Image, on Event Info)
+ * @param {Record<string, string>} [extra]  more query parameters (values are URL-encoded)
  */
-export function formOrJson(form, eventDate, notice, body, anchor = "event-media") {
+export function formOrJson(form, eventDate, notice, body, anchor = "event-media", extra = {}) {
   if (!form) return json(200, body);
   if (!isIsoDate(eventDate)) throw new Error("formOrJson: eventDate must be YYYY-MM-DD");
-  if (anchor !== "event-media" && anchor !== "social") throw new Error("formOrJson: unknown anchor");
-  const location = `/admin/events/${eventDate}/?media=${encodeURIComponent(notice)}#${anchor}`;
+  if (!Object.hasOwn(ANCHOR_TABS, anchor)) throw new Error("formOrJson: unknown anchor");
+  const tab = ANCHOR_TABS[anchor];
+  const more = Object.entries(extra).map(([k, v]) => `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("");
+  const location = `/admin/events/${eventDate}/?tab=${tab}&media=${encodeURIComponent(notice)}${more}#${anchor}`;
   return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
+
 
 /** Read the body of a gallery action: a form post, or JSON from the upload script. */
 export async function readFormOrJson(request) {

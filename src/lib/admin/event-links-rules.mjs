@@ -137,8 +137,18 @@ export const publicPath = (date) => `/events/${date}/`;
  *             items: Array<{ key: string, label: string, ok: boolean|null, note?: string, href?: string }> }}
  *   ok null = not checked; href (the public page) only when it exists. `ready` is the
  *   listings only (as the lists' "n/4 listings" tag); the social lines are extra items.
+ * @param {{ eventImage?: { source: "uploaded"|"referenced"|"default", eventDate: string|null } }} [extra]
+ *   eventImage: the resolved Event Image (src/lib/admin/event-image-rules.mjs); adds its
+ *   line, ok null when the BOCC logo default is in use (fine, but worth a look)
+ * @param {{ linkedIn?: { drift: null | { message: string, href: string },
+ *   cancel: null | { due: boolean, message: string, href: string } } }} [extra]
+ *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#25/#27); adds "LinkedIn event
+ *   posted" (done once posted, linking the event; missing before; no line for a cancelled
+ *   event; the page shows readiness only for upcoming events), and a red line for
+ *   drift ("LinkedIn is out of date…") and for a cancelled event still to be cancelled
+ *   on LinkedIn, each linking the LinkedIn event. No lines for an event never posted.
  */
-export function readiness(event, links = {}, social = null) {
+export function readiness(event, links = {}, social = null, { eventImage, linkedIn } = {}) {
   const items = PLATFORM_KEYS.map((p) => ({ key: p, label: `${PLATFORMS[p]} listing`, ok: Boolean(links[p]?.url) }));
   const listings = items.filter((i) => i.ok).length;
   const lumaId = Boolean(links.luma?.externalId);
@@ -153,6 +163,23 @@ export function readiness(event, links = {}, social = null) {
     note: !publicPageExists(event) ? "a 404 until the event is saved (any save creates it)"
       : event.status === "cancelled" ? "shows a cancelled notice, no RSVP" : undefined,
   });
+  if (eventImage) {
+    const set = eventImage.source !== "default";
+    items.push({
+      key: "event_image", label: "Event Image", ok: set ? true : null,
+      note: eventImage.source === "uploaded" ? "uploaded"
+        : eventImage.source === "referenced" ? `photo from ${eventImage.eventDate}`
+          : "default: the BOCC logo",
+    });
+  }
+  // "LinkedIn event posted": not for a cancelled event (the cancel line below covers it).
+  if (linkedIn && event.status !== "cancelled") {
+    items.push(linkedIn.eventUrl
+      ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: linkedIn.eventUrl }
+      : { key: "linkedin_posted", label: "LinkedIn event posted", ok: false, note: "not posted yet (LinkedIn event, Social Posts tab)" });
+  }
+  if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: linkedIn.drift.href });
+  if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: linkedIn.cancel.href });
   const channels = social?.exists ? social.channels ?? [] : [];
   const scheduled = channels.filter((c) => c.status === "scheduled" || c.status === "live").length;
   if (!social?.exists) {

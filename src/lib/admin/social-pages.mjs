@@ -7,7 +7,11 @@
 //
 //   loadPick("next" | "verify", { now })   findNext / findVerify (social.mjs) plus
 //       `video` for a picked post: { fileName, downloadUrl, expiresAt, contentType,
-//       sizeBytes } or null, or { unavailable: message } when storage is off.
+//       sizeBytes } or null, or { unavailable: message } when storage is off; and
+//       `cover` (ticket #22): { source, eventImageSource, fileName, downloadUrl,
+//       expiresAt, contentType } for the video's cover image (the Event Image or the
+//       admin's override; the logo default is a link on `origin`, never signed), or
+//       { unavailable } when it is in the bucket and storage is off.
 //   toJson(pick)                           the same, safe to send (no storage keys)
 //   resultInput(values)                    a form's fields -> setChannelResult input
 //   handleChannelPost(request, userId, page), noticeText(params)   the pages' forms (PRG)
@@ -26,22 +30,47 @@ export const VIDEO_OFF_MESSAGE = "Media storage is not set up on this site, so t
 export const videoFileName = (date, video) =>
   `bocc-${date}-promo.${video?.contentType === "video/quicktime" ? "mov" : "mp4"}`;
 
+export const COVER_OFF_MESSAGE = "Media storage is not set up on this site, so the cover image can't be downloaded here.";
+
+/** "bocc-2026-11-24-cover.jpg" */
+export const coverFileName = (date, contentType) => `bocc-${date}-cover.${contentType === "image/png" ? "png" : "jpg"}`;
+
+/**
+ * The cover's download link (ticket #22): order.cover (resolveSocialCover) signed like
+ * the video, or the checked-in logo on the site's own origin (no signing).
+ * { source, eventImageSource, fileName, downloadUrl, expiresAt, contentType } |
+ * { unavailable } | null.
+ */
+function coverLink(order, st, origin) {
+  const c = order.cover;
+  if (!c) return null;
+  const fileName = coverFileName(order.date, c.file.contentType);
+  const base = { source: c.source, eventImageSource: c.eventImageSource, fileName };
+  if ("path" in c.file) return { ...base, downloadUrl: `${origin}${c.file.path}`, expiresAt: null, contentType: c.file.contentType };
+  if (!st) return { unavailable: COVER_OFF_MESSAGE };
+  const link = st.presignGet({ key: c.file.key, downloadName: fileName, expiresIn: VIDEO_LINK_SECONDS });
+  return { ...base, downloadUrl: link.url, expiresAt: link.expiresAt, contentType: c.file.contentType };
+}
+
 /**
  * @param {"next" | "verify"} which
- * @param {{ now?: Date, db?: any, storage?: any }} [opts]  storage: tests pass a fake; null = off
+ * @param {{ now?: Date, db?: any, storage?: any, origin?: string }} [opts]  storage: tests pass a fake; null = off.
+ *   origin: the site's origin for the logo's link ("" = a same-origin path)
  */
-export async function loadPick(which, { now = new Date(), db = pool, storage } = {}) {
+export async function loadPick(which, { now = new Date(), db = pool, storage, origin = "" } = {}) {
   const pick = which === "next" ? await findNext(db, { now }) : await findVerify(db, { now });
-  if (!pick.order) return { ...pick, video: null };
-  const v = pick.order.video;
-  if (!v || v.status !== "ready") return { ...pick, video: null };
+  if (!pick.order) return { ...pick, video: null, cover: null };
   const st = storage === undefined ? getStorage().storage : storage;
-  if (!st) return { ...pick, video: { unavailable: VIDEO_OFF_MESSAGE } };
+  const cover = coverLink(pick.order, st, origin);
+  const v = pick.order.video;
+  if (!v || v.status !== "ready") return { ...pick, video: null, cover };
+  if (!st) return { ...pick, video: { unavailable: VIDEO_OFF_MESSAGE }, cover };
   const fileName = videoFileName(pick.order.date, v);
   const link = st.presignGet({ key: v.originalKey, downloadName: fileName, expiresIn: VIDEO_LINK_SECONDS });
   return {
     ...pick,
     video: { fileName, downloadUrl: link.url, expiresAt: link.expiresAt, contentType: v.contentType, sizeBytes: v.sizeBytes },
+    cover,
   };
 }
 
@@ -50,7 +79,7 @@ const CHANNEL_FIELDS = ["channel", "label", "status", "postUrl", "verifiedAt", "
 
 /** The pick as JSON: the work order without storage keys or admin-only details. */
 export function toJson(pick) {
-  const { order, video, ...rest } = pick;
+  const { order, video, cover, ...rest } = pick;
   if (!order) return rest;
   return {
     ...rest,
@@ -67,6 +96,7 @@ export function toJson(pick) {
       channels: order.channels.map((c) => Object.fromEntries(CHANNEL_FIELDS.map((k) => [k, c[k] ?? null]))),
     },
     video,
+    cover: cover ?? null,
   };
 }
 
