@@ -153,6 +153,28 @@ describe("user_roles", () => {
     }));
 });
 
+describe("social_checker and the auth schema (#24)", () => {
+  test("has no USAGE on auth and no table or column grant in it", async () => {
+    const { rows: [r] } = await owner.query("select has_schema_privilege('social_checker', 'auth', 'USAGE') as usage");
+    assert.equal(r.usage, false);
+    const { rows } = await owner.query(
+      `select table_name || ':' || privilege_type as g from information_schema.role_table_grants
+        where grantee = 'social_checker' and table_schema = 'auth'
+       union all
+       select table_name || ':' || column_name || ':' || privilege_type from information_schema.column_privileges
+        where grantee = 'social_checker' and table_schema = 'auth'`);
+    assert.deepEqual(rows, []);
+  });
+
+  test("on linkedin_connections: SELECT on user_id, expires_at and display_name only", async () => {
+    const { rows } = await owner.query(
+      `select column_name || ':' || privilege_type as g from information_schema.column_privileges
+        where grantee = 'social_checker' and table_schema = 'public' and table_name = 'linkedin_connections'
+        order by 1`);
+    assert.deepEqual(rows.map((r) => r.g), ["display_name:SELECT", "expires_at:SELECT", "user_id:SELECT"]);
+  });
+});
+
 describe("checkin_writer is unchanged", () => {
   test("table grants are exactly what migration 0003 gave it", async () => {
     const { rows } = await owner.query(

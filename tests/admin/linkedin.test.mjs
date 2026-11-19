@@ -62,7 +62,7 @@ after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 describe("migration 20261124120000_linkedin_connections.sql", () => {
-  test("grants: admin_app SELECT, INSERT, UPDATE, DELETE; social_checker only the expiry and user link (#24)", async () => {
+  test("grants: admin_app SELECT, INSERT, UPDATE, DELETE; social_checker only the expiry, user link and display name (#24)", async () => {
     const { rows } = await owner.query(
       `select g.grantee || ':' || g.privilege_type as g
          from information_schema.role_table_grants g
@@ -76,10 +76,10 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
         where table_schema = 'public' and table_name = 'linkedin_connections' and grantee <> 'admin_app'
           and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_connections')
         order by 1`);
-    assert.deepEqual(cols.map((r) => r.g), ["social_checker:SELECT:expires_at", "social_checker:SELECT:user_id"]);
+    assert.deepEqual(cols.map((r) => r.g), ["social_checker:SELECT:display_name", "social_checker:SELECT:expires_at", "social_checker:SELECT:user_id"]);
   });
 
-  test("as each role: admin_app may read and write; checkin_writer and site_reader can't read; social_checker never the token", async () => {
+  test("as each role: admin_app may read and write; checkin_writer and site_reader can't read; social_checker never the token or URN", async () => {
     const user = await newUser();
     const admin = await connect(ADMIN_URL);
     const others = await Promise.all([CHECKIN_URL, SITE_URL].filter(Boolean).map(connect));
@@ -101,14 +101,17 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
         await assertRefused(db, `select user_id, expires_at from linkedin_connections limit 1`);
         await db.query("rollback");
       }
-      // The Thursday check's role: the expiry and the user link, never the token (#24;
-      // the full social_checker checks are in social-alert.test.mjs).
+      // The Thursday check's role: the expiry, user link and display name, never the
+      // token or member URN, nothing in auth (#24; the full social_checker checks are
+      // in social-alert.test.mjs).
       if (SOCIAL_CHECK_URL) {
         const checker = await connect(SOCIAL_CHECK_URL);
         try {
           await checker.query("begin");
-          await assertAllowed(checker, `select user_id, expires_at from linkedin_connections limit 1`);
+          await assertAllowed(checker, `select user_id, expires_at, display_name from linkedin_connections limit 1`);
           await assertRefused(checker, `select token_ciphertext from linkedin_connections limit 1`);
+          await assertRefused(checker, `select member_urn from linkedin_connections limit 1`);
+          await assertRefused(checker, `select id, name from auth."user" limit 1`);
           await assertRefused(checker, `select * from linkedin_connections limit 1`);
           await checker.query("rollback");
         } finally { await checker.end(); }
