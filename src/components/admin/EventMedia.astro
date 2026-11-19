@@ -44,12 +44,12 @@ const notice = mediaParam === "in-use" && usedBy.length ? inUseMessage(usedBy) :
 const SECTIONS = [
   {
     kind: "signin_board", slug: "signin", heading: "Sign-in board", label: "Sign-in board",
-    intro: "Photos of the paper sign-in board.", empty: "No sign-in board photo yet.",
+    empty: "No sign-in board photo yet.",
     pickLabel: "Sign-in board photos (JPEG or PNG)", button: "Upload sign-in board photos",
   },
   {
     kind: "social_photo", slug: "social", heading: "Photos from Event", label: "Photo from Event",
-    intro: "Photos taken at the event. They may or may not go on social.", empty: "No photos from the event yet.",
+    empty: "No photos from the event yet.",
     pickLabel: "Photos from Event (JPEG or PNG)", button: "Upload photos from the event",
   },
 ] as const;
@@ -100,7 +100,6 @@ const fmtTime = (d: Date) =>
         {sections.map((s) => (
           <section class="media-section" id={`media-${s.slug}`} aria-labelledby={s.headingId} data-media-kind={s.kind}>
             <h2 id={s.headingId}>{s.heading}</h2>
-            <p class="muted">{s.intro}</p>
             <p class="muted" data-media-nojs>Uploading photos needs JavaScript.</p>
             <form class="media-upload" data-media-upload data-kind={s.kind} data-event-date={date} data-status={s.statusId} hidden>
               <input type="hidden" name="kind" value={s.kind}>

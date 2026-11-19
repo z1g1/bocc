@@ -426,6 +426,11 @@ describe("the picker form, the cover routes and the delete refusal over HTTP", {
     const board = await seedPhoto(p, { kind: "signin_board" });
     const page = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
     assert.match(page, /<form[^>]*action="\/api\/admin\/media\/event-image\/pick"/);
+    // Collapsed on load: a closed <details> whose summary opens the picker (issue #37).
+    const picker = page.match(/<details\b[^>]*>[\s\S]*?<\/details>/)?.[0] ?? "";
+    assert.match(picker, /<summary\b[^>]*>[\s\S]*Or pick a Photo from Event[\s\S]*<\/summary>/, "the summary names the picker");
+    assert.ok(!/<details\b[^>]*\bopen\b/.test(picker), "closed on load");
+    assert.match(picker, /<form[^>]*data-event-image-pick/, "the pick form is inside it");
     const origin = new URL(process.env.STORAGE_ENDPOINT).host;
     const imgs = [...page.matchAll(/<img[^>]*src="([^"]+)"/g)].map((x) => x[1].replaceAll("&amp;", "&"));
     assert.ok(imgs.some((u) => u.includes(origin) && u.includes(`${withCover}/thumb.jpg`)), "thumbnail");

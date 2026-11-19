@@ -324,9 +324,6 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
         <form method="post" class="link-row" id={`link-${p}`}>
           <input type="hidden" name="platform" value={p}>
           <label for={`url-${p}`}>{el.PLATFORMS[p]}</label>
-          {stored
-            ? <p class="current"><a href={stored.url} target="_blank" rel="noopener">{stored.url}</a></p>
-            : <p class="current muted">Not listed yet.</p>}
           <input id={`url-${p}`} name="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" maxlength={el.URL_MAX} value={v.url}
             placeholder={p === "luma" ? "https://luma.com/…" : p === "eventbrite" ? "https://www.eventbrite.com/e/…" : p === "facebook_event" ? "https://www.facebook.com/events/…" : "https://www.linkedin.com/events/…"}
             aria-invalid={e.url ? "true" : undefined}>
@@ -375,7 +372,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     {event.status === "cancelled"
       ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Held (Event Info tab) first.</p>
       : isFuture
-        ? <p class="muted">The report opens on the day of the event.</p>
+        ? null
         : (
           <form method="post" class="narrow">
             <input type="hidden" name="action" value="report">
@@ -441,7 +438,6 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   .checklist .later { opacity: 0.55; }
   .link-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
   .link-row label:first-of-type { font-weight: 600; }
-  .link-row .current { margin: 0.1rem 0 0.35rem; overflow-wrap: anywhere; }
   .link-row input { width: 100%; }
   .link-row .buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
   .linkedin-cancel, .linkedin-drift { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--err); border-left-width: 4px; border-radius: 6px; max-width: 40rem; }

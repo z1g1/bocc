@@ -487,6 +487,9 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     }
     assert.notEqual(signin.match(/data-status="([^"]+)"/)[1], socialSec.match(/data-status="([^"]+)"/)[1]);
     assert.match(signin, /No sign-in board photo yet\./);
+    // Headings and empty-state text only: the two intro sentences are gone (issue #37).
+    assert.ok(!page.includes("Photos of the paper sign-in board"), "no sign-in board intro");
+    assert.ok(!page.includes("They may or may not go on social"), "no Photos from Event intro");
     assert.ok(socialSec.includes(`${plan.id}/thumb.jpg`), "the social photo is in the social gallery");
     assert.ok(!signin.includes(plan.id), "and not in the sign-in board's");
     const thumb = page.match(new RegExp(`src="([^"]*/${plan.id}/thumb\\.jpg\\?[^"]*)"`));

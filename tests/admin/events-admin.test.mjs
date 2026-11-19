@@ -696,8 +696,15 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const [audit] = (await auditRows(d)).filter((a) => a.action === "event_link.set");
     assert.deepEqual([audit.target_table, audit.details.platform, audit.details.created], ["event_links", "luma", true]);
     const after = await (await req(`/admin/events/${d}/?notice=link`, { cookie: admin.cookie })).text();
-    assert.ok(after.includes("Listing saved.") && after.includes('href="https://lu.ma/abc"') && after.includes("1/4 listings"));
+    assert.ok(after.includes("Listing saved.") && after.includes("1/4 listings"));
     assert.ok(after.includes("no embed id"));
+    // The row is its label, the text box holding the saved URL and its buttons: no printed link.
+    const lumaRow = after.match(/<form[^>]*id="link-luma"[\s\S]*?<\/form>/)?.[0] ?? "";
+    assert.match(lumaRow, /<input[^>]*id="url-luma"[^>]*value="https:\/\/lu\.ma\/abc"/, "the saved URL in the text box");
+    assert.ok(!lumaRow.includes("<a ") && !lumaRow.includes('class="current'), "no separate link line");
+    assert.ok(lumaRow.includes('id="externalId-luma"') && /value="unlink"/.test(lumaRow), "the Luma id box and Clear stay");
+    const otherRow = after.match(/<form[^>]*id="link-eventbrite"[\s\S]*?<\/form>/)?.[0] ?? "";
+    assert.ok(otherRow && !otherRow.includes("Not listed yet"), "an empty row is just its empty text box");
     assert.ok(after.includes(`href="/events/${d}/" target="_blank" rel="noopener"`), "the public page link, in a new tab");
 
     const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
@@ -724,5 +731,15 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
   test("a past event has the Online Event Listings section (Event Info tab) but no readiness block at the top", async () => {
     const html = await (await req(`/admin/events/${pastDate()}/?tab=info`, { cookie: admin.cookie })).text();
     assert.ok(html.includes('id="h-links"') && !html.includes('id="h-ready"'));
+  });
+
+  test("before the event day the Post Event tab has the Report heading, no report form and no 'opens on the day' line", async () => {
+    const d = ev.todayEastern(new Date(Date.now() + 9 * 86400_000));
+    const res = await req(`/admin/events/${d}/?tab=post`, { cookie: admin.cookie });
+    assert.equal(res.status, 200);
+    const html = await res.text();
+    assert.match(html, /<h2 id="h-report"[^>]*>Report<\/h2>/);
+    assert.ok(!html.includes('name="givesAsksCount"'), "no report form before the day");
+    assert.ok(!html.includes("The report opens on the day of the event"));
   });
 });
