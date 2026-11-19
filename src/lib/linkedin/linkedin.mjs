@@ -54,6 +54,7 @@ import { readLinkedInEnv } from "./env.mjs";
 import {
   ORGANIZER_URN, REFUSALS, allowedActions, buildEventPayload, buildEventSpec, buildImageUploadPayload,
   buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
+  publishRefusals,
 } from "./rules.mjs";
 import { normaliseLinkUrl } from "../admin/event-links-rules.mjs";
 import { ConflictError, getEvent } from "../admin/events.mjs";
@@ -497,8 +498,10 @@ async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, i
     url = eventUrl(created.id, created.vanityName);
     await withAudit(userId, async (client) => {
       const { rowCount } = await client.query(
+        // Claimed for this request's own post (claimPost), so a Publish event can't race it.
         `update public.linkedin_events
-            set status = 'created', linkedin_event_id = $2, event_url = $3, event_created_at = $4, image_asset_urn = $5
+            set status = 'created', linkedin_event_id = $2, event_url = $3, event_created_at = $4, image_asset_urn = $5,
+                post_claimed_at = now()
           where id = $1 and status = 'pending'`, [row.id, created.id, url, now, upload.assetUrn]);
       if (rowCount !== 1) throw new Error("linkedin ledger: the row is no longer `pending`");
       return row;
@@ -512,12 +515,41 @@ async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, i
   return postAndMark({ userId, date, token, li, memberUrn, row: createdRow, cfg, now, retry: false, extra });
 }
 
-/** Create the member post for a `created` row, then mark it posted. */
+/** How long a post claim holds when nobody releases it (a request that died mid-call). */
+const POST_CLAIM_TTL = "10 minutes";
+
+/**
+ * Claim a `created` row for one request's member post (migration 0018): a conditional
+ * UPDATE that only one of two concurrent requests wins. Not audited: it is a lock, not
+ * a change (the status and every recorded fact stay as they are); the post it guards
+ * is audited by markPosted.
+ * @returns {Promise<boolean>}
+ */
+async function claimPost(rowId) {
+  const { rowCount } = await pool.query(
+    `update public.linkedin_events set post_claimed_at = now()
+      where id = $1 and status = 'created'
+        and (post_claimed_at is null or post_claimed_at < now() - $2::interval)`, [rowId, POST_CLAIM_TTL]);
+  return rowCount === 1;
+}
+
+/** Release the claim after a failed post, so the Admin can Publish event again. */
+async function releasePost(rowId) {
+  try {
+    await pool.query(`update public.linkedin_events set post_claimed_at = null where id = $1 and status = 'created'`, [rowId]);
+  } catch (err) {
+    // The claim then expires on its own (POST_CLAIM_TTL).
+    log("error", `linkedin ledger: post claim not released: ${describeError(err)}`, {});
+  }
+}
+
+/** Create the member post for a `created` row the caller has claimed, then mark it posted. */
 async function postAndMark({ userId, date, token, li, memberUrn, row, cfg, now, retry, extra = {} }) {
   let posted;
   try {
     posted = await li.createPost(token, buildPostPayload(memberUrn, row.linkedinEventId, row.commentary));
   } catch (err) {
+    await releasePost(row.id);
     return failed(userId, date, cfg, now, "post", err, extra);
   }
   try {
@@ -534,23 +566,22 @@ async function postAndMark({ userId, date, token, li, memberUrn, row, cfg, now, 
 /**
  * Publish event: retry only the member post of a `created` row (LinkedIn hides an
  * unposted event and can't delete it, so the event is never created twice).
+ * Refused like create for a past date or a cancelled event (rules.mjs publishRefusals).
+ * Live, the row is claimed first (claimPost): of two concurrent requests one posts and
+ * the other is refused with "posting".
  * Dry run: the post request that would be sent; nothing is sent or written.
  * @param {string} userId
  * @param {string} date
- * @param {{ confirm?: unknown }} request  confirm=live, as on the create
+ * @param {{ confirm?: unknown }} request  confirm=live, from the dialog as on the create
  * @param {{ config?: any, client?: any, now?: Date }} [opts]
  */
 export async function publishRetry(userId, date, { confirm }, { config, client, now = new Date() } = {}) {
   const cfg = requireConfig(config);
   const preview = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
-  const refuse = (codes) => ({ ok: false, mode: preview.mode, refusals: codes.map((code) => ({ code, message: REFUSALS[code] })), preview });
+  const refuse = (refusals) => ({ ok: false, mode: preview.mode, refusals, preview });
   const { ledger, connection } = preview;
-  const codes = [];
-  if (confirm !== "live") codes.push("confirm");
-  if (ledger?.status !== "created") codes.push("not_created");
-  if (cfg.live && !connection) codes.push("no_connection");
-  else if (cfg.live && connection.level === "red") codes.push("expired");
-  if (codes.length) return refuse(codes);
+  const refusals = publishRefusals(preview.ctx, { confirm });
+  if (refusals.length) return refuse(refusals);
 
   const memberUrn = connection?.memberUrn ?? PLACEHOLDERS.member;
   if (!cfg.live) {
@@ -560,6 +591,8 @@ export async function publishRetry(userId, date, { confirm }, { config, client, 
   }
   const token = await accessToken(pool, userId, { config: cfg, now });
   const li = client ?? linkedInClient(cfg);
+  // A double click or a second tab: only one request posts.
+  if (!(await claimPost(ledger.id))) return refuse([{ code: "posting", message: REFUSALS.posting }]);
   return postAndMark({ userId, date, token, li, memberUrn, row: ledger, cfg, now, retry: true });
 }
 
