@@ -403,7 +403,7 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
 
   test("admin sees the section; the social role gets 403 and can't post; wrong Origin refused", async () => {
     const d = httpDate();
-    const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     assert.ok(page.includes('id="h-social"') && page.includes("Social post"));
     for (const c of CHANNELS) assert.ok(page.includes(`id="channel-${c}"`), c);
     assert.ok(page.includes('src="/js/admin-video.js"'), "the upload script is an external file (CSP script-src 'self')");
@@ -423,11 +423,11 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "social_post", baseCaption: "Coffee <b>Tuesday</b>", extraHashtags: "founders", coverNote: "", publishAt: `${so.mondayBefore(d)}T08:30` } });
     assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?notice=social_post#social`);
+    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_post#social`);
     const row = await postRow(d);
     assert.equal(so.formatPublishAt(row.publish_at).local, `${so.mondayBefore(d)}T08:30`);
 
-    const page = await (await req(`/admin/events/${d}/?notice=social_post`, { cookie: admin.cookie })).text();
+    const page = await (await req(`/admin/events/${d}/?tab=social&notice=social_post`, { cookie: admin.cookie })).text();
     assert.ok(page.includes("Social post saved."));
     assert.ok(page.includes("Coffee &lt;b&gt;Tuesday&lt;/b&gt;") && !page.includes("<b>Tuesday</b>"), "escaped");
     assert.ok(page.includes("social post ready") && page.includes("Facebook: pending") && page.includes("0/5 channels scheduled"));
@@ -443,11 +443,11 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     const ch = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "social_channel", channel: "threads", caption: "Threads text", firstComment: "" } });
     assert.equal(ch.status, 303);
-    const after = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    const after = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     assert.ok(after.includes("Threads text") && after.includes("override"));
 
     await owner.query(`update social_post_channels set status = 'scheduled', post_url = 'https://www.facebook.com/reel/1' where event_date = $1 and channel = 'facebook'`, [d]);
-    const sched = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    const sched = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     assert.ok(sched.includes("Facebook: scheduled") && sched.includes("1/5 channels scheduled") && sched.includes('href="https://www.facebook.com/reel/1"'));
     assert.ok(sched.includes("Changes here don't change posts already scheduled"));
 

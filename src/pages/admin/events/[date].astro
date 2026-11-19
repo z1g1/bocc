@@ -1,14 +1,20 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
-// Status and location, the listings and readiness checklist (Phase 4), the social
-// post (SocialPost, Phase 5, ADR 0011), the cancel flow, the after-event report (it
-// replaces the Google Form) and the photos (EventMedia, ADR 0010).
+// The Readiness checklist (Phase 4) sits above three tabs (ADR 0012 decision 1):
+//   ?tab=info    Event Info: status and location, the Online Event Listings, cancel
+//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
+//   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
+//                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
+// The tabs are plain links and only the current tab is rendered, so they work without
+// JavaScript. No tab, or an unknown one: Event Info for a future date, Post Event for
+// today or earlier, in Eastern time (src/lib/admin/event-tabs.mjs).
 //
 // A date with no events row still renders, as a new scheduled event; the first save
 // of any form creates the row. Plain HTML forms, no client script: each POSTs back
 // here with an `action` field, is Origin-checked, and answers 303 to a GET with a
-// fixed ?notice= (post/redirect/get). Invalid input re-renders with 400 (409 for a
-// refused state change) and the messages next to the fields. All logic and the audit
+// fixed ?notice= on the tab the form lives on (ACTION_TABS; post/redirect/get). Invalid
+// input re-renders that tab with 400 (409 for a refused state change) and the messages
+// next to the fields. All logic and the audit
 // rows are in src/lib/admin/events.mjs, event-links.mjs and social.mjs. The social
 // post's video upload is the one part that needs JavaScript (/js/admin-video.js).
 //
@@ -22,6 +28,7 @@ import SocialPost from "../../../components/admin/SocialPost.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
 import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+import { ACTION_TABS, TABS, pickTab } from "../../../lib/admin/event-tabs.mjs";
 import { purgeEventPages } from "../../../lib/site/purge.mjs";
 import { log } from "../../../lib/telemetry.mjs";
 export const prerender = false;
@@ -95,7 +102,7 @@ if (Astro.request.method === "POST") {
       }
     }
     const anchor = SOCIAL.has(action) ? "#social" : "";
-    return Astro.redirect(`/admin/events/${date}/?notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
+    return Astro.redirect(`/admin/events/${date}/?tab=${ACTION_TABS[action]}&notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
   } catch (err: any) {
     if (!(err instanceof ev.ValidationError)) throw err;
     errors = (err as any).errors;
@@ -114,6 +121,8 @@ const ready = el.readiness(event, links, social);
 const isFuture = date > today;
 const missing = ev.isReportMissing(event, today);
 const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
+// A refused save shows the tab its form is on, whatever the URL says.
+const tab = posted ? ACTION_TABS[posted.action] : pickTab(Astro.url.searchParams.get("tab"), date);
 
 // Form values: what was just posted (on an error), else what is stored.
 const from = (action: string) => (posted?.action === action ? posted.values : null);
@@ -180,6 +189,15 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     </section>
   )}
 
+  <nav aria-label="Event page tabs" class="tabs">
+    <ul>
+      {Object.entries(TABS).map(([key, label]) => (
+        <li><a href={`?tab=${key}`} aria-current={key === tab ? "page" : undefined}>{label}</a></li>
+      ))}
+    </ul>
+  </nav>
+
+  {tab === "info" && (<>
   <section aria-labelledby="h-details">
     <h2 id="h-details">Status and location</h2>
     <form method="post" class="narrow">
@@ -211,7 +229,7 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
   </section>
 
   <section aria-labelledby="h-links">
-    <h2 id="h-links">Listings</h2>
+    <h2 id="h-links">Online Event Listings</h2>
     <p class="muted">The event on each platform. Luma is the public page's call to action; the others are listed for search engines.</p>
     {el.PLATFORM_KEYS.map((p) => {
       const v = linkVal(p);
@@ -245,8 +263,44 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
     })}
   </section>
 
-  <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
+  <section aria-labelledby="h-cancel">
+    <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
+    {r && event.status !== "cancelled"
+      ? <p class="muted">This event has a report, so it was held.</p>
+      : (
+        <form method="post" class="narrow">
+          <input type="hidden" name="action" value="cancel">
+          <fieldset>
+            <legend>Why?</legend>
+            {Object.entries(CANCEL_REASONS).map(([v, label]) => (
+              <label class="check"><input type="radio" name="cancelReason" value={v} checked={can.cancelReason === v} required> {label}</label>
+            ))}
+            {canErr.cancelReason && <p class="error" role="alert">{canErr.cancelReason}</p>}
+            <label for="cancelReasonOther">Reason, if Other</label>
+            <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={can.cancelReasonOther}
+              aria-invalid={canErr.cancelReasonOther ? "true" : undefined}>
+            {canErr.cancelReasonOther && <p class="error" role="alert">{canErr.cancelReasonOther}</p>}
+          </fieldset>
+          <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={can.cancelAnnounced === "on"}> Announced on all socials</label>
+          <button type="submit" class={event.status === "cancelled" ? undefined : "secondary"}>
+            {event.status === "cancelled" ? "Save cancellation" : "Cancel event"}
+          </button>
+        </form>
+      )}
+    {event.status === "cancelled" && (
+      <form method="post">
+        <input type="hidden" name="action" value="uncancel">
+        <button type="submit" class="secondary">Un-cancel (back to scheduled)</button>
+      </form>
+    )}
+  </section>
+  </>)}
 
+  {tab === "social" && (
+    <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
+  )}
+
+  {tab === "post" && (<>
   <section aria-labelledby="h-report">
     <h2 id="h-report">Report</h2>
     {r && (
@@ -293,43 +347,16 @@ const statusLabel = event.status === "cancelled" ? "Cancelled" : event.status ==
         )}
   </section>
 
-  <section aria-labelledby="h-cancel">
-    <h2 id="h-cancel">{event.status === "cancelled" ? "Cancelled" : "Cancel this event"}</h2>
-    {r && event.status !== "cancelled"
-      ? <p class="muted">This event has a report, so it was held.</p>
-      : (
-        <form method="post" class="narrow">
-          <input type="hidden" name="action" value="cancel">
-          <fieldset>
-            <legend>Why?</legend>
-            {Object.entries(CANCEL_REASONS).map(([v, label]) => (
-              <label class="check"><input type="radio" name="cancelReason" value={v} checked={can.cancelReason === v} required> {label}</label>
-            ))}
-            {canErr.cancelReason && <p class="error" role="alert">{canErr.cancelReason}</p>}
-            <label for="cancelReasonOther">Reason, if Other</label>
-            <input id="cancelReasonOther" name="cancelReasonOther" maxlength={LIMITS.cancelReasonOther} value={can.cancelReasonOther}
-              aria-invalid={canErr.cancelReasonOther ? "true" : undefined}>
-            {canErr.cancelReasonOther && <p class="error" role="alert">{canErr.cancelReasonOther}</p>}
-          </fieldset>
-          <label class="check"><input type="checkbox" name="cancelAnnounced" value="on" checked={can.cancelAnnounced === "on"}> Announced on all socials</label>
-          <button type="submit" class={event.status === "cancelled" ? undefined : "secondary"}>
-            {event.status === "cancelled" ? "Save cancellation" : "Cancel event"}
-          </button>
-        </form>
-      )}
-    {event.status === "cancelled" && (
-      <form method="post">
-        <input type="hidden" name="action" value="uncancel">
-        <button type="submit" class="secondary">Un-cancel (back to scheduled)</button>
-      </form>
-    )}
-  </section>
-
   <EventMedia date={date} />
+  </>)}
 </Admin>
 
 <style>
   section { margin-top: 2rem; }
+  .tabs { margin-top: 1.25rem; border-bottom: 1px solid var(--line); }
+  .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0; }
+  .tabs a { display: inline-block; padding: 0.4rem 0.9rem; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; text-decoration: none; }
+  .tabs a[aria-current="page"] { border-color: var(--line); font-weight: 600; }
   fieldset { border: 0; padding: 0; margin: 0.75rem 0 0; }
   legend { font-weight: 600; padding: 0; }
   textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }

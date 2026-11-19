@@ -560,7 +560,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const res = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "save", status: "scheduled", location: "food_hall" } });
     assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), `/admin/events/${d}/?notice=saved`);
+    assert.equal(res.headers.get("location"), `/admin/events/${d}/?tab=info&notice=saved`);
     assert.deepEqual([(await eventRow(d)).location, (await auditRows(d))[0].actor_user_id], ["food_hall", admin.user.id]);
     const after = await (await req(`/admin/events/${d}/?notice=saved`, { cookie: admin.cookie })).text();
     assert.ok(after.includes("Saved.") && !after.includes("Not saved yet") && after.includes("Report missing"));
@@ -584,7 +584,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "report", givesAsksCount: "27", blingGiven: "yes", blingDetails: "Pat brought Sam", notes: "" } });
     assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?notice=report`);
+    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?tab=post&notice=report`);
     assert.equal((await eventRow(d)).status, "held");
     const [audit] = await auditRows(d);
     assert.deepEqual([audit.action, audit.actor_user_id], ["event_report.submit", admin.user.id]);
@@ -597,11 +597,11 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const d = pastDate();
     const c = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "cancel", cancelReason: "other_event", cancelAnnounced: "on" } });
-    assert.equal(c.headers.get("location"), `/admin/events/${d}/?notice=cancelled`);
+    assert.equal(c.headers.get("location"), `/admin/events/${d}/?tab=info&notice=cancelled`);
     const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
     assert.ok(page.includes("Un-cancel") && page.includes("No report for a cancelled event"));
     const u = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "uncancel" } });
-    assert.equal(u.headers.get("location"), `/admin/events/${d}/?notice=uncancelled`);
+    assert.equal(u.headers.get("location"), `/admin/events/${d}/?tab=info&notice=uncancelled`);
     assert.deepEqual(await eventRow(d), {
       status: "scheduled", location: null, location_other: null,
       cancel_reason: null, cancel_reason_other: null, cancel_announced: false,
@@ -642,7 +642,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "link", platform: "luma", url: "lu.ma/abc", externalId: "" } });
     assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?notice=link`);
+    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?tab=info&notice=link`);
     assert.equal((await eventRow(d)).status, "scheduled", "the first save created the event");
     const [audit] = (await auditRows(d)).filter((a) => a.action === "event_link.set");
     assert.deepEqual([audit.target_table, audit.details.platform, audit.details.created], ["event_links", "luma", true]);
@@ -661,9 +661,9 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     for (const li of nextItems) assert.match(li, /<span class="ready-tag[^"]*"[^>]*>\s*\d\/4 listings/, "home: listings at a glance");
 
     const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "unlink", platform: "luma" } });
-    assert.equal(clear.headers.get("location"), `/admin/events/${d}/?notice=unlink`);
+    assert.equal(clear.headers.get("location"), `/admin/events/${d}/?tab=info&notice=unlink`);
     const again = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "unlink", platform: "luma" } });
-    assert.equal(again.headers.get("location"), `/admin/events/${d}/?notice=unchanged`);
+    assert.equal(again.headers.get("location"), `/admin/events/${d}/?tab=info&notice=unchanged`);
     assert.equal((await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "link", platform: "myspace", url: "x" } })).status, 400);
     for (const who of [social, noRole]) {
       const res = await req(`/admin/events/${d}/`, { cookie: who.cookie, method: "POST", form: { action: "link", platform: "luma", url: "https://luma.com/x" } });
@@ -672,8 +672,8 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.equal((await owner.query(`select 1 from event_links where event_date = $1`, [d])).rowCount, 0);
   });
 
-  test("a past event has the Listings section but no readiness block at the top", async () => {
-    const html = await (await req(`/admin/events/${pastDate()}/`, { cookie: admin.cookie })).text();
+  test("a past event has the Online Event Listings section (Event Info tab) but no readiness block at the top", async () => {
+    const html = await (await req(`/admin/events/${pastDate()}/?tab=info`, { cookie: admin.cookie })).text();
     assert.ok(html.includes('id="h-links"') && !html.includes('id="h-ready"'));
   });
 });

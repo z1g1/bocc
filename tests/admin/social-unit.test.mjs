@@ -174,7 +174,7 @@ describe("ready and the work order", () => {
     const notReady = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored({ ready: false }), lumaUrl: LUMA, video });
     assert.deepEqual([notReady.problems, notReady.actionable], [[], false]);
     const msgs = r.readyProblems({ event: { status: "scheduled" }, post: null, video: null, lumaUrl: null }).map((p) => p.message);
-    assert.deepEqual(msgs, ["Upload the promo video.", "Write the base caption.", "Add the Luma listing (under Listings): it is the only link the posts use."]);
+    assert.deepEqual(msgs, ["Upload the promo video.", "Write the base caption.", "Add the Luma listing (under Online Event Listings): it is the only link the posts use."]);
   });
 
   test("a date with no post: defaults, not actionable", () => {

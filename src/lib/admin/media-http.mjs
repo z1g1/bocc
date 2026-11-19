@@ -55,8 +55,9 @@ export async function readJson(request) {
 }
 
 /**
- * Answer a gallery form post: a 303 to the photo's own event page
- * (/admin/events/<date>/?media=<notice>), or JSON when the request was JSON. The
+ * Answer a gallery form post: a 303 to the photo's own event page, on the tab that
+ * shows it (/admin/events/<date>/?tab=post&media=<notice>#event-media; a promo video:
+ * ?tab=social…#social, ADR 0012), or JSON when the request was JSON. The
  * target is built from the row's event_date, never from a client-supplied value, so it
  * can't be turned into an open redirect (e.g. "/admin/..//evil.example" normalising to
  * a protocol-relative "//evil.example").
@@ -70,7 +71,8 @@ export function formOrJson(form, eventDate, notice, body, anchor = "event-media"
   if (!form) return json(200, body);
   if (!isIsoDate(eventDate)) throw new Error("formOrJson: eventDate must be YYYY-MM-DD");
   if (anchor !== "event-media" && anchor !== "social") throw new Error("formOrJson: unknown anchor");
-  const location = `/admin/events/${eventDate}/?media=${encodeURIComponent(notice)}#${anchor}`;
+  const tab = anchor === "social" ? "social" : "post";
+  const location = `/admin/events/${eventDate}/?tab=${tab}&media=${encodeURIComponent(notice)}#${anchor}`;
   return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
 

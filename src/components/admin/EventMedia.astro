@@ -4,9 +4,10 @@
 // order, ADR 0008). Props are stable for the event page:
 //   <EventMedia date="2026-11-24" />
 //
-// - Two sections, "Sign-in board" and "Social photos", each with its own upload form
+// - Two sections, "Sign-in board" and "Photos from Event" (kind social_photo; the label
+//   was "Social photos" until ADR 0012), each with its own upload form
 //   (kind fixed by a hidden field), status line, gallery and unfinished uploads. No
-//   "OK to use publicly" control: every social photo is covered by the posted photo
+//   "OK to use publicly" control: every photo from the event is covered by the posted photo
 //   waiver, so the server marks it publicly usable (ADR 0010 decision 2).
 // - Upload forms: /js/admin-media.js makes the 1600px display copy and the 400px
 //   thumbnail in the browser and PUTs all three files straight to the private bucket
@@ -42,9 +43,9 @@ const SECTIONS = [
     pickLabel: "Sign-in board photos (JPEG or PNG)", button: "Upload sign-in board photos",
   },
   {
-    kind: "social_photo", slug: "social", heading: "Social photos", label: "Social photo",
-    intro: "Photos from the event for social media.", empty: "No social photos yet.",
-    pickLabel: "Social photos (JPEG or PNG)", button: "Upload social photos",
+    kind: "social_photo", slug: "social", heading: "Photos from Event", label: "Photo from Event",
+    intro: "Photos taken at the event. They may or may not go on social.", empty: "No photos from the event yet.",
+    pickLabel: "Photos from Event (JPEG or PNG)", button: "Upload photos from the event",
   },
 ] as const;
 
