@@ -62,7 +62,7 @@ after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 describe("migration 20261124120000_linkedin_connections.sql", () => {
-  test("grants: admin_app SELECT, INSERT, UPDATE, DELETE, and nobody else anything", async () => {
+  test("grants: admin_app SELECT, INSERT, UPDATE, DELETE; social_checker only the expiry and user link (#24)", async () => {
     const { rows } = await owner.query(
       `select g.grantee || ':' || g.privilege_type as g
          from information_schema.role_table_grants g
@@ -72,16 +72,17 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
         order by 1`);
     assert.deepEqual(rows.map((r) => r.g), ["admin_app:DELETE", "admin_app:INSERT", "admin_app:SELECT", "admin_app:UPDATE"]);
     const { rows: cols } = await owner.query(
-      `select grantee from information_schema.column_privileges
+      `select grantee || ':' || privilege_type || ':' || column_name as g from information_schema.column_privileges
         where table_schema = 'public' and table_name = 'linkedin_connections' and grantee <> 'admin_app'
-          and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_connections')`);
-    assert.deepEqual(cols, []);
+          and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_connections')
+        order by 1`);
+    assert.deepEqual(cols.map((r) => r.g), ["social_checker:SELECT:expires_at", "social_checker:SELECT:user_id"]);
   });
 
-  test("as each role: admin_app may read and write; checkin_writer, site_reader and social_checker can't read", async () => {
+  test("as each role: admin_app may read and write; checkin_writer and site_reader can't read; social_checker never the token", async () => {
     const user = await newUser();
     const admin = await connect(ADMIN_URL);
-    const others = await Promise.all([CHECKIN_URL, SITE_URL, SOCIAL_CHECK_URL].filter(Boolean).map(connect));
+    const others = await Promise.all([CHECKIN_URL, SITE_URL].filter(Boolean).map(connect));
     try {
       await inRollback(admin, async () => {
         await admin.query(
@@ -99,6 +100,18 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
         await assertRefused(db, `select * from linkedin_connections limit 1`);
         await assertRefused(db, `select user_id, expires_at from linkedin_connections limit 1`);
         await db.query("rollback");
+      }
+      // The Thursday check's role: the expiry and the user link, never the token (#24;
+      // the full social_checker checks are in social-alert.test.mjs).
+      if (SOCIAL_CHECK_URL) {
+        const checker = await connect(SOCIAL_CHECK_URL);
+        try {
+          await checker.query("begin");
+          await assertAllowed(checker, `select user_id, expires_at from linkedin_connections limit 1`);
+          await assertRefused(checker, `select token_ciphertext from linkedin_connections limit 1`);
+          await assertRefused(checker, `select * from linkedin_connections limit 1`);
+          await checker.query("rollback");
+        } finally { await checker.end(); }
       }
     } finally {
       await admin.end();

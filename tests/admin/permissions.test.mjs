@@ -35,6 +35,7 @@ describe("migrations", () => {
       "20261122120000_social_posts.sql",
       "20261123120000_social_checker.sql",
       "20261124120000_linkedin_connections.sql",
+      "20261125120000_social_checker_linkedin.sql",
     ]);
   });
 
