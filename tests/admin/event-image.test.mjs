@@ -1,6 +1,6 @@
 // The Event Image (ADR 0012 decision 3) against the throwaway database and MinIO
 // (npm run test:db):
-//   1. the schema (migration 20261124120000): the event_image kind and its cover copy,
+//   1. the schema (migration 20261125120000): the event_image kind and its cover copy,
 //      at most one ready per event, admin_app's grants
 //   2. src/lib/admin/media.mjs + event-image.mjs as admin_app: upload with the 16:9
 //      cover, replace, clear, each audited; resolution back to the logo; the cover's

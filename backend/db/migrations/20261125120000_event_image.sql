@@ -1,4 +1,4 @@
--- Migration 0012 — the Event Image (ADR 0012 decision 3, ticket #20)
+-- Migration 0013 — the Event Image (ADR 0012 decision 3, ticket #20)
 --
 -- One image per event for every Online Event Listing of the week. It is a new
 -- event_media kind, `event_image`, in the same private bucket with presigned links:

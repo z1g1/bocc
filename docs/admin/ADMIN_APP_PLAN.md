@@ -500,8 +500,10 @@ work (to save deploy credits); everything is verified on staging first.
       social post's cover. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
       connections only), `social_checker` the connection expiry only, nothing for
       `site_reader`/`checkin_writer`
-- [ ] LinkedIn OAuth connect, status ("Connected as …, expires …"), reconnect and disconnect,
-      for Admins, with the production and staging callback URLs on the LinkedIn app
+- [x] LinkedIn OAuth connect, status ("Connected as …, expires …"), reconnect and disconnect,
+      for Admins (#23: `/api/admin/linkedin/{connect,callback,disconnect}`, the LinkedIn client
+      adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
+      production and staging callback URLs
 - [ ] The LinkedIn event section on Social Posts: preview, "Create live event" with a confirm
       dialog, dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
