@@ -491,6 +491,18 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     assert.equal(unknown.status, 400);
   });
 
+  test("the cover wording: cover image intro, Thumbnail timecode, and the Publish at default hint (#41)", async () => {
+    const d = "2086-11-19"; // a Tuesday; the Monday before is Nov 18
+    const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
+    const text = page.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    assert.ok(text.includes("The video's cover image on the platforms that support this feature"), "cover image intro");
+    assert.ok(!text.includes("promo video's cover on the platforms"), "the old intro is gone");
+    assert.match(page, /<label for="coverNote"[^>]*>Thumbnail timecode </);
+    assert.ok(text.includes("the frame of the video to use where a cover image can't be uploaded, for example \"0:03\""), "timecode hint");
+    assert.ok(!text.includes("Cover note"), "no Cover note label left");
+    assert.ok(text.includes("(blank = the Monday before the event, 7:00 AM Eastern (Mon, Nov 18))"), "Publish at hint");
+  });
+
   test("the video upload script is served as JavaScript", async () => {
     const res = await fetch(`${BASE}/js/admin-video.js`);
     assert.equal(res.status, 200);

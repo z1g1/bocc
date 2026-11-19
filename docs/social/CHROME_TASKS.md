@@ -73,8 +73,8 @@ Steps:
    Then, under "Cover image", click "Download the cover image" and note its file name. If the
    cover link is missing or fails, carry on without it and mention it in your report.
    A custom cover image is set only where a channel's step below says so. On every other
-   channel, if there is a cover note, use it to choose the cover frame wherever the platform
-   allows.
+   channel, if there is a "Thumbnail timecode", choose the frame of the video at that time
+   (for example 0:03) as the thumbnail wherever the platform allows.
 4. Work through the channels in page order: Facebook, Instagram, Threads, TikTok, LinkedIn page.
    Skip any channel whose heading isn't "pending": it is already done.
    For each pending channel, copy its caption exactly from the <pre> under "Caption for
@@ -86,7 +86,7 @@ Steps:
      schedule them as two separate reels so each gets its own caption.) Instagram cover: if the
      composer offers to upload a cover or thumbnail image from the computer, upload the
      downloaded cover image for the Instagram reel. If it only offers a frame, choose the frame
-     (cover note) and add the note "no custom cover upload". Facebook: no custom cover step;
+     (Thumbnail timecode) and add the note "no custom cover upload". Facebook: no custom cover step;
      keep the frame. Schedule for the publish time.
    - Threads: the Threads web app (threads.com), signed in as 716coffeeclub. New thread, attach
      the video, paste the Threads caption, then schedule for the publish time. Business Suite
@@ -133,10 +133,10 @@ prompt from it.
 
 | Channel | Custom cover upload | Prompt | Source |
 |---|---|---|---|
-| Facebook (Business Suite reel) | **Unconfirmed.** Meta documents a custom thumbnail (up to 10 MB) for ordinary Page videos, not for Reels or the Business Suite scheduler | frame only (cover note) | facebook.com/business/help/163131210928551, /2683452421955589 |
+| Facebook (Business Suite reel) | **Unconfirmed.** Meta documents a custom thumbnail (up to 10 MB) for ordinary Page videos, not for Reels or the Business Suite scheduler | frame only (Thumbnail timecode) | facebook.com/business/help/163131210928551, /2683452421955589 |
 | Instagram (reel) | **Confirmed on instagram.com** ("Select from computer"; about 420×654, 1:1.55; can't be changed after posting). Not documented for the Business Suite scheduler | upload it if the composer offers it, else frame + note | help.instagram.com/225190788256708, about.instagram.com/features/reels |
-| Threads (web) | **Unconfirmed.** No help-center article found | frame only (cover note) | none |
-| TikTok (TikTok Studio web) | **Unconfirmed for the web.** Creator Academy describes "upload local cover" (9:16, 1080×1920) without saying which app | frame only (cover note) | tiktok.com/creator-academy/article/video-covers-thumbnails |
+| Threads (web) | **Unconfirmed.** No help-center article found | frame only (Thumbnail timecode) | none |
+| TikTok (TikTok Studio web) | **Unconfirmed for the web.** Creator Academy describes "upload local cover" (9:16, 1080×1920) without saying which app | frame only (Thumbnail timecode) | tiktok.com/creator-academy/article/video-covers-thumbnails |
 | LinkedIn page | **Confirmed** ("Video thumbnail" -> "Upload video thumbnail"). Third parties say JPG/PNG, the video's aspect ratio, up to 2 MB: not in the official doc | upload it, else note | linkedin.com/help/linkedin/answer/a527229 |
 
 At #29, also check: whether a square cover looks right on the 9:16 reels (Instagram crops to

@@ -655,6 +655,7 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.ok(html.includes(`data-date="${NEXT}"`), "this post is the next one");
     assert.ok(html.includes(order.publishAtDisplay.et) && html.includes(order.publishAtDisplay.utc), "publish time in ET and UTC");
     assert.ok(inner(html, "pre", "cover-note") === "Use the frame at 0:03");
+    assert.ok(html.includes(">Thumbnail timecode</h3>") && !html.includes("Cover note"), "the work order calls it Thumbnail timecode (#41)");
     assert.ok(has(html, /<a id="cover-download" href="http:\/\/localhost:\d+\/assets\/images\/brand\/bocc-logo-square\.png" download="bocc-[\d-]+-cover\.png"/),
       "the cover (the logo default) as a link on the site's origin");
     assert.ok(!/<script(?![^>]*\bsrc=)/.test(html), "no inline script (CSP script-src 'self')");

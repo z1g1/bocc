@@ -14,7 +14,7 @@
 // - Cover image (#social-cover, ticket #22): the promo video's cover, the Event Image
 //   unless overridden with a publicly usable Photo from Event (social.mjs
 //   listCoverChoices; action social_cover, mediaId "" = back to the Event Image).
-// - The post form: base caption, TikTok's extra hashtags, cover note, publish time
+// - The post form: base caption, TikTok's extra hashtags, thumbnail timecode (stored as cover_note), publish time
 //   (an Eastern datetime-local; shown in Eastern and UTC), and the status dropdown
 //   (ticket #39: To do / Ready for Posting / Posted / Error, rules.POST_STATUSES;
 //   Posted and Error are also set by the social role's channel updates).
@@ -90,8 +90,6 @@ const chVal = (c: any) => chPosted(c.channel)?.values ?? {
 };
 const chErr = (c: string) => (chPosted(c) ? errors : {});
 const started = order.channels.filter((c: any) => c.status && c.status !== "pending");
-const def = rules.defaultPublishAt(date);
-const defDisplay = rules.formatPublishAt(def);
 const STATUS_LABEL: Record<string, string> = { pending: "pending", scheduled: "scheduled", live: "live", failed: "failed" };
 const formatBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 const MEDIA_NOTICES: Record<string, string> = {
@@ -201,8 +199,7 @@ const fmtTime = (d: Date) =>
     <div id="social-cover" class="cover-block">
       <h3 id="h-social-cover">Cover image</h3>
       <p class="muted">
-        The promo video's cover on the platforms that allow a custom one (docs/social/CHROME_TASKS.md).
-        It is the Event Image unless you choose a Photo from Event here.
+        The video's cover image on the platforms that support this feature
       </p>
       {coverErr.cover && <p class="error" role="alert">{coverErr.cover}</p>}
       {cover && (
@@ -256,12 +253,12 @@ const fmtTime = (d: Date) =>
         placeholder="#SmallBusiness #Founders" aria-invalid={pe.extraHashtags ? "true" : undefined}>
       {pe.extraHashtags && <p class="error" role="alert">{pe.extraHashtags}</p>}
 
-      <label for="coverNote">Cover note <span class="muted">(which frame or text to use as the cover)</span></label>
+      <label for="coverNote">Thumbnail timecode <span class="muted">(the frame of the video to use where a cover image can't be uploaded, for example "0:03")</span></label>
       <textarea id="coverNote" name="coverNote" rows="2" maxlength={rules.LIMITS.coverNote}
         aria-invalid={pe.coverNote ? "true" : undefined}>{pv.coverNote}</textarea>
       {pe.coverNote && <p class="error" role="alert">{pe.coverNote}</p>}
 
-      <label for="publishAt">Publish at, Eastern time <span class="muted">(blank = {defDisplay.et})</span></label>
+      <label for="publishAt">Publish at, Eastern time <span class="muted">(blank = {rules.publishAtDefaultHint(date)})</span></label>
       <input id="publishAt" name="publishAt" type="datetime-local" step="60" value={pv.publishAt}
         aria-invalid={pe.publishAt ? "true" : undefined} aria-describedby="publishAt-now">
       <p id="publishAt-now" class="muted">

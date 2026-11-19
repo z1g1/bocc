@@ -118,10 +118,10 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
           )
           : <p id="cover-download-unavailable" class="error">{cover?.unavailable ?? "No cover image."}</p>}
         <p class="muted">Set it as the video's cover only on the channels whose step says so (docs/social/CHROME_TASKS.md).</p>
-        <h3>Cover note</h3>
+        <h3>Thumbnail timecode</h3>
         {order.coverNote
           ? <pre id="cover-note">{order.coverNote}</pre>
-          : <p id="cover-note" class="muted">No cover note: keep the platform's default cover frame.</p>}
+          : <p id="cover-note" class="muted">No thumbnail timecode: keep the platform's default thumbnail frame.</p>}
       </section>
 
       <section id="channels" aria-labelledby="h-channels">

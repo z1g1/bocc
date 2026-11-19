@@ -31,9 +31,17 @@ LinkedIn facts that shape this (carried over from the CLI):
 
 1. **The event page prefactor (tabs).** The Readiness summary stays at the top, above three
    server-rendered tabs that work without JavaScript:
-   - **Event Info:** Status and location, Online Event Listings, Event Image, Cancel this event
-   - **Social Posts:** Social post, LinkedIn event
+   - **Event Info:** Status and location, Online Event Listings, Event Image, Cancel this event,
+     LinkedIn event
+   - **Social Posts:** Social post
    - **Post Event:** Report, Sign-in board, Photos from Event
+
+   *Amended 2026-11-19 (#38):* the LinkedIn event section (connection status, preview, dialog,
+   dry run and live create, Publish-retry and allow-retry, the "LinkedIn is out of date"
+   notice) is on Event Info, after the Event Image, not on Social Posts. The LinkedIn event
+   is made on Tuesday afternoon for the next week's BOCC, alongside the other online
+   listings; the social post is later in the week. Its actions and the OAuth return land on
+   `?tab=info`.
 
    The tab is picked by `?tab=info|social|post`. With no tab, or an unknown one, a future date
    opens Event Info and today or a past date opens Post Event, in Eastern time. Every form
