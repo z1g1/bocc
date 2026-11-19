@@ -10,7 +10,7 @@
 //
 // Reads (take `db`, the pool or a client, first):
 //   getSocialPost(db, date)              -> post | null
-//       { date, videoMediaId, coverNote, baseCaption, extraHashtags[], publishAt, ready,
+//       { date, videoMediaId, coverMediaId, coverNote, baseCaption, extraHashtags[], publishAt, ready,
 //         createdAt, updatedAt, channels: { facebook: { caption, firstComment, status,
 //         postUrl, verifiedAt, commentPostedAt, notes, updatedAt }, … } }
 //       caption / firstComment are the stored overrides (null = the code default).
@@ -18,7 +18,10 @@
 //       its final per-channel texts, the video row, the Luma URL, `problems`, and
 //       `actionable` (ready and no problems). For a date with no post, `exists: false`
 //       and the defaults.
-//   readState(db, date)                  -> { event, post, lumaUrl, video } (its inputs)
+//   readState(db, date)                  -> { event, post, lumaUrl, video, coverMedia, eventImage }
+//       (its inputs; the work order's `cover` is resolveSocialCover(): the override
+//       photo, else the Event Image, event-image.mjs getEventImage)
+//   listCoverChoices(db, date)           -> the photos the cover can be set to
 //
 // Writes (each change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }; target_id is the
@@ -33,6 +36,11 @@
 //       future and not after the event day (.errors.publishAt).
 //   setVideo(actor, date, mediaId)               social_post.video
 //       a `ready` promo_video of the same event (.errors.video otherwise).
+//   setCover(actor, date, mediaId | "")       social_post.cover
+//       the cover image override: a ready, publicly usable social_photo of any event
+//       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
+//       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
+//       SET NULL, migration 20261126120000).
 //   saveChannel(actor, date, channel, input)     social_post_channel.update
 //       caption / firstComment overrides; blank, or exactly the default, stores NULL
 //       (so the channel keeps following the default). On a ready post, a caption over
