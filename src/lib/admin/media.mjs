@@ -44,7 +44,9 @@ export { NotFoundError, ValidationError };
 
 export const PHOTO_KINDS = Object.freeze(["signin_board", "social_photo"]);
 export const VIDEO_KIND = "promo_video";
-export const UPLOAD_KINDS = Object.freeze([...PHOTO_KINDS, VIDEO_KIND]);
+/** The week's one image (ADR 0012 decision 3): see src/lib/admin/event-image.mjs. */
+export const EVENT_IMAGE_KIND = "event_image";
+export const UPLOAD_KINDS = Object.freeze([...PHOTO_KINDS, VIDEO_KIND, EVENT_IMAGE_KIND]);
 export const ORIGINAL_TYPES = Object.freeze(["image/jpeg", "image/png"]);
 export const VIDEO_TYPES = Object.freeze(["video/mp4", "video/quicktime"]);
 export const COPY_TYPE = "image/jpeg";
@@ -60,8 +62,15 @@ export const LIMITS = Object.freeze({
   original: 25 * 1024 * 1024,
   display: 5 * 1024 * 1024,
   thumb: 1024 * 1024,
+  cover: 5 * 1024 * 1024,
   video: 100 * 1024 * 1024,
 });
+
+// The Event Image's original: smaller cap than a photo (it is a designed image, not a
+// phone photo), and big enough for the 16:9 cover. Its dimensions are measured in the
+// browser and declared (the server never reads the bytes), so the minimum is checked
+// here only as a guard against a buggy client. Keep in step with admin-media-lib.js.
+export const EVENT_IMAGE = Object.freeze({ maxBytes: 8 * 1024 * 1024, minWidth: 480, minHeight: 270 });
 
 // Presigned PUTs last 15 minutes, not the storage default of 5: the three files go up
 // one after another from a phone, and S3 checks expiry when a request starts.
@@ -72,7 +81,8 @@ export const EARLIEST_DATE = "2024-01-01";
 
 const VARIANTS = /** @type {const} */ (["original", "display", "thumb"]);
 /** The objects a row of this kind has. */
-const variantsFor = (kind) => (kind === VIDEO_KIND ? /** @type {const} */ (["original"]) : VARIANTS);
+const variantsFor = (kind) => (kind === VIDEO_KIND ? /** @type {const} */ (["original"])
+  : kind === EVENT_IMAGE_KIND ? /** @type {const} */ ([...VARIANTS, "cover"]) : VARIANTS);
 
 const isSize = (n, max) => Number.isSafeInteger(n) && n > 0 && n <= max;
 const plusDays = (d, days) => new Date(d.getTime() + days * 86400000).toISOString().slice(0, 10);
@@ -95,22 +105,29 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
 
   if (!UPLOAD_KINDS.includes(b.kind)) errors.push(`kind must be one of ${UPLOAD_KINDS.join(", ")}`);
   const video = b.kind === VIDEO_KIND;
+  const eventImage = b.kind === EVENT_IMAGE_KIND;
 
   // Not the client's choice (see the top of this file): any publiclyUsable sent is ignored.
   const publiclyUsable = b.kind === "social_photo";
 
   const o = b.original;
   const types = video ? VIDEO_TYPES : ORIGINAL_TYPES;
-  const max = video ? LIMITS.video : LIMITS.original;
+  const max = video ? LIMITS.video : eventImage ? EVENT_IMAGE.maxBytes : LIMITS.original;
   if (!o || typeof o !== "object") errors.push("original is required");
   else {
     if (!types.includes(o.contentType)) errors.push(`original.contentType must be ${types.join(" or ")}`);
     if (!isSize(o.size, max)) errors.push(`original.size must be 1 to ${max} bytes`);
+    if (eventImage && !(Number.isSafeInteger(o.width) && Number.isSafeInteger(o.height)
+      && o.width >= EVENT_IMAGE.minWidth && o.height >= EVENT_IMAGE.minHeight)) {
+      errors.push(`original.width and original.height must be at least ${EVENT_IMAGE.minWidth}x${EVENT_IMAGE.minHeight}`);
+    }
   }
   if (video) {
     for (const v of ["display", "thumb"]) if (b[v] !== undefined) errors.push(`${v} is not used for a video`);
   } else {
-    for (const v of /** @type {const} */ (["display", "thumb"])) {
+    const copies = /** @type {Array<"display"|"thumb"|"cover">} */ (eventImage ? ["display", "thumb", "cover"] : ["display", "thumb"]);
+    if (!eventImage && b.cover !== undefined) errors.push("cover is only for the Event Image");
+    for (const v of copies) {
       const c = b[v];
       if (!c || typeof c !== "object") errors.push(`${v} is required`);
       else {
@@ -127,7 +144,9 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
       kind: b.kind,
       publiclyUsable,
       original: { contentType: o.contentType, size: o.size },
+      ...(eventImage ? { original: { contentType: o.contentType, size: o.size, width: o.width, height: o.height } } : {}),
       ...(video ? {} : { display: { size: b.display.size }, thumb: { size: b.thumb.size } }),
+      ...(eventImage ? { cover: { size: b.cover.size } } : {}),
     },
   };
 }

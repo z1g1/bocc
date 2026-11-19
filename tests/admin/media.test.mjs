@@ -155,6 +155,55 @@ describe("upload validation", () => {
   });
 });
 
+describe("Event Image upload validation (ADR 0012 decision 3)", () => {
+  const today = new Date("2026-11-17T12:00:00Z");
+  const ei = (over = {}) => ({
+    eventDate: "2026-11-24", kind: "event_image",
+    original: { contentType: "image/png", size: 500_000, width: 2000, height: 2000 },
+    display: { size: 100_000 }, thumb: { size: 10_000 }, cover: { size: 90_000 },
+    ...over,
+  });
+  const eerrs = (over) => {
+    const r = media.validateUploadRequest(ei(over), { today });
+    assert.equal(r.ok, false, JSON.stringify(over));
+    return r.errors.join("; ");
+  };
+
+  test("a good request passes and is never publicly usable", () => {
+    const r = media.validateUploadRequest(ei(), { today });
+    assert.equal(r.ok, true);
+    assert.equal(r.values.kind, "event_image");
+    assert.equal(r.values.publiclyUsable, false);
+    assert.deepEqual(r.values.cover, { size: 90_000 });
+    assert.deepEqual(r.values.original, { contentType: "image/png", size: 500_000, width: 2000, height: 2000 });
+  });
+  test("over 8 MiB is refused (not the 25 MB photo cap)", () => {
+    assert.equal(media.EVENT_IMAGE.maxBytes, 8 * 1024 * 1024);
+    assert.match(eerrs({ original: { contentType: "image/jpeg", size: 8 * 1024 * 1024 + 1, width: 2000, height: 2000 } }), /original.size must be 1 to 8388608/);
+  });
+  test("smaller than 480x270, or no dimensions, is refused", () => {
+    for (const [width, height] of [[479, 300], [500, 269], [undefined, 300], [1.5, 300], ["600", 400]]) {
+      assert.match(eerrs({ original: { contentType: "image/png", size: 10, width, height } }), /at least 480x270/, `${width}x${height}`);
+    }
+  });
+  test("the cover copy is required, JPEG, within its cap", () => {
+    assert.match(eerrs({ cover: undefined }), /cover is required/);
+    assert.match(eerrs({ cover: { contentType: "image/png", size: 10 } }), /cover.contentType/);
+    assert.match(eerrs({ cover: { size: media.LIMITS.cover + 1 } }), /cover.size/);
+  });
+  test("other kinds don't take a cover", () => {
+    const r = media.validateUploadRequest(body("2026-11-24", { cover: { size: 10 } }), { today });
+    assert.equal(r.ok, false);
+    assert.match(r.errors.join("; "), /cover is only for the Event Image/);
+  });
+  test("the browser's Event Image limits match the server's", () => {
+    assert.equal(lib.EVENT_IMAGE_MAX_BYTES, media.EVENT_IMAGE.maxBytes);
+    assert.equal(lib.EVENT_IMAGE_MIN_WIDTH, media.EVENT_IMAGE.minWidth);
+    assert.equal(lib.EVENT_IMAGE_MIN_HEIGHT, media.EVENT_IMAGE.minHeight);
+    assert.equal(lib.MAX_COVER_BYTES, media.LIMITS.cover);
+  });
+});
+
 describe("upload flow against MinIO", { skip }, () => {
   test("first upload creates the events row (scheduled) and a pending row with server-built keys", async () => {
     const date = await freshDate();

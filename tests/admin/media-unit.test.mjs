@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   ACCEPTED_TYPES, DISPLAY_EDGE, THUMB_EDGE, UNREADABLE_MESSAGE, checkFile, fitWithin, formatBytes,
   normalizeType, uploadRequestBody, MAX_ORIGINAL_BYTES, centreCrop16x9,
+  checkEventImage, coverSize, eventImageRequestBody,
 } from "../../public/js/admin-media-lib.js";
 import {
   filenameDate, importId, isTuesday, matchPhotos, parseOverrides, resolvePlan, tuesdayOnOrBefore, formatTable,
@@ -88,6 +89,66 @@ describe("browser helpers: the Event Image's 16:9 cover (ADR 0012 decision 3)", 
   });
   test("refuses non-positive sizes", () => {
     assert.throws(() => centreCrop16x9(0, 10));
+  });
+});
+
+describe("browser helpers: Event Image checks (PNG or JPEG, at least 480x270, at most 8 MiB)", () => {
+  const MiB = 1024 * 1024;
+  const img = (over = {}) => ({ name: "cover.png", type: "image/png", size: 500_000, width: 1920, height: 1080, ...over });
+
+  test("a 16:9 PNG or JPEG within the limits passes with no warning", () => {
+    assert.deepEqual(checkEventImage(img()), { ok: true, contentType: "image/png", warning: null });
+    assert.deepEqual(checkEventImage(img({ type: "image/jpg", width: 480, height: 270, size: 8 * MiB })),
+      { ok: true, contentType: "image/jpeg", warning: null });
+  });
+
+  test("another type is refused", () => {
+    for (const type of ["image/gif", "image/webp", "image/heic", ""]) {
+      const r = checkEventImage(img({ type }));
+      assert.equal(r.ok, false, type);
+      assert.match(r.message, /PNG or JPEG/);
+    }
+  });
+
+  test("over 8 MiB or empty is refused", () => {
+    const big = checkEventImage(img({ size: 8 * MiB + 1 }));
+    assert.equal(big.ok, false);
+    assert.match(big.message, /limit is 8\.0 MB/);
+    assert.equal(checkEventImage(img({ size: 0 })).ok, false);
+  });
+
+  test("smaller than 480x270 is refused, either edge", () => {
+    for (const [width, height] of [[479, 1000], [1000, 269], [400, 225]]) {
+      const r = checkEventImage(img({ width, height }));
+      assert.equal(r.ok, false, `${width}x${height}`);
+      assert.match(r.message, /at least 480×270/);
+    }
+  });
+
+  test("not 16:9 is allowed with a warning about the centre crop", () => {
+    const r = checkEventImage(img({ width: 2000, height: 2000 }));
+    assert.equal(r.ok, true);
+    assert.match(r.warning, /not 16:9/);
+    assert.match(r.warning, /centre/);
+    // Within a pixel of 16:9 counts as 16:9.
+    assert.equal(checkEventImage(img({ width: 1366, height: 768 })).warning, null);
+  });
+
+  test("the cover is the crop, at most 1920 wide, never upscaled", () => {
+    assert.deepEqual(coverSize(4032, 2268), { width: 1920, height: 1080 });
+    assert.deepEqual(coverSize(1280, 720), { width: 1280, height: 720 });
+  });
+
+  test("the request body declares the original's size and dimensions and the three copies", () => {
+    assert.deepEqual(eventImageRequestBody({
+      eventDate: "2026-11-24", original: { contentType: "image/png", size: 9, width: 2000, height: 2000 },
+      display: { size: 5 }, thumb: { size: 2 }, cover: { size: 4 },
+    }), {
+      eventDate: "2026-11-24", kind: "event_image",
+      original: { contentType: "image/png", size: 9, width: 2000, height: 2000 },
+      display: { contentType: "image/jpeg", size: 5 }, thumb: { contentType: "image/jpeg", size: 2 },
+      cover: { contentType: "image/jpeg", size: 4 },
+    });
   });
 });
 
