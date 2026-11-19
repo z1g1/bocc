@@ -90,6 +90,22 @@ export function fitWithin(width, height, maxEdge) {
   };
 }
 
+/**
+ * The centre-crop source rectangle that makes a 16:9 cover from a (width x height)
+ * image: the largest 16:9 area, centred, in whole pixels (an odd leftover pixel goes
+ * to the bottom or right). Draw it with ctx.drawImage(src, sx, sy, sw, sh, 0, 0, W, H).
+ * @returns {{ sx: number, sy: number, sw: number, sh: number }}
+ */
+export function centreCrop16x9(width, height) {
+  if (!(width > 0 && height > 0)) throw new Error("centreCrop16x9: dimensions must be positive");
+  if (width * 9 > height * 16) {
+    const sw = Math.min(width, Math.round((height * 16) / 9));
+    return { sx: Math.floor((width - sw) / 2), sy: 0, sw, sh: height };
+  }
+  const sh = Math.min(height, Math.round((width * 9) / 16));
+  return { sx: 0, sy: Math.floor((height - sh) / 2), sw: width, sh };
+}
+
 /** The JSON body for POST /api/admin/media/uploads. */
 export function uploadRequestBody({ eventDate, kind, publiclyUsable, original, display, thumb }) {
   return {

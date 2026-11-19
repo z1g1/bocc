@@ -6,7 +6,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ACCEPTED_TYPES, DISPLAY_EDGE, THUMB_EDGE, UNREADABLE_MESSAGE, checkFile, fitWithin, formatBytes,
-  normalizeType, uploadRequestBody, MAX_ORIGINAL_BYTES,
+  normalizeType, uploadRequestBody, MAX_ORIGINAL_BYTES, centreCrop16x9,
 } from "../../public/js/admin-media-lib.js";
 import {
   filenameDate, importId, isTuesday, matchPhotos, parseOverrides, resolvePlan, tuesdayOnOrBefore, formatTable,
@@ -66,6 +66,28 @@ describe("browser helpers: target sizes", () => {
     assert.equal(uploadRequestBody({ ...base, kind: "signin_board", publiclyUsable: true }).publiclyUsable, false);
     assert.equal(uploadRequestBody({ ...base, kind: "social_photo", publiclyUsable: true }).publiclyUsable, true);
     assert.deepEqual(uploadRequestBody({ ...base, kind: "social_photo" }).display, { contentType: "image/jpeg", size: 5 });
+  });
+});
+
+describe("browser helpers: the Event Image's 16:9 cover (ADR 0012 decision 3)", () => {
+  test("a landscape 4:3 photo loses top and bottom, centred", () => {
+    assert.deepEqual(centreCrop16x9(4032, 3024), { sx: 0, sy: 378, sw: 4032, sh: 2268 });
+  });
+  test("a square image keeps its full width; odd leftovers round down at the top", () => {
+    assert.deepEqual(centreCrop16x9(2000, 2000), { sx: 0, sy: 437, sw: 2000, sh: 1125 });
+  });
+  test("a portrait phone photo keeps its full width", () => {
+    assert.deepEqual(centreCrop16x9(3024, 4032), { sx: 0, sy: 1165, sw: 3024, sh: 1701 });
+  });
+  test("a very wide image loses its sides, centred", () => {
+    assert.deepEqual(centreCrop16x9(3000, 1000), { sx: 611, sy: 0, sw: 1778, sh: 1000 });
+  });
+  test("an exact 16:9 image is used whole", () => {
+    assert.deepEqual(centreCrop16x9(1920, 1080), { sx: 0, sy: 0, sw: 1920, sh: 1080 });
+    assert.deepEqual(centreCrop16x9(480, 270), { sx: 0, sy: 0, sw: 480, sh: 270 });
+  });
+  test("refuses non-positive sizes", () => {
+    assert.throws(() => centreCrop16x9(0, 10));
   });
 });
 
