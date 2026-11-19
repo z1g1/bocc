@@ -7,6 +7,9 @@ const DAY_MS = 86_400_000;
 /** Days left under which the connection shows amber (red once expired). */
 export const EXPIRY_WARNING_DAYS = 7;
 
+/** The Thursday check alerts with fewer than this many days left (or once expired). */
+export const EXPIRY_ALERT_DAYS = 10;
+
 /** The OAuth scopes the CLI used; the web flow asks for the same (ADR 0012 decision 4). */
 export const SCOPES = Object.freeze(["r_events", "rw_events", "openid", "profile", "w_member_social"]);
 
@@ -23,6 +26,17 @@ export function expiryLevel(expiresAt, now = new Date()) {
   const left = new Date(expiresAt).getTime() - now.getTime();
   if (!(left > 0)) return { level: "red", daysLeft: 0 };
   return { level: left < EXPIRY_WARNING_DAYS * DAY_MS ? "amber" : "ok", daysLeft: Math.floor(left / DAY_MS) };
+}
+
+/**
+ * Whether the Thursday check should push the "reconnect LinkedIn" alert: fewer than
+ * EXPIRY_ALERT_DAYS left, or already expired.
+ * @param {Date|string|number} expiresAt
+ * @param {Date} [now]
+ */
+export function expiryAlertDue(expiresAt, now = new Date()) {
+  const left = new Date(expiresAt).getTime() - now.getTime();
+  return !(left >= EXPIRY_ALERT_DAYS * DAY_MS);
 }
 
 /**
