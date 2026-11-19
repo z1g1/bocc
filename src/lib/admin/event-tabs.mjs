@@ -31,3 +31,9 @@ export const ACTION_TABS = Object.freeze({
   linkedin_cancel_done: "info",
   report: "post",
 });
+
+/** The tab each media route's redirect anchor lives on (src/lib/admin/media-http.mjs). */
+export const ANCHOR_TABS = Object.freeze({ "event-media": "post", social: "social", "event-image": "info" });
+
+/** The LinkedIn section's tab: the OAuth return and the LinkedIn actions land there. */
+export const LINKEDIN_TAB = ACTION_TABS.linkedin_create;

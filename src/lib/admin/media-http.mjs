@@ -9,6 +9,7 @@ import { requireRole } from "./roles.mjs";
 import { checkOrigin } from "./csrf.mjs";
 import { getStorage, isIsoDate } from "./storage.mjs";
 import { adminFailure } from "./log.mjs";
+import { ANCHOR_TABS } from "./event-tabs.mjs";
 
 export const STORAGE_OFF_MESSAGE = "Photo storage is not set up on this site, so photos can't be uploaded or changed.";
 const MAX_JSON_BYTES = 4096;
@@ -81,8 +82,6 @@ export function formOrJson(form, eventDate, notice, body, anchor = "event-media"
   return new Response(null, { status: 303, headers: { location, ...NO_STORE } });
 }
 
-/** The event page tab each redirect anchor lives on (ADR 0012 decision 1). */
-const ANCHOR_TABS = Object.freeze({ "event-media": "post", social: "social", "event-image": "info" });
 
 /** Read the body of a gallery action: a form post, or JSON from the upload script. */
 export async function readFormOrJson(request) {

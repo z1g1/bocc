@@ -22,6 +22,9 @@
 //     `linkedin_event` listing filled in the same transaction (event_link.set). A
 //     failure leaves the last committed state; `failure` says which step and why.
 //   publishRetry(userId, date, { confirm })             -> the same shapes; a `created` row only: posts, never re-creates
+//     refused like create for a past date or a cancelled event (rules.mjs publishRefusals);
+//     live, it first claims the row (post_claimed_at, migration 0018) so two concurrent
+//     requests post once: the other is refused with "posting". A failed post releases it.
 //   allowRetry(userId, date)                            -> { ok: true } | { ok: false, refusals }
 //     retires a `pending` row (admin_app has no DELETE on linkedin_events), audited.
 // Drift and cancellation (#27; flagged, never synced: API sync is #14):
@@ -46,7 +49,7 @@
 // token, code or state in an audit row, log line or span attribute.
 
 import { adminEnv } from "../auth/auth.mjs";
-import { pool, withAudit, writeAudit } from "../admin/db.mjs";
+import { pool, withAudit } from "../admin/db.mjs";
 import { describeError, log } from "../telemetry.mjs";
 import { decryptToken, encryptToken, signState, STATE_TTL_SECONDS, verifyState } from "./crypto.mjs";
 import { API_BASE, LinkedInError, authorizationUrl, linkedInClient } from "./client.mjs";
@@ -56,7 +59,8 @@ import {
   buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
   publishRefusals,
 } from "./rules.mjs";
-import { normaliseLinkUrl } from "../admin/event-links-rules.mjs";
+import { setLinkInTransaction } from "../admin/event-links.mjs";
+import { LINKEDIN_TAB } from "../admin/event-tabs.mjs";
 import { ConflictError, getEvent } from "../admin/events.mjs";
 import { getEventImage, loadCoverBytes } from "../admin/event-image.mjs";
 
@@ -95,7 +99,7 @@ export function parseReturnTo(raw) {
 
 /** Where the routes send the browser back to, with ?linkedin=<notice>#linkedin. */
 export function returnLocation(returnTo, notice) {
-  const base = returnTo === "account" ? "/admin/account/?" : `/admin/events/${returnTo}/?tab=social&`;
+  const base = returnTo === "account" ? "/admin/account/?" : `/admin/events/${returnTo}/?tab=${LINKEDIN_TAB}&`;
   return `${base}linkedin=${encodeURIComponent(notice)}#linkedin`;
 }
 
@@ -424,26 +428,17 @@ function failureOf(step, err) {
   return { step, kind, message, nothingCreated };
 }
 
-/** Move a `created` row to `posted` and fill the event's linkedin_event listing, one transaction. */
+/**
+ * Move a `created` row to `posted` and fill the event's linkedin_event listing (event-links
+ * setLinkInTransaction: its own event_link.set audit row when it changes), one transaction.
+ */
 async function markPosted(userId, date, row, postUrn, { now, retry }) {
-  const listingUrl = normaliseLinkUrl("linkedin_event", row.eventUrl);
   await withAudit(userId, async (c) => {
     const { rowCount } = await c.query(
       `update public.linkedin_events set status = 'posted', post_urn = $2, post_url = $3, posted_at = $4
         where id = $1 and status = 'created'`, [row.id, postUrn, postUrl(postUrn), now]);
     if (rowCount !== 1) throw new Error("linkedin ledger: the row is no longer `created`");
-    const { rows } = await c.query(
-      `select url, external_id from public.event_links where event_date = $1::date and platform = 'linkedin_event' for update`, [date]);
-    const before = rows[0] ?? null;
-    if (before?.url !== listingUrl) {
-      await c.query(
-        `insert into public.event_links (event_date, platform, url, external_id) values ($1::date, 'linkedin_event', $2, null)
-         on conflict (event_date, platform) do update set url = excluded.url, external_id = null`, [date, listingUrl]);
-      await writeAudit(c, userId, {
-        action: "event_link.set", targetTable: "event_links", targetId: date,
-        details: { platform: "linkedin_event", created: false, before, after: { url: listingUrl, external_id: null }, from: "linkedin_event.posted" },
-      });
-    }
+    await setLinkInTransaction(c, userId, date, "linkedin_event", { url: row.eventUrl }, { from: "linkedin_event.posted" });
     return row;
   }, ledgerAudit("linkedin_event.posted", date, { postUrn, retry }));
 }

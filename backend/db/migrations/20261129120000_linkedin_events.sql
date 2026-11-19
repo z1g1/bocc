@@ -75,7 +75,6 @@ comment on table public.linkedin_events is
 -- One active row per date. Retired rows are history and don't count.
 create unique index linkedin_events_event_date_active_key
     on public.linkedin_events (event_date) where status <> 'retired';
-create index linkedin_events_event_date_idx on public.linkedin_events (event_date);
 
 create trigger linkedin_events_set_updated_at
     before update on public.linkedin_events

@@ -31,7 +31,7 @@
 // setLinkedInClientForTests() (a globalThis slot, so it reaches Vite's module copy).
 
 import { redact, span, withoutClientTracing } from "../telemetry.mjs";
-import { SCOPES } from "./rules.mjs";
+import { SCOPES, buildImageUploadPayload } from "./rules.mjs";
 
 export const API_BASE = "https://api.linkedin.com";
 export const OAUTH_BASE = "https://www.linkedin.com/oauth/v2";
@@ -215,7 +215,7 @@ export function createLinkedInClient({ clientId, clientSecret }, { fetch: doFetc
     async initializeImageUpload(token, ownerUrn) {
       const { text } = await call("initialize_image_upload", {
         method: "POST", url: `${API_BASE}/rest/images?action=initializeUpload`, token, headers: restJson(),
-        body: JSON.stringify({ initializeUploadRequest: { owner: ownerUrn } }),
+        body: JSON.stringify(buildImageUploadPayload(ownerUrn)),
       });
       const v = bodyJson(text, "initialize_image_upload")?.value ?? {};
       const m = IMAGE_URN.exec(String(v.image ?? ""));
