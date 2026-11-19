@@ -236,3 +236,205 @@ describe("connect, reconnect, disconnect (use-case, fake client)", () => {
     await assert.rejects(li.accessToken(pool, user.id, { config, now }), (err) => err.kind === "expired");
   });
 });
+
+// ── 3. Over HTTP ────────────────────────────────────────────────────────────
+let ipCounter = 0;
+const nextIp = () => `198.23.${Math.floor(++ipCounter / 250)}.${ipCounter % 250 + 1}`;
+async function signedIn(roles) {
+  const user = await newUser();
+  for (const r of roles) await withAudit(null, (c) => grantRole(c, user.id, r), { action: "test.grant" });
+  const res = await handleAuthRequest(new Request(`${BASE}/api/auth/sign-in/email`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: BASE, "x-nf-client-connection-ip": nextIp() },
+    body: JSON.stringify({ email: user.email, password: PASSWORD }),
+  }));
+  assert.equal(res.status, 200);
+  const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).filter((c) => !c.endsWith("=")).join("; ");
+  return { user, cookie };
+}
+
+/** Capture every console line written while fn runs (astro dev is in this process). */
+async function captureConsole(fn) {
+  const lines = [];
+  const saved = {};
+  for (const k of ["log", "info", "warn", "error", "debug"]) {
+    saved[k] = console[k];
+    console[k] = (...a) => lines.push(a.map(String).join(" "));
+  }
+  try { return { result: await fn(), lines }; } finally { Object.assign(console, saved); }
+}
+
+describe("the LinkedIn routes and status over HTTP", { timeout: 300_000 }, () => {
+  let server, admin, social, noRole, fake;
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const D = "2088-03-07"; // an event date for the Social Posts tab (2086-2088 are free, testing notes)
+
+  before(async () => {
+    const { dev } = await import("astro");
+    server = await dev({ root, logLevel: "error", server: { port, host: "localhost" } });
+    admin = await signedIn(["admin"]);
+    social = await signedIn(["social"]);
+    noRole = await signedIn([]);
+  });
+  after(async () => { setLinkedInClientForTests(undefined); await server?.stop(); });
+
+  const req = (path, { cookie, method = "GET", form, origin = BASE } = {}) => {
+    const headers = {};
+    if (cookie) headers.cookie = cookie;
+    let body;
+    if (method === "POST") {
+      if (origin) headers.origin = origin;
+      headers["content-type"] = "application/x-www-form-urlencoded";
+      body = new URLSearchParams(form ?? {}).toString();
+    }
+    return fetch(`${BASE}${path}`, { method, headers, body, redirect: "manual" });
+  };
+  const stateCookieOf = (res) => res.headers.getSetCookie().find((x) => x.startsWith(`${li.STATE_COOKIE}=`)) ?? null;
+  const cleared = (res) => new RegExp(`${li.STATE_COOKIE}=; .*Max-Age=0`).test(res.headers.getSetCookie().join("\n"));
+
+  /** Connect as `who`, ready to come back through the callback with a fresh fake client. */
+  async function connectVia(who, returnTo = D, fakeOpts = {}) {
+    fake = createFakeLinkedInClient(fakeOpts);
+    setLinkedInClientForTests(fake);
+    const start = await req(`/api/admin/linkedin/connect?return=${returnTo}`, { cookie: who.cookie });
+    assert.equal(start.status, 302);
+    const state = new URL(start.headers.get("location")).searchParams.get("state");
+    const stateCookie = stateCookieOf(start).split(";")[0];
+    return { state, stateCookie, callback: (q) => req(`/api/admin/linkedin/callback?${q}`, { cookie: `${who.cookie}; ${stateCookie}` }) };
+  }
+
+  test("connect: admin is sent to LinkedIn with a signed HttpOnly state cookie; others are refused", async () => {
+    const res = await req(`/api/admin/linkedin/connect?return=${D}`, { cookie: admin.cookie });
+    assert.equal(res.status, 302);
+    const loc = new URL(res.headers.get("location"));
+    assert.equal(loc.origin + loc.pathname, "https://www.linkedin.com/oauth/v2/authorization");
+    assert.equal(loc.searchParams.get("redirect_uri"), `${BASE}/api/admin/linkedin/callback`);
+    assert.equal(loc.searchParams.get("scope"), "r_events rw_events openid profile w_member_social");
+    const cookie = stateCookieOf(res);
+    assert.match(cookie, /; HttpOnly/);
+    assert.match(cookie, /; SameSite=Lax/);
+    assert.match(cookie, /; Path=\/api\/admin\/linkedin\//);
+    assert.match(cookie, /; Max-Age=600/);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+
+    assert.equal((await req(`/api/admin/linkedin/connect?return=https://evil.example/`, { cookie: admin.cookie })).status, 400);
+    assert.equal((await req(`/api/admin/linkedin/connect?return=${D}`, { cookie: social.cookie })).status, 403);
+    assert.equal((await req(`/api/admin/linkedin/connect?return=${D}`, { cookie: noRole.cookie })).status, 403);
+    assert.equal((await req(`/api/admin/linkedin/connect?return=${D}`)).status, 401);
+  });
+
+  test("callback: a missing or mismatched state, or another user's cookie, is a 400 and LinkedIn isn't called", async () => {
+    const { state, stateCookie } = await connectVia(admin);
+    const other = await signedIn(["admin"]);
+    const otherFlow = await connectVia(other);
+    fake = createFakeLinkedInClient();
+    setLinkedInClientForTests(fake);
+    for (const [q, cookie] of [
+      [`code=c&state=${state}`, admin.cookie],                                          // no state cookie
+      [`code=c`, `${admin.cookie}; ${stateCookie}`],                                    // no state
+      [`code=c&state=not-the-state`, `${admin.cookie}; ${stateCookie}`],                // mismatch
+      [`code=c&state=${otherFlow.state}`, `${admin.cookie}; ${otherFlow.stateCookie}`], // another user's cookie
+    ]) {
+      const res = await req(`/api/admin/linkedin/callback?${q}`, { cookie });
+      assert.equal(res.status, 400, q);
+      assert.ok(cleared(res), "the state cookie is cleared");
+    }
+    assert.deepEqual(fake.calls, []);
+    assert.equal(await row(admin.user.id), null);
+  });
+
+  test("callback: only Admins reach it (social and no-role 403, signed out 401)", async () => {
+    const { state, stateCookie } = await connectVia(admin);
+    fake = createFakeLinkedInClient();
+    setLinkedInClientForTests(fake);
+    for (const who of [social, noRole]) {
+      assert.equal((await req(`/api/admin/linkedin/callback?code=c&state=${state}`, { cookie: `${who.cookie}; ${stateCookie}` })).status, 403);
+    }
+    assert.equal((await req(`/api/admin/linkedin/callback?code=c&state=${state}`, { cookie: stateCookie })).status, 401);
+    assert.deepEqual(fake.calls, []);
+  });
+
+  test("callback success: stored, back to the Social Posts tab, and no code, state or token in any log line", async () => {
+    const who = await signedIn(["admin"]);
+    const flow = await connectVia(who, D, { accessToken: "AQV-http-secret-token", profile: { memberUrn: "urn:li:person:httpUser", name: "Http Person" } });
+    const { result: res, lines } = await captureConsole(() => flow.callback(`code=AQT-http-secret-code&state=${flow.state}`));
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), `/admin/events/${D}/?tab=social&linkedin=connected#linkedin`);
+    assert.ok(cleared(res), "the state cookie is cleared");
+    assert.deepEqual(fake.ops(), ["exchangeCode", "getProfile"]);
+    assert.equal(fake.calls[0].args[0].code, "AQT-http-secret-code");
+    assert.equal((await row(who.user.id)).display_name, "Http Person");
+    assert.ok(lines.length > 0, "expected the request log line");
+    for (const secret of ["AQT-http-secret-code", flow.state, "AQV-http-secret-token"]) {
+      assert.ok(!lines.some((l) => l.includes(secret)), `a log line contains ${secret.slice(0, 8)}…`);
+    }
+
+    // The member said no: back with a notice, nothing stored.
+    const declined = await signedIn(["admin"]);
+    const f2 = await connectVia(declined, "account");
+    const r2 = await f2.callback(`error=user_cancelled_login&error_description=x&state=${f2.state}`);
+    assert.equal(r2.status, 303);
+    assert.equal(r2.headers.get("location"), "/admin/account/?linkedin=cancelled#linkedin");
+    assert.equal(await row(declined.user.id), null);
+  });
+
+  test("status on the Social Posts tab and /admin/account/: connected, amber, red with Reconnect; not for the social role", async () => {
+    const who = await signedIn(["admin"]);
+    const page = async (path) => (await req(path, { cookie: who.cookie })).text();
+
+    let html = await page(`/admin/events/${D}/?tab=social`);
+    assert.match(html, /Not connected/);
+    assert.match(html, /href="\/api\/admin\/linkedin\/connect\?return=2088-03-07"/);
+
+    const flow = await connectVia(who, D, { profile: { memberUrn: "urn:li:person:statusUser", name: "Status Person" } });
+    await flow.callback(`code=c&state=${flow.state}`);
+    html = await page(`/admin/events/${D}/?tab=social&linkedin=connected`);
+    assert.match(html, /LinkedIn connected\./);
+    assert.match(html, /Connected as Status Person, expires [A-Z][a-z]{2} \d{1,2}, \d{4} \(in (59|60) days\)/);
+    assert.match(html, /data-linkedin-level="ok"/);
+    assert.match(html, /Reconnect/);
+    const account = await page("/admin/account/");
+    assert.match(account, /Connected as Status Person, expires .* \(in (59|60) days\)/);
+    assert.match(account, /href="\/api\/admin\/linkedin\/connect\?return=account"/);
+
+    await owner.query(`update linkedin_connections set expires_at = now() + interval '3 days 1 hour' where user_id = $1`, [who.user.id]);
+    for (const p of [`/admin/events/${D}/?tab=social`, "/admin/account/"]) {
+      html = await page(p);
+      assert.match(html, /data-linkedin-level="amber"/);
+      assert.match(html, /class="[^"]*linkedin-amber/);
+      assert.match(html, /\(in 3 days\)/);
+    }
+
+    await owner.query(`update linkedin_connections set expires_at = now() - interval '1 day' where user_id = $1`, [who.user.id]);
+    for (const p of [`/admin/events/${D}/?tab=social`, "/admin/account/"]) {
+      html = await page(p);
+      assert.match(html, /data-linkedin-level="red"/);
+      assert.match(html, /Connected as Status Person, expired /);
+      assert.match(html, />Reconnect</);
+    }
+
+    const socialAccount = await (await req("/admin/account/", { cookie: social.cookie })).text();
+    assert.doesNotMatch(socialAccount, /data-linkedin-level|Connect LinkedIn|id="h-linkedin"/);
+  });
+
+  test("disconnect: Origin-checked, admin only, deletes the row and links to Permitted services", async () => {
+    const who = await signedIn(["admin"]);
+    const flow = await connectVia(who, "account");
+    await flow.callback(`code=c&state=${flow.state}`);
+    assert.ok(await row(who.user.id));
+
+    assert.equal((await req("/api/admin/linkedin/disconnect", { cookie: who.cookie, method: "POST", form: { return: "account" }, origin: "https://evil.example" })).status, 403);
+    assert.equal((await req("/api/admin/linkedin/disconnect", { cookie: social.cookie, method: "POST", form: { return: "account" } })).status, 403);
+    assert.equal((await req("/api/admin/linkedin/disconnect", { cookie: who.cookie, method: "POST", form: { return: "nope" } })).status, 400);
+    assert.ok(await row(who.user.id));
+
+    const res = await req("/api/admin/linkedin/disconnect", { cookie: who.cookie, method: "POST", form: { return: D } });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get("location"), `/admin/events/${D}/?tab=social&linkedin=disconnected#linkedin`);
+    assert.equal(await row(who.user.id), null);
+    const html = await (await req(res.headers.get("location"), { cookie: who.cookie })).text();
+    assert.match(html, /LinkedIn disconnected/);
+    assert.match(html, /href="https:\/\/www\.linkedin\.com\/psettings\/permitted-services"/);
+    assert.match(html, /Not connected/);
+  });
+});

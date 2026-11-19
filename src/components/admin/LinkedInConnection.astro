@@ -1,0 +1,83 @@
+---
+// The signed-in Admin's LinkedIn connection (ADR 0012 decision 4, issue #23), shown in
+// the LinkedIn section of the event page's Social Posts tab and on /admin/account/:
+//   <LinkedInConnection returnTo="2026-11-24" />   or   <LinkedInConnection returnTo="account" />
+// "Connected as <name>, expires <date> (in N days)": amber under 7 days, red once
+// expired, with Reconnect. Connect/Reconnect are plain GET links to
+// /api/admin/linkedin/connect (it redirects to LinkedIn: a POST form would be blocked
+// by the CSP's form-action 'self'). Disconnect POSTs to /api/admin/linkedin/disconnect.
+// The callback and disconnect come back with ?linkedin=<notice>#linkedin.
+// Renders nothing for anyone without the admin role.
+import { hasRole } from "../../lib/admin/roles.mjs";
+import { PERMITTED_SERVICES_URL } from "../../lib/linkedin/rules.mjs";
+
+interface Props { returnTo: string }
+const { returnTo } = Astro.props;
+const allowed = hasRole(Astro.locals, "admin");
+
+let configured = false;
+let status: any = null;
+if (allowed) {
+  const li = await import("../../lib/linkedin/linkedin.mjs");
+  configured = li.linkedInEnv().enabled;
+  if (configured) {
+    const { pool } = await import("../../lib/admin/db.mjs");
+    status = await li.connectionStatus(pool, Astro.locals.user!.id);
+  }
+}
+
+const NOTICES: Record<string, string> = {
+  connected: "LinkedIn connected.",
+  disconnected: "LinkedIn disconnected. The app's access on LinkedIn itself is removed on LinkedIn's Permitted services page.",
+  unchanged: "Nothing changed.",
+  cancelled: "LinkedIn connection cancelled. Nothing was saved.",
+  failed: "LinkedIn didn't complete the connection. Nothing was saved: try again.",
+  scopes: "LinkedIn didn't grant every permission the app needs. Connect again and allow all of them.",
+};
+const notice = NOTICES[Astro.url.searchParams.get("linkedin") ?? ""] ?? null;
+const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "America/New_York" });
+const connectHref = `/api/admin/linkedin/connect?return=${encodeURIComponent(returnTo)}`;
+const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+---
+{allowed && (
+  <div class="linkedin-connection" id="linkedin" data-linkedin-level={status?.level ?? (configured ? "none" : "off")}>
+    {notice && <p class="notice" role="status">{notice}</p>}
+    {!configured ? (
+      <p class="muted">LinkedIn isn't configured on this deploy (LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET, LINKEDIN_TOKEN_KEY).</p>
+    ) : !status ? (
+      <>
+        <p>Not connected. Connect your own LinkedIn account to create the weekly LinkedIn event.</p>
+        <p><a class="button" href={connectHref}>Connect LinkedIn</a></p>
+      </>
+    ) : (
+      <>
+        <p class:list={["linkedin-status", `linkedin-${status.level}`]}>
+          {status.level === "red"
+            ? <>Connected as {status.name}, expired {fmt.format(status.expiresAt)}. Reconnect to use LinkedIn.</>
+            : <>Connected as {status.name}, expires {fmt.format(status.expiresAt)} (in {days(status.daysLeft)})</>}
+        </p>
+        <div class="linkedin-actions">
+          <a class="button" href={connectHref}>Reconnect</a>
+          <form method="post" action="/api/admin/linkedin/disconnect">
+            <input type="hidden" name="return" value={returnTo}>
+            <button type="submit" class="secondary">Disconnect</button>
+          </form>
+        </div>
+      </>
+    )}
+    <p class="muted">To remove the app's access on LinkedIn too, use LinkedIn's <a href={PERMITTED_SERVICES_URL} rel="noopener noreferrer">Permitted services</a> page.</p>
+  </div>
+)}
+
+<style>
+  .linkedin-connection { --amber: #8a5a00; }
+  @media (prefers-color-scheme: dark) { .linkedin-connection { --amber: #f0b44a; } }
+  .linkedin-status { padding: 0.4rem 0.75rem; border-left: 3px solid var(--line); }
+  .linkedin-ok { border-left-color: var(--accent); }
+  .linkedin-amber { border-left-color: var(--amber); color: var(--amber); }
+  .linkedin-red { border-left-color: var(--err); color: var(--err); font-weight: 600; }
+  .linkedin-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .linkedin-actions form { margin: 0; }
+  .linkedin-actions button { margin: 0; }
+  a.button { display: inline-block; padding: 0.6rem 1rem; font-weight: 600; border-radius: 6px; background: var(--accent); color: var(--bg); text-decoration: none; }
+</style>

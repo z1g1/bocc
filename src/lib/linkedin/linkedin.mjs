@@ -53,6 +53,39 @@ function requireConfig(config) {
 const NOOP = Symbol("noop");
 const redirectUri = (baseURL) => `${baseURL}${CALLBACK_PATH}`;
 
+const RETURN_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A valid return target from a request ("account" or a date), else null. */
+export function parseReturnTo(raw) {
+  const v = String(raw ?? "");
+  if (v === "account") return v;
+  if (!RETURN_DATE.test(v)) return null;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v ? v : null;
+}
+
+/** Where the routes send the browser back to, with ?linkedin=<notice>#linkedin. */
+export function returnLocation(returnTo, notice) {
+  const base = returnTo === "account" ? "/admin/account/?" : `/admin/events/${returnTo}/?tab=social&`;
+  return `${base}linkedin=${encodeURIComponent(notice)}#linkedin`;
+}
+
+/** Set-Cookie for the state cookie (value "" with maxAge 0 clears it). */
+export function stateCookieHeader(value, maxAge, baseURL = adminEnv.baseURL) {
+  const secure = baseURL.startsWith("https:") ? "; Secure" : "";
+  // Lax, not Strict: the callback is a top-level GET navigation from linkedin.com.
+  return `${STATE_COOKIE}=${value}; Path=/api/admin/linkedin/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
+}
+
+/** The state cookie's value from a Cookie request header, or null. */
+export function readStateCookie(cookieHeader) {
+  for (const part of String(cookieHeader ?? "").split(/;\s*/)) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i) === STATE_COOKIE) return part.slice(i + 1) || null;
+  }
+  return null;
+}
+
 /**
  * Begin the OAuth flow: a fresh state in a signed cookie, and LinkedIn's authorize URL.
  * @param {string} userId
