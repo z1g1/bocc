@@ -137,9 +137,10 @@ const fmtTime = (d: Date) =>
         )}
 
         {pickable.length > 0 && (
+          <details class="event-image-pick-toggle">
+          <summary class="muted">Or pick a Photo from Event (recent events; the event uses the photo itself, not a copy)</summary>
           <form method="post" action="/api/admin/media/event-image/pick" class="event-image-pick" data-event-image-pick data-status={pickStatusId}>
-            <fieldset>
-              <legend>Or pick a Photo from Event <span class="muted">(recent events; the event uses the photo itself, not a copy)</span></legend>
+            <fieldset aria-label="Photos from recent events">
               <input type="hidden" name="eventDate" value={date}>
               <ul class="plain pick-grid">
                 {pickable.map((m: any) => (
@@ -157,6 +158,7 @@ const fmtTime = (d: Date) =>
               <button type="submit">Use this photo</button>
             </fieldset>
           </form>
+          </details>
         )}
         <p class="media-status" id={pickStatusId} role="status" aria-live="polite"></p>
 
@@ -201,5 +203,7 @@ const fmtTime = (d: Date) =>
   .pick-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
   .pick-grid label { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem; cursor: pointer; }
   .pick-grid img { display: block; width: 8rem; height: 6rem; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
-  .event-image-pick fieldset { border: 0; padding: 0; margin: 1rem 0 0.5rem; }
+  .event-image-pick-toggle { margin: 1rem 0 0.5rem; }
+  .event-image-pick-toggle summary { font-size: 0.875rem; cursor: pointer; }
+  .event-image-pick fieldset { border: 0; padding: 0; margin: 0.5rem 0; }
 </style>
