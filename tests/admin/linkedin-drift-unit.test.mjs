@@ -95,7 +95,7 @@ describe("linkedInFollowUp: cancellation", () => {
 
 describe("readiness: the LinkedIn lines", () => {
   const event = { date: "2078-01-04", status: "scheduled", exists: true };
-  const lines = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).items.filter((i) => i.key.startsWith("linkedin_") && i.key !== "linkedin_event");
+  const lines = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).items.filter((i) => ["linkedin_drift", "linkedin_cancel"].includes(i.key));
 
   it("none without a follow-up (never posted, or no ledger read)", () => {
     assert.deepEqual(lines(undefined), []);
@@ -118,5 +118,29 @@ describe("readiness: the LinkedIn lines", () => {
     assert.deepEqual(line, { key: "linkedin_cancel", label: "Cancel the LinkedIn event on LinkedIn", ok: false, href: EVENT_URL });
     const done = linkedInFollowUp({ ledger: posted({ cancelledOnLinkedInAt: new Date() }), event: ev, eventImage: LOGO });
     assert.deepEqual(lines(done, ev), []);
+  });
+});
+
+describe("readiness: the LinkedIn event posted line", () => {
+  const event = { date: "2078-01-04", status: "scheduled", exists: true };
+  const line = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).items.find((i) => i.key === "linkedin_posted");
+
+  it("posted: done, linking the LinkedIn event", () => {
+    assert.deepEqual(line(linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: LOGO })),
+      { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: EVENT_URL });
+  });
+  it("not posted (no row, pending, created): missing, pointing at the Social Posts tab", () => {
+    for (const ledger of [null, posted({ status: "pending", eventUrl: null }), posted({ status: "created" })]) {
+      const l = line(linkedInFollowUp({ ledger, event: scheduled(), eventImage: LOGO }));
+      assert.equal(l.ok, false, String(ledger?.status));
+      assert.equal(l.href, undefined);
+      assert.match(l.note, /Social Posts/);
+    }
+  });
+  it("no line for a cancelled event (the cancel line covers it) or without a ledger read", () => {
+    const ev = { ...event, status: "cancelled" };
+    assert.equal(line(linkedInFollowUp({ ledger: posted(), event: ev, eventImage: LOGO }), ev), undefined);
+    assert.equal(line(linkedInFollowUp({ ledger: null, event: ev, eventImage: LOGO }), ev), undefined);
+    assert.equal(line(undefined), undefined);
   });
 });
