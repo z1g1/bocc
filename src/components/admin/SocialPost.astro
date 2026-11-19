@@ -11,6 +11,9 @@
 //   and the upload form. /js/admin-video.js PUTs the file to the private bucket and
 //   then submits the hidden "attach" form. Delete buttons POST to
 //   /api/admin/media/{id}/delete (it also clears the video from the post).
+// - Cover image (#social-cover, ticket #22): the promo video's cover, the Event Image
+//   unless overridden with a publicly usable Photo from Event (social.mjs
+//   listCoverChoices; action social_cover, mediaId "" = back to the Event Image).
 // - The post form: base caption, TikTok's extra hashtags, cover note, publish time
 //   (an Eastern datetime-local; shown in Eastern and UTC), and the ready toggle.
 // - One form per channel: its status (set by the social role's pages), the caption and
@@ -45,6 +48,26 @@ if (allowed && storage) {
   current = videos.ready.find((m: any) => m.id === order.video?.id) ?? null;
 }
 const others = videos.ready.filter((m: any) => m.id !== current?.id);
+
+// Cover image (ticket #22): order.cover is resolveSocialCover() (social-rules.mjs).
+const cover = order.cover;
+const signThumb = (f: any) => ("path" in f ? f.path : storage ? storage.presignGet({ key: f.key }).url : null);
+const coverPreview = allowed && cover ? signThumb(cover.thumb) : null;
+const EVENT_IMAGE_LABEL: Record<string, string> = {
+  default: "Event Image (the BOCC logo)",
+  uploaded: "Event Image (uploaded)",
+  referenced: "Event Image (a Photo from Event)",
+};
+const coverLabel = !cover ? "" : cover.source === "override"
+  ? `Photo from Event (${cover.eventDate})`
+  : EVENT_IMAGE_LABEL[cover.eventImageSource] ?? "Event Image";
+let coverChoices: any[] = [];
+if (allowed && storage) {
+  const { listCoverChoices } = await import("../../lib/admin/social.mjs");
+  const { pool } = await import("../../lib/admin/db.mjs");
+  coverChoices = (await listCoverChoices(pool, date)).map((p: any) => ({ ...p, thumbUrl: storage.presignGet({ key: p.thumbKey }).url }));
+}
+const coverErr = posted?.action === "social_cover" ? errors : {};
 const stale = videos.pending.filter((m: any) => m.stale);
 
 const from = (action: string) => (posted?.action === action ? posted.values : null);
@@ -172,6 +195,51 @@ const fmtTime = (d: Date) =>
       </>
     )}
 
+    <div id="social-cover" class="cover-block">
+      <h3 id="h-social-cover">Cover image</h3>
+      <p class="muted">
+        The promo video's cover on the platforms that allow a custom one (docs/social/CHROME_TASKS.md).
+        It is the Event Image unless you choose a Photo from Event here.
+      </p>
+      {coverErr.cover && <p class="error" role="alert">{coverErr.cover}</p>}
+      {cover && (
+        <div class="cover-current">
+          {coverPreview
+            ? <img src={coverPreview} alt="" width="160" height="160" loading="lazy">
+            : <p class="muted" data-media-off>{STORAGE_OFF_MESSAGE}</p>}
+          <p>Cover: <strong>{coverLabel}</strong></p>
+          {cover.source === "override" && (
+            <form method="post" class="inline">
+              <input type="hidden" name="action" value="social_cover">
+              <input type="hidden" name="mediaId" value="">
+              <button type="submit" class="small secondary">Use the Event Image</button>
+            </form>
+          )}
+        </div>
+      )}
+      {storage && coverChoices.length > 0 && (
+        <details>
+          <summary>Choose a Photo from Event</summary>
+          <ul class="plain cover-choices">
+            {coverChoices.map((p: any) => (
+              <li>
+                <img src={p.thumbUrl} alt="" width="96" height="96" loading="lazy">
+                <span class="muted">{p.eventDate}</span>
+                <form method="post" class="inline">
+                  <input type="hidden" name="action" value="social_cover">
+                  <input type="hidden" name="mediaId" value={p.id}>
+                  <button type="submit" class="small" disabled={p.id === cover?.mediaId && cover?.source === "override" || undefined}>Use as cover</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {storage && coverChoices.length === 0 && (
+        <p class="muted">No publicly usable Photos from Event yet (upload them on the Post Event tab).</p>
+      )}
+    </div>
+
     <h3 id="h-social-post">Post</h3>
     <form method="post" class="narrow" id="social-post-form">
       <input type="hidden" name="action" value="social_post">
@@ -274,4 +342,7 @@ const fmtTime = (d: Date) =>
   .badge.failed { color: var(--err); border-color: var(--err); }
   .social input#extraHashtags { width: 100%; }
   details { margin-top: 0.5rem; }
+  .cover-current img, .cover-choices img { display: block; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
+  .cover-choices { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .cover-choices li { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
 </style>

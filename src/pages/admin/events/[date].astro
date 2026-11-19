@@ -61,6 +61,7 @@ const NOTICES: Record<string, string> = {
   unlink: "Listing cleared.",
   social_post: "Social post saved.",
   social_video: "Promo video attached to the social post.",
+  social_cover: "Cover image saved.",
   social_channel: "Channel text saved.",
   unchanged: "Nothing changed.",
 };
@@ -73,12 +74,15 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
   social_post: (actor, d, input) => so.savePost(actor, d, input),
   social_video: (actor, d, input) => so.setVideo(actor, d, input.videoMediaId),
+  social_cover: (actor, d, input) => so.setCover(actor, d, input.mediaId ?? ""),
   social_channel: (actor, d, input) => so.saveChannel(actor, d, input.channel, input),
 };
-const SOCIAL = new Set(["social_post", "social_video", "social_channel"]);
+const SOCIAL = new Set(["social_post", "social_video", "social_cover", "social_channel"]);
+// Where a social form's redirect lands: its own block, else the section.
+const ANCHORS: Record<string, string> = { social_cover: "#social-cover" };
 const DONE: Record<string, string> = {
   save: "saved", cancel: "cancelled", uncancel: "uncancelled", report: "report", link: "link", unlink: "unlink",
-  social_post: "social_post", social_video: "social_video", social_channel: "social_channel",
+  social_post: "social_post", social_video: "social_video", social_cover: "social_cover", social_channel: "social_channel",
 };
 
 let errors: Record<string, string> = {};
@@ -107,7 +111,7 @@ if (Astro.request.method === "POST") {
         log("error", "event page purge failed", { date, error: String(err) });
       }
     }
-    const anchor = SOCIAL.has(action) ? "#social" : "";
+    const anchor = ANCHORS[action] ?? (SOCIAL.has(action) ? "#social" : "");
     return Astro.redirect(`/admin/events/${date}/?tab=${ACTION_TABS[action]}&notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
   } catch (err: any) {
     if (!(err instanceof ev.ValidationError)) throw err;

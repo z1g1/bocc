@@ -69,8 +69,12 @@ Steps:
 2. Read the "Work order" section: the event date, "Publish at (Eastern)" and the Luma link.
    Every channel gets scheduled for exactly that Eastern date and time.
 3. In the "Video" section, click "Download the video" and wait for the download to finish.
-   Note the file name. If the download link is missing or fails, stop and report it. If there
-   is a cover note, use it to choose the cover frame wherever the platform allows.
+   Note the file name. If the download link is missing or fails, stop and report it.
+   Then, under "Cover image", click "Download the cover image" and note its file name. If the
+   cover link is missing or fails, carry on without it and mention it in your report.
+   A custom cover image is set only where a channel's step below says so. On every other
+   channel, if there is a cover note, use it to choose the cover frame wherever the platform
+   allows.
 4. Work through the channels in page order: Facebook, Instagram, Threads, TikTok, LinkedIn page.
    Skip any channel whose heading isn't "pending": it is already done.
    For each pending channel, copy its caption exactly from the <pre> under "Caption for
@@ -79,8 +83,11 @@ Steps:
    - Facebook and Instagram: Meta Business Suite (business.facebook.com) -> Create reel. Upload
      the video, choose both the Facebook Page and the Instagram account if Business Suite offers
      both, and use each channel's own caption from the work order. (If one composer is shared,
-     schedule them as two separate reels so each gets its own caption.) Schedule for the publish
-     time.
+     schedule them as two separate reels so each gets its own caption.) Instagram cover: if the
+     composer offers to upload a cover or thumbnail image from the computer, upload the
+     downloaded cover image for the Instagram reel. If it only offers a frame, choose the frame
+     (cover note) and add the note "no custom cover upload". Facebook: no custom cover step;
+     keep the frame. Schedule for the publish time.
    - Threads: the Threads web app (threads.com), signed in as 716coffeeclub. New thread, attach
      the video, paste the Threads caption, then schedule for the publish time. Business Suite
      doesn't post to Threads. If Threads web offers no scheduling, mark Threads failed with the
@@ -89,7 +96,9 @@ Steps:
      already contains the hashtags), set Schedule to the publish time, then Schedule.
    - LinkedIn page: the Buffalo Open Coffee showcase page admin view
      (linkedin.com/showcase/buffalo-open-coffee). Post as the page, never as a person. Attach
-     the video, paste the LinkedIn caption, and schedule for the publish time. If you can't
+     the video, then choose "Video thumbnail" -> "Upload video thumbnail" and upload the
+     downloaded cover image (if that option isn't there, carry on and add the note "no
+     thumbnail option"). Paste the LinkedIn caption, and schedule for the publish time. If you can't
      post as the page (no admin view), mark LinkedIn page failed with the note "no page admin
      access".
    Before confirming each schedule, double-check the date, the time and the time zone shown by
@@ -106,8 +115,33 @@ Steps:
 6. If a channel could not be scheduled, save it with status failed and a note saying why, in one
    sentence. Leave it failed. Don't retry it more than once.
 7. Finish by reloading {SITE}/admin/social/next/ and reporting, per channel, its final status
-   and any notes. Delete the downloaded video file from Downloads.
+   and any notes. Delete the downloaded video and cover image files from Downloads.
 ```
+
+### Video cover image per channel
+
+The work order's **Cover image** (ticket #22) is the event's Event Image (the square BOCC logo
+by default), unless an Admin chose a Photo from Event for this post on the Social Posts tab. The
+link is `id="cover-download"` on `/admin/social/next/` and `cover` in `/api/admin/social/next`.
+It is the image's display copy (a JPEG up to 1600px on its long edge, in the image's own
+shape; the logo default is a 2000×2000 PNG): the platforms crop covers themselves.
+
+The prompt above asks for a custom cover only where the platform's own current docs say a
+cover image can be uploaded. Checked against official docs on 2026-11-19. The live check per
+channel, in the Chrome profile, happens at the release (ticket #29); update this table and the
+prompt from it.
+
+| Channel | Custom cover upload | Prompt | Source |
+|---|---|---|---|
+| Facebook (Business Suite reel) | **Unconfirmed.** Meta documents a custom thumbnail (up to 10 MB) for ordinary Page videos, not for Reels or the Business Suite scheduler | frame only (cover note) | facebook.com/business/help/163131210928551, /2683452421955589 |
+| Instagram (reel) | **Confirmed on instagram.com** ("Select from computer"; about 420×654, 1:1.55; can't be changed after posting). Not documented for the Business Suite scheduler | upload it if the composer offers it, else frame + note | help.instagram.com/225190788256708, about.instagram.com/features/reels |
+| Threads (web) | **Unconfirmed.** No help-center article found | frame only (cover note) | none |
+| TikTok (TikTok Studio web) | **Unconfirmed for the web.** Creator Academy describes "upload local cover" (9:16, 1080×1920) without saying which app | frame only (cover note) | tiktok.com/creator-academy/article/video-covers-thumbnails |
+| LinkedIn page | **Confirmed** ("Video thumbnail" -> "Upload video thumbnail"). Third parties say JPG/PNG, the video's aspect ratio, up to 2 MB: not in the official doc | upload it, else note | linkedin.com/help/linkedin/answer/a527229 |
+
+At #29, also check: whether a square cover looks right on the 9:16 reels (Instagram crops to
+its grid), and LinkedIn's thumbnail size limit against the cover's file size (the logo default
+is a 201 KB PNG; a photo's display copy is usually a few hundred KB).
 
 ## Monday: verify (about 7:20 AM ET)
 

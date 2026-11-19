@@ -10,5 +10,5 @@ import { socialApiGet, socialApiOther } from "../../../../lib/admin/social-api.m
 
 export const prerender = false;
 
-export const GET: APIRoute = ({ locals }) => requireRole(locals, "admin", "social") ?? socialApiGet("verify");
+export const GET: APIRoute = ({ locals, request }) => requireRole(locals, "admin", "social") ?? socialApiGet("verify", request);
 export const ALL: APIRoute = ({ locals }) => requireRole(locals, "admin", "social") ?? socialApiOther("GET");

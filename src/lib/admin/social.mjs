@@ -10,7 +10,7 @@
 //
 // Reads (take `db`, the pool or a client, first):
 //   getSocialPost(db, date)              -> post | null
-//       { date, videoMediaId, coverNote, baseCaption, extraHashtags[], publishAt, ready,
+//       { date, videoMediaId, coverMediaId, coverNote, baseCaption, extraHashtags[], publishAt, ready,
 //         createdAt, updatedAt, channels: { facebook: { caption, firstComment, status,
 //         postUrl, verifiedAt, commentPostedAt, notes, updatedAt }, … } }
 //       caption / firstComment are the stored overrides (null = the code default).
@@ -18,7 +18,10 @@
 //       its final per-channel texts, the video row, the Luma URL, `problems`, and
 //       `actionable` (ready and no problems). For a date with no post, `exists: false`
 //       and the defaults.
-//   readState(db, date)                  -> { event, post, lumaUrl, video } (its inputs)
+//   readState(db, date)                  -> { event, post, lumaUrl, video, coverMedia, eventImage }
+//       (its inputs; the work order's `cover` is resolveSocialCover(): the override
+//       photo, else the Event Image, event-image.mjs getEventImage)
+//   listCoverChoices(db, date)           -> the photos the cover can be set to
 //
 // Writes (each change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }; target_id is the
@@ -33,6 +36,11 @@
 //       future and not after the event day (.errors.publishAt).
 //   setVideo(actor, date, mediaId)               social_post.video
 //       a `ready` promo_video of the same event (.errors.video otherwise).
+//   setCover(actor, date, mediaId | "")       social_post.cover
+//       the cover image override: a ready, publicly usable social_photo of any event
+//       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
+//       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
+//       SET NULL, migration 20261127120000).
 //   saveChannel(actor, date, channel, input)     social_post_channel.update
 //       caption / firstComment overrides; blank, or exactly the default, stores NULL
 //       (so the channel keeps following the default). On a ready post, a caption over
@@ -77,6 +85,7 @@ import { withAudit } from "./db.mjs";
 import { ConflictError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
 import { isUuid } from "./attendees.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
+import { getEventImage } from "./event-image.mjs";
 import {
   CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, STATUSES, TRANSITIONS, buildWorkOrder, canTransition,
   defaultPublishAt, defaultTexts, easternToUtc, isChannel, normaliseHashtags, postUrlProblem, publishAtProblem,
@@ -87,6 +96,7 @@ export * from "./social-rules.mjs";
 const POST_COLUMNS = `
   p.event_date::text   as date,
   p.video_media_id     as "videoMediaId",
+  p.cover_media_id     as "coverMediaId",
   p.cover_note         as "coverNote",
   p.base_caption       as "baseCaption",
   p.extra_hashtags     as "extraHashtags",
@@ -119,18 +129,55 @@ export async function getSocialPost(db, date) {
 /** Everything buildWorkOrder() needs for one date. */
 export async function readState(db, date) {
   requireDate(date, "readState");
-  const [{ rows: [event] }, { rows: [luma] }, post] = await Promise.all([
+  const [{ rows: [event] }, { rows: [luma] }, post, eventImage] = await Promise.all([
     db.query(`select status from public.events where event_date = $1::date`, [date]),
     db.query(`select url from public.event_links where event_date = $1::date and platform = 'luma'`, [date]),
     getSocialPost(db, date),
+    getEventImage(db, date),
   ]);
-  const video = post?.videoMediaId ? await getVideo(db, post.videoMediaId) : null;
+  const [video, coverMedia] = await Promise.all([
+    post?.videoMediaId ? getVideo(db, post.videoMediaId) : null,
+    post?.coverMediaId ? getCoverMedia(db, post.coverMediaId) : null,
+  ]);
   return {
     event: event ? { status: event.status, exists: true } : { status: "scheduled", exists: false },
     post,
     lumaUrl: luma?.url ?? null,
     video,
+    coverMedia,
+    eventImage,
   };
+}
+
+const COVER_COLUMNS = `
+  id, event_date::text as "eventDate", kind, status, publicly_usable as "publiclyUsable",
+  display_key as "displayKey", thumb_key as "thumbKey"`;
+
+async function getCoverMedia(db, id) {
+  const { rows: [m] } = await db.query(`select ${COVER_COLUMNS} from public.event_media where id = $1`, [id]);
+  return m ?? null;
+}
+
+/** How many recent event dates' photos the cover picker offers. */
+export const COVER_CHOICE_DATES = 8;
+
+/**
+ * Photos the Social Post cover can be set to: ready, publicly usable Photos from Event
+ * of this event and the most recent earlier dates with any (COVER_CHOICE_DATES dates
+ * in all), newest first. { id, eventDate, thumbKey, contentType }.
+ */
+export async function listCoverChoices(db, date) {
+  requireDate(date, "listCoverChoices");
+  const { rows } = await db.query(
+    `with dates as (
+       select distinct event_date from public.event_media
+        where kind = 'social_photo' and status = 'ready' and publicly_usable and event_date <= $1::date
+        order by event_date desc limit $2)
+     select m.id, m.event_date::text as "eventDate", m.thumb_key as "thumbKey", m.content_type as "contentType"
+       from public.event_media m join dates using (event_date)
+      where m.kind = 'social_photo' and m.status = 'ready' and m.publicly_usable
+      order by m.event_date desc, m.created_at desc, m.id`, [date, COVER_CHOICE_DATES]);
+  return rows;
 }
 
 /** The work order for one date (see buildWorkOrder in social-rules.mjs). */
@@ -237,7 +284,7 @@ async function lockPost(client, date) {
        on conflict (event_date, channel) do nothing`, [date, CHANNEL_KEYS]);
   }
   const { rows: [row] } = await client.query(
-    `select video_media_id, cover_note, base_caption, extra_hashtags, publish_at, ready
+    `select video_media_id, cover_media_id, cover_note, base_caption, extra_hashtags, publish_at, ready
        from public.social_posts where event_date = $1::date for update`, [date]);
   return { eventCreated: ev.rowCount === 1, created, row };
 }
@@ -316,6 +363,34 @@ export async function setVideo(actorUserId, date, mediaId) {
     return {
       action: "social_post.video",
       details: { created, eventCreated, before: { video_media_id: row.video_media_id }, after: { video_media_id: mediaId } },
+    };
+  });
+}
+
+/**
+ * Override the promo video's cover with a ready, publicly usable Photo from Event (of
+ * any event), or clear it ("" / null) so the cover is the Event Image again.
+ */
+export async function setCover(actorUserId, date, mediaId) {
+  checkDate(date);
+  const clearing = mediaId === "" || mediaId == null;
+  if (!clearing && !isUuid(mediaId)) throw new ValidationError({ cover: "Choose a photo." });
+  return audited(actorUserId, date, "social_posts", async (client) => {
+    const { eventCreated, created, row } = await lockPost(client, date);
+    const before = row.cover_media_id ?? null;
+    const after = clearing ? null : mediaId;
+    if (!clearing) {
+      const { rows: [m] } = await client.query(
+        `select kind, status, publicly_usable from public.event_media where id = $1 for share`, [mediaId]);
+      if (!m || m.kind !== "social_photo" || !m.publicly_usable) throw new ValidationError({ cover: "That isn't a Photo from Event." });
+      if (m.status !== "ready") throw new ValidationError({ cover: "That photo hasn't finished uploading." });
+    }
+    // Nothing to change. Clearing with no post rolls back the post's creation too.
+    if (before === after && (clearing || !created)) throw NOOP;
+    await client.query(`update public.social_posts set cover_media_id = $2 where event_date = $1::date`, [date, after]);
+    return {
+      action: "social_post.cover",
+      details: { created, eventCreated, before: { cover_media_id: before }, after: { cover_media_id: after } },
     };
   });
 }
