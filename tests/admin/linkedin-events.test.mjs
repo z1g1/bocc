@@ -11,10 +11,35 @@
 // The pure rules are in linkedin-event-unit.test.mjs. Dates: 2087 (not used elsewhere).
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { ADMIN_URL, CHECKIN_URL, OWNER_URL, assertAllowed, assertRefused, connect, inRollback } from "./helpers.mjs";
+import { createServer } from "node:net";
+import { ADMIN_URL, CHECKIN_URL, OWNER_URL, assertAllowed, assertRefused, connect, inRollback, unique, useAdminEnv } from "./helpers.mjs";
+import { createFakeLinkedInClient, LinkedInError } from "./fake-linkedin.mjs";
+
+const port = await new Promise((resolve, reject) => {
+  const s = createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => resolve(p)); });
+  s.on("error", reject);
+});
+const BASE = `http://localhost:${port}`;
+useAdminEnv();
+process.env.BETTER_AUTH_URL = BASE;
+process.env.ASTRO_TELEMETRY_DISABLED = "1";
+process.env.LINKEDIN_CLIENT_ID = "test-client-id";
+process.env.LINKEDIN_CLIENT_SECRET = "test-client-secret-value";
+process.env.LINKEDIN_TOKEN_KEY = "6".repeat(64);
+delete process.env.LINKEDIN_LIVE;
+
+const { pool } = await import("../../src/lib/auth/auth.mjs");
+const { createUser } = await import("../../src/lib/admin/users.mjs");
+const li = await import("../../src/lib/linkedin/linkedin.mjs");
+const rules = await import("../../src/lib/linkedin/rules.mjs");
+const { readLinkedInEnv } = await import("../../src/lib/linkedin/env.mjs");
+const { signState } = await import("../../src/lib/linkedin/crypto.mjs");
 
 const SITE_URL = process.env.TEST_SITE_URL;
 const SOCIAL_CHECK_URL = process.env.TEST_SOCIAL_CHECK_URL;
+const PASSWORD = "correct horse battery staple";
+const { config } = readLinkedInEnv();
+const LIVE = { ...config, live: true };
 let owner;
 
 const seedEvent = (date, cols = {}) => owner.query(
@@ -28,7 +53,23 @@ const PENDING = `insert into linkedin_events (event_date, status, name, commenta
 before(async () => {
   owner = await connect(OWNER_URL);
 });
-after(async () => { await owner?.end(); });
+after(async () => { await owner?.end(); await pool.end(); });
+
+const NOW = new Date("2087-06-01T16:00:00Z"); // the Sunday before 2087-06-03 (a Tuesday)
+const newUser = () => createUser({ email: `${unique("lie")}@example.com`, name: "LinkedIn Event Test", password: PASSWORD });
+
+/** A user connected through the real finishConnect, with a fake LinkedIn. */
+async function connectedUser({ expiresIn = 60 * 86400, now = NOW } = {}) {
+  const user = await newUser();
+  const { state, cookie } = signState({ key: config.tokenKey, userId: user.id, returnTo: "account", now });
+  const client = createFakeLinkedInClient({ accessToken: `AQV-${user.id}`, expiresIn, profile: { memberUrn: "urn:li:person:member9", name: "M" } });
+  const r = await li.finishConnect(user.id, { code: "c", state, cookie }, { config, baseURL: BASE, client, now });
+  assert.equal(r.ok, true);
+  return user;
+}
+const ledgerRows = (date) => owner.query(`select * from linkedin_events where event_date = $1`, [date]).then((r) => r.rows);
+const ledgerAudits = (date) => owner.query(
+  `select action from audit_log where target_table = 'linkedin_events' and details->>'eventDate' = $1`, [date]).then((r) => r.rows);
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 describe("migration 20261126120000_linkedin_events.sql", () => {
@@ -97,5 +138,177 @@ describe("migration 20261126120000_linkedin_events.sql", () => {
     } finally {
       await Promise.all(others.map((db) => db.end()));
     }
+  });
+});
+
+// ── 2. The use-case ─────────────────────────────────────────────────────────
+describe("preview and dry run (use-case, fake client)", () => {
+  const opts = (client, over = {}) => ({ config, client, now: NOW, storage: null, ...over });
+  const codes = (r) => r.refusals.map((x) => x.code);
+
+  test("preview: what would be sent for an upcoming lobby event, before connecting", async () => {
+    const date = "2087-06-17";
+    await seedEvent(date, { location: "lobby" });
+    const user = await newUser();
+    const p = await li.linkedInEventPreview(pool, user.id, date, opts(createFakeLinkedInClient()));
+    assert.equal(p.mode, "dry_run");
+    assert.equal(p.action, "create");
+    assert.deepEqual(p.refusals, []);
+    assert.equal(p.ledger, null);
+    assert.equal(p.connection, null);
+    assert.equal(p.spec.name, "Buffalo Open Coffee Club for June 17th");
+    assert.equal(p.spec.commentary, "Please join me at Buffalo Open Coffee Club");
+    assert.equal(p.image.source, "default");
+    assert.equal(p.payloads.event.discoveryMode, "LISTED");
+    assert.equal(p.payloads.event.backgroundImage, li.PLACEHOLDERS.asset);
+    assert.equal(p.payloads.post.author, li.PLACEHOLDERS.member);
+    assert.equal(p.payloads.post.content.reference.id, `urn:li:event:${li.PLACEHOLDERS.eventId}`);
+  });
+
+  test("preview: location other has no payload and says why", async () => {
+    const date = "2087-06-24";
+    await owner.query(`insert into events (event_date, location, location_other) values ($1, 'other', 'Rooftop')
+                       on conflict (event_date) do nothing`, [date]);
+    const p = await li.linkedInEventPreview(pool, (await newUser()).id, date, opts(createFakeLinkedInClient()));
+    assert.deepEqual(codes(p), ["location_other"]);
+    assert.equal(p.spec, null);
+    assert.equal(p.payloads, null);
+  });
+
+  test("create refuses a request without confirm=live, and sends and writes nothing", async () => {
+    const date = "2087-07-01";
+    await seedEvent(date);
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient();
+    for (const confirm of [undefined, "", "yes"]) {
+      const r = await li.createLinkedInEvent(user.id, date, { confirm }, opts(client));
+      assert.equal(r.ok, false);
+      assert.deepEqual(codes(r), ["confirm"]);
+    }
+    assert.deepEqual(client.calls, []);
+    assert.deepEqual(await ledgerRows(date), []);
+  });
+
+  test("dry run, not connected: the payloads that would be sent, nothing sent, no ledger row", async () => {
+    const date = "2087-07-08";
+    await seedEvent(date, { location: "food_hall" });
+    const user = await newUser();
+    const client = createFakeLinkedInClient();
+    const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client));
+    assert.equal(r.ok, true);
+    assert.equal(r.mode, "dry_run");
+    assert.equal(r.duplicateCheck, "skipped");
+    assert.deepEqual(client.calls, []);
+    assert.deepEqual(r.requests.map((q) => [q.op, q.method, q.url]), [
+      ["initializeImageUpload", "POST", "https://api.linkedin.com/rest/images?action=initializeUpload"],
+      ["uploadImage", "PUT", "<the uploadUrl LinkedIn returns>"],
+      ["createEvent", "POST", "https://api.linkedin.com/rest/events"],
+      ["createPost", "POST", "https://api.linkedin.com/rest/posts"],
+    ]);
+    const [init, upload, create, post] = r.requests;
+    assert.deepEqual(init.body, { initializeUploadRequest: { owner: li.PLACEHOLDERS.member } });
+    assert.match(upload.body, /^\d+ bytes of image\/png \(1920×1080\)$/);
+    assert.equal(create.body.description.localized.en_US.rawText.includes("Food hall"), true);
+    assert.equal(post.body.commentary, create.body.description.localized.en_US.rawText);
+    assert.deepEqual(r.image.errors, []);
+    // The preview matches what the run would send.
+    const p = await li.linkedInEventPreview(pool, user.id, date, opts(client));
+    assert.deepEqual(p.payloads.event, create.body);
+    assert.deepEqual(p.payloads.post, post.body);
+    assert.deepEqual(p.payloads.imageUpload, init.body);
+    assert.deepEqual(await ledgerRows(date), []);
+    assert.deepEqual(await ledgerAudits(date), []);
+  });
+
+  test("dry run, connected: the read-only organizer listing runs; no write is sent", async () => {
+    const date = "2087-07-15";
+    await seedEvent(date, { location: "lobby" });
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient({ events: [] });
+    const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client));
+    assert.equal(r.ok, true);
+    assert.equal(r.duplicateCheck, "passed");
+    assert.deepEqual(client.ops(), ["listOrganizerEvents"]);
+    assert.deepEqual(client.calls[0].args, [`AQV-${user.id}`, "urn:li:organization:89993057"]);
+    assert.equal(r.requests[0].body.initializeUploadRequest.owner, "urn:li:person:member9");
+    assert.equal(r.requests[3].body.author, "urn:li:person:member9");
+    assert.deepEqual(await ledgerRows(date), []);
+  });
+
+  test("the duplicate check refuses the same name (either style) or the same Eastern day", async () => {
+    const date = "2087-07-22";
+    await seedEvent(date, { location: "lobby" });
+    const user = await connectedUser();
+    const li7 = (name, startsAt) => ({ id: "7249812613549670401", name: { localized: { en_US: name } }, startsAt });
+    const otherDay = Date.parse("2087-07-29T11:30:00Z");
+    for (const events of [
+      [li7("Buffalo Open Coffee Club for July 22nd", otherDay)],
+      [li7("Buffalo Open Coffee Club for 7/22", otherDay)],
+      [li7("Made by hand", Date.parse("2087-07-23T02:00:00Z"))], // 22:00 EDT on the 22nd
+    ]) {
+      const client = createFakeLinkedInClient({ events });
+      const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client));
+      assert.equal(r.ok, false);
+      assert.deepEqual(codes(r), ["duplicate"]);
+      assert.deepEqual(r.duplicates.map((d) => d.id), ["7249812613549670401"]);
+      assert.deepEqual(client.ops(), ["listOrganizerEvents"]);
+    }
+    const fine = createFakeLinkedInClient({ events: [li7("Buffalo Open Coffee Club for 7/29", otherDay)] });
+    assert.equal((await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(fine))).ok, true);
+    assert.deepEqual(await ledgerRows(date), []);
+  });
+
+  test("a failed organizer listing refuses with LinkedIn's plain-language message", async () => {
+    const date = "2087-07-29";
+    await seedEvent(date);
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient();
+    client.fail("listOrganizerEvents", new LinkedInError("expired", "linkedin list_organizer_events answered HTTP 401", { status: 401 }));
+    const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client));
+    assert.equal(r.ok, false);
+    assert.deepEqual(codes(r), ["linkedin"]);
+    assert.match(r.refusals[0].message, /Reconnect LinkedIn/);
+  });
+
+  test("the server enforces the matrix: past, cancelled, other and an existing ledger row", async () => {
+    const user = await connectedUser();
+    const client = createFakeLinkedInClient();
+    const past = "2087-05-27";
+    await seedEvent(past);
+    assert.deepEqual(codes(await li.createLinkedInEvent(user.id, past, { confirm: "live" }, opts(client))), ["past"]);
+
+    const cancelled = "2087-08-05";
+    await owner.query(`insert into events (event_date, status, cancel_reason) values ($1, 'cancelled', 'weather')
+                       on conflict (event_date) do nothing`, [cancelled]);
+    assert.deepEqual(codes(await li.createLinkedInEvent(user.id, cancelled, { confirm: "live" }, opts(client))), ["cancelled"]);
+
+    const other = "2087-06-24"; // location other, seeded above
+    assert.deepEqual(codes(await li.createLinkedInEvent(user.id, other, { confirm: "live" }, opts(client))), ["location_other"]);
+
+    const taken = "2087-08-12";
+    await seedEvent(taken);
+    await owner.query(PENDING, [taken]);
+    const r = await li.createLinkedInEvent(user.id, taken, { confirm: "live" }, opts(client));
+    assert.deepEqual(codes(r), ["ledger"]);
+    assert.equal(r.preview.action, "allow_retry");
+    assert.deepEqual(client.calls, []);
+    assert.equal((await ledgerRows(taken)).length, 1);
+  });
+
+  test("live: no connection or an expired one is refused; with one, the live sequence is not wired yet (#26)", async () => {
+    const date = "2087-08-19";
+    await seedEvent(date);
+    const client = createFakeLinkedInClient();
+    assert.deepEqual(codes(await li.createLinkedInEvent((await newUser()).id, date, { confirm: "live" }, opts(client, { config: LIVE }))), ["no_connection"]);
+
+    const stale = await connectedUser({ expiresIn: 86400, now: new Date(NOW.getTime() - 3 * 86400_000) });
+    assert.deepEqual(codes(await li.createLinkedInEvent(stale.id, date, { confirm: "live" }, opts(client, { config: LIVE }))), ["expired"]);
+
+    const user = await connectedUser();
+    const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client, { config: LIVE }));
+    assert.equal(r.ok, false);
+    assert.deepEqual(codes(r), ["live_unavailable"]);
+    assert.deepEqual(client.ops(), ["listOrganizerEvents"]);
+    assert.deepEqual(await ledgerRows(date), []);
   });
 });

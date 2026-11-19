@@ -130,6 +130,7 @@ export const REFUSALS = Object.freeze({
   confirm: "Not confirmed: use the Create live event button and confirm in the dialog.",
   duplicate: "LinkedIn already lists a BOCC event with the same name or on the same day.",
   image: "The cover image can't be sent to LinkedIn.",
+  live_unavailable: "Live LinkedIn create isn't switched on in this build yet. Nothing was sent.",
 });
 
 const refusal = (code, message = REFUSALS[code]) => ({ code, message });
