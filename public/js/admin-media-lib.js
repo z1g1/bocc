@@ -18,13 +18,18 @@ export const MAX_THUMB_BYTES = 1024 * 1024;
 export const VIDEO_TYPES = Object.freeze(["video/mp4", "video/quicktime"]);
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
-// The Event Image (kind event_image, ADR 0012 decision 3): one per event, used as is
-// on Luma (the original) and as a 16:9 centre-crop cover on the listings entered by
-// hand and on LinkedIn. Keep in step with src/lib/admin/media.mjs EVENT_IMAGE (a test checks).
+// The Event Image (kind event_image, ADR 0012 decision 3): one per event, made as a
+// 1:1 square, used as is on Luma (the original). Its 16:9 version (the cover, for the
+// listings entered by hand and LinkedIn) is the image at full height, centred on the
+// "Just the Beans" background, never cropped (ticket #40). Keep in step with
+// src/lib/admin/media.mjs EVENT_IMAGE (a test checks).
 export const EVENT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 export const EVENT_IMAGE_MIN_WIDTH = 480;
 export const EVENT_IMAGE_MIN_HEIGHT = 270;
 export const COVER_WIDTH = 1920;
+export const COVER_HEIGHT = 1080;
+/** The 1920x1080 background of every 16:9 version, served from the site itself. */
+export const COVER_BACKGROUND = "/assets/images/brand/just-the-beans-16x9.jpg";
 export const COVER_QUALITY = 0.88;
 export const MAX_COVER_BYTES = 5 * 1024 * 1024;
 
@@ -101,28 +106,28 @@ export function fitWithin(width, height, maxEdge) {
 }
 
 /**
- * The centre-crop source rectangle that makes a 16:9 cover from a (width x height)
- * image: the largest 16:9 area, centred, in whole pixels (an odd leftover pixel goes
- * to the bottom or right). Draw it with ctx.drawImage(src, sx, sy, sw, sh, 0, 0, W, H).
- * @returns {{ sx: number, sy: number, sw: number, sh: number }}
+ * Where a (width x height) image goes on the 16:9 background: scaled to the full
+ * height (or, for an image wider than 16:9, to the full width) and centred, never
+ * cropped; whole pixels, an odd leftover pixel to the right or bottom. Draw the
+ * background over the whole canvas, then ctx.drawImage(src, dx, dy, dw, dh).
+ * @returns {{ canvas: { width: number, height: number }, dx: number, dy: number, dw: number, dh: number }}
  */
-export function centreCrop16x9(width, height) {
-  if (!(width > 0 && height > 0)) throw new Error("centreCrop16x9: dimensions must be positive");
-  if (width * 9 > height * 16) {
-    const sw = Math.min(width, Math.round((height * 16) / 9));
-    return { sx: Math.floor((width - sw) / 2), sy: 0, sw, sh: height };
-  }
-  const sh = Math.min(height, Math.round((width * 9) / 16));
-  return { sx: 0, sy: Math.floor((height - sh) / 2), sw: width, sh };
+export function composeCover(width, height) {
+  if (!(width > 0 && height > 0)) throw new Error("composeCover: dimensions must be positive");
+  const W = COVER_WIDTH;
+  const H = COVER_HEIGHT;
+  const tooWide = width * H > height * W;
+  const dw = tooWide ? W : Math.min(W, Math.max(1, Math.round((width * H) / height)));
+  const dh = tooWide ? Math.min(H, Math.max(1, Math.round((height * W) / width))) : H;
+  return { canvas: { width: W, height: H }, dx: Math.floor((W - dw) / 2), dy: Math.floor((H - dh) / 2), dw, dh };
 }
 
-/** True when (width x height) is 16:9 to within a pixel. */
-export const is16x9 = (width, height) =>
-  Math.abs((width * 9) / 16 - height) <= 1 || Math.abs((height * 16) / 9 - width) <= 1;
+/** True when (width x height) is square to within a pixel. */
+export const isSquare = (width, height) => Math.abs(width - height) <= 1;
 
 /**
  * Can this decoded image be the Event Image? PNG or JPEG, at most 8 MiB, at least
- * 480x270. Not 16:9 is allowed, with a warning: the cover is a centre crop.
+ * 480x270. Not square is allowed, with a warning: the Event Image should be 1:1.
  * @param {{ type?: string, size?: number, name?: string, width: number, height: number }} file
  * @returns {{ ok: true, contentType: string, warning: string|null } | { ok: false, message: string }}
  */
@@ -139,13 +144,10 @@ export function checkEventImage(file) {
   if (!(width >= EVENT_IMAGE_MIN_WIDTH && height >= EVENT_IMAGE_MIN_HEIGHT)) {
     return { ok: false, message: `${name}the image is ${width}×${height}; it must be at least ${EVENT_IMAGE_MIN_WIDTH}×${EVENT_IMAGE_MIN_HEIGHT}.` };
   }
-  const warning = is16x9(width, height) ? null
-    : `The image is ${width}×${height}, not 16:9. The 16:9 cover will be a centre crop of it: check the preview.`;
+  const warning = isSquare(width, height) ? null
+    : `The image is ${width}×${height}, not square. Make the Event Image a 1:1 square: Luma shows it as is, and the 16:9 version puts it at full height on the beans background. Check the preview.`;
   return { ok: true, contentType: type, warning };
 }
-
-/** The cover's pixel size for a crop of (sw x sh): at most COVER_WIDTH wide, never upscaled. */
-export const coverSize = (sw, sh) => fitWithin(sw, sh, COVER_WIDTH);
 
 /** The JSON body for POST /api/admin/media/uploads, for the Event Image. */
 export function eventImageRequestBody({ eventDate, original, display, thumb, cover }) {

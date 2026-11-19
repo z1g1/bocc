@@ -1,0 +1,69 @@
+---
+// /admin/media/covers/: remake every 16:9 version made under the old centre-crop rule
+// at once (ticket #40). Admin only. A one-off after migration 20261202120000, which
+// marked every existing version outdated; each event page also remakes its own as it
+// opens, so this page is only needed to do them all now.
+//
+// Lists media.mjs listOutdatedCovers (ready Event Images and Photos from Event with
+// cover_outdated), each with a presigned GET of its display copy. The button runs
+// /js/admin-media.js (form[data-remake-covers]): for each one in turn, the display copy
+// is composed on the beans background in the browser and PUT through
+// /api/admin/media/{id}/cover and /cover-complete (the server has no image library).
+// Without JavaScript, or with storage off, it says so.
+import Admin from "../../../../layouts/Admin.astro";
+import { requireRole } from "../../../../lib/admin/roles.mjs";
+import { getStorage } from "../../../../lib/admin/storage.mjs";
+import { STORAGE_OFF_MESSAGE } from "../../../../lib/admin/media-http.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const { storage } = getStorage();
+let items: any[] = [];
+if (storage) {
+  const { pool } = await import("../../../../lib/admin/db.mjs");
+  const { listOutdatedCovers } = await import("../../../../lib/admin/media.mjs");
+  items = (await listOutdatedCovers(pool)).map((m: any) => ({
+    ...m,
+    label: `${m.eventDate} ${m.kind === "event_image" ? "Event Image" : "Photo from Event"}`,
+    thumbUrl: storage.presignGet({ key: m.thumbKey }).url,
+    // An hour: the remake runs through the list one at a time.
+    displayUrl: storage.presignGet({ key: m.displayKey, expiresIn: 3600 }).url,
+  }));
+}
+const statusId = "remake-covers-status";
+---
+<Admin title="Remake 16:9 versions" user={user} roles={roles}>
+  <h1>Remake 16:9 versions</h1>
+  <p class="muted">The 16:9 version of an Event Image is now the image at full height, centred on the BOCC "Just the Beans" background, never cropped. The versions below were made under the old rule (a centre crop). Each event page remakes its own when it is opened; this page remakes them all now, in this browser. A LinkedIn event already posted keeps the image it was posted with.</p>
+
+  {!storage ? <p class="muted">{STORAGE_OFF_MESSAGE}</p>
+    : items.length === 0 ? <p>Every 16:9 version is up to date.</p>
+    : (
+      <>
+        <p class="muted" data-media-nojs>Remaking needs JavaScript.</p>
+        <form data-remake-covers data-status={statusId} hidden>
+          <button type="submit">Remake all {items.length}</button>
+        </form>
+        <p class="media-status" id={statusId} role="status" aria-live="polite"></p>
+        <ul class="plain covers">
+          {items.map((m: any) => (
+            <li data-cover-id={m.id} data-display-url={m.displayUrl} data-label={m.label}>
+              <img src={m.thumbUrl} alt={m.label} loading="lazy" decoding="async">
+              <a href={`/admin/events/${m.eventDate}/?tab=info#event-image`}>{m.label}</a>
+            </li>
+          ))}
+        </ul>
+        <script is:inline type="module" src="/js/admin-media.js"></script>
+      </>
+    )}
+</Admin>
+
+<style>
+  .covers { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .covers li { display: flex; flex-direction: column; gap: 0.25rem; }
+  .covers img { display: block; width: 8rem; height: 6rem; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
+  .media-status { min-height: 1.5em; }
+</style>
