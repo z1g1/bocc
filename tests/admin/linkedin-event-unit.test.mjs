@@ -202,6 +202,72 @@ describe("checkCoverImage: PNG/JPEG by magic bytes, 480x270 minimum, 8 MiB cap, 
   });
 });
 
+describe("allowedActions: state x date x cancelled x location x connection x environment", () => {
+  const NOW = new Date("2026-10-02T16:00:00Z"); // the CLI tests' clock: the Friday before
+  const base = {
+    date: "2026-10-06", now: NOW, event: { status: "scheduled", location: "lobby" },
+    ledger: null, connection: { level: "ok" }, live: true,
+  };
+  const codes = (over) => rules.allowedActions({ ...base, ...over }).refusals.map((r) => r.code);
+
+  it("an upcoming scheduled event, connected, nothing in the ledger: create, live", () => {
+    assert.deepEqual(rules.allowedActions(base), { action: "create", mode: "live", refusals: [] });
+  });
+  it("dry run everywhere LINKEDIN_LIVE isn't set", () => {
+    assert.equal(rules.allowedActions({ ...base, live: false }).mode, "dry_run");
+  });
+  it("refuses once the start time has passed (7:30 Eastern on the day)", () => {
+    assert.deepEqual(codes({ now: new Date("2026-10-06T11:29:00Z") }), []);
+    assert.deepEqual(codes({ now: new Date("2026-10-06T11:30:00Z") }), ["past"]);
+    assert.deepEqual(codes({ date: "2026-09-29" }), ["past"]);
+  });
+  it("refuses a cancelled event and location other; null and food_hall are fine", () => {
+    assert.deepEqual(codes({ event: { status: "cancelled", location: "lobby" } }), ["cancelled"]);
+    assert.deepEqual(codes({ event: { status: "scheduled", location: "other" } }), ["location_other"]);
+    assert.deepEqual(codes({ event: { status: "scheduled", location: null } }), []);
+    assert.deepEqual(codes({ event: { status: "scheduled", location: "food_hall" } }), []);
+  });
+  it("live: refuses no connection and an expired one; amber is fine", () => {
+    assert.deepEqual(codes({ connection: null }), ["no_connection"]);
+    assert.deepEqual(codes({ connection: { level: "red" } }), ["expired"]);
+    assert.deepEqual(codes({ connection: { level: "amber" } }), []);
+  });
+  it("dry run: no connection is not a refusal (the duplicate check is skipped)", () => {
+    assert.deepEqual(codes({ live: false, connection: null }), []);
+    assert.deepEqual(codes({ live: false, connection: { level: "red" } }), []);
+  });
+  it("lists every refusal at once", () => {
+    assert.deepEqual(codes({ date: "2026-09-29", event: { status: "cancelled", location: "other" }, connection: null }),
+      ["past", "cancelled", "location_other", "no_connection"]);
+  });
+  it("a ledger row for the date: create is refused and the row's recovery is offered", () => {
+    const at = (status, over = {}) => rules.allowedActions({ ...base, ...over, ledger: { status } });
+    assert.deepEqual(at("pending"), { action: "allow_retry", mode: "live", refusals: [{ code: "ledger", message: rules.REFUSALS.ledger }] });
+    assert.equal(at("created").action, "publish_retry");
+    assert.equal(at("posted").action, "none");
+    assert.deepEqual(at("posted").refusals.map((r) => r.code), ["ledger"]);
+    // The recovery doesn't care about the date or the event's state.
+    assert.equal(at("pending", { date: "2026-09-29", event: { status: "cancelled", location: "other" } }).action, "allow_retry");
+  });
+});
+
+describe("createRefusals: the server's check for one create request", () => {
+  const ctx = {
+    date: "2026-10-06", now: new Date("2026-10-02T16:00:00Z"), event: { status: "scheduled", location: "lobby" },
+    ledger: null, connection: { level: "ok" }, live: false,
+  };
+  it("requires confirm=live, in dry run too", () => {
+    assert.deepEqual(rules.createRefusals(ctx, { confirm: "live" }), []);
+    for (const confirm of [undefined, null, "", "yes", "LIVE"]) {
+      assert.deepEqual(rules.createRefusals(ctx, { confirm }).map((r) => r.code), ["confirm"]);
+    }
+  });
+  it("adds the matrix's refusals, and the ledger when there's a row", () => {
+    assert.deepEqual(rules.createRefusals({ ...ctx, ledger: { status: "posted" } }, { confirm: "live" }).map((r) => r.code), ["ledger"]);
+    assert.deepEqual(rules.createRefusals({ ...ctx, event: { status: "cancelled", location: null } }, {}).map((r) => r.code), ["confirm", "cancelled"]);
+  });
+});
+
 describe("eventWindow: Tuesday 7:30-9:00 America/New_York as UTC epoch ms", () => {
   it("matches the CLI fixture for 2026-10-06 (EDT)", () => {
     assert.deepEqual(rules.eventWindow("2026-10-06"), { startsAt: 1791286200000, endsAt: 1791291600000 });

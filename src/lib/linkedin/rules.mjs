@@ -1,6 +1,8 @@
 // Pure LinkedIn rules (ADR 0012). No database, no network, no imports, so unit tests
-// and the browser-free Thursday check can load it. Later tickets add the event payload
-// building, the allowed-actions matrix and drift detection here.
+// and the browser-free Thursday check can load it. Holds the connection expiry and
+// scopes (#23), and the weekly event (#25): name, times, wording by location, the
+// payloads, the cover image checks, the duplicate match and the allowed-actions matrix.
+// Drift detection is added here by a later ticket.
 
 const DAY_MS = 86_400_000;
 
@@ -194,6 +196,47 @@ export function findDuplicates(elements, spec) {
     const starts = Number(e?.startsAt);
     return Number.isFinite(starts) && easternDay(starts) === spec.date;
   });
+}
+
+/**
+ * What the LinkedIn section offers for one date, and why create can't run.
+ *   no active ledger row   -> "create", refused for: past (start time passed), cancelled,
+ *                             location other, and when live: no / expired connection
+ *   pending                -> "allow_retry" (#26: the outcome of a create is unknown)
+ *   created                -> "publish_retry" (#26: the event exists, the post failed)
+ *   posted                 -> "none"
+ * With a row, create is refused with "ledger" whatever else is true. In a dry run a
+ * missing or expired connection isn't a refusal: only the duplicate check needs it.
+ * @param {{ date: string, now?: Date, event: { status: string, location: string|null },
+ *   ledger: { status: "pending"|"created"|"posted" } | null,
+ *   connection: { level: "ok"|"amber"|"red" } | null, live: boolean }} ctx
+ * @returns {{ action: "create"|"allow_retry"|"publish_retry"|"none", mode: "live"|"dry_run",
+ *   refusals: { code: string, message: string }[] }}
+ */
+export function allowedActions({ date, now = new Date(), event, ledger, connection, live }) {
+  const mode = live ? "live" : "dry_run";
+  if (ledger) {
+    const action = { pending: "allow_retry", created: "publish_retry" }[ledger.status] ?? "none";
+    return { action, mode, refusals: [refusal("ledger")] };
+  }
+  const refusals = [];
+  if (now.getTime() >= eventWindow(date).startsAt) refusals.push(refusal("past"));
+  if (event.status === "cancelled") refusals.push(refusal("cancelled"));
+  if (event.location === "other") refusals.push(refusal("location_other"));
+  if (live && !connection) refusals.push(refusal("no_connection"));
+  else if (live && connection.level === "red") refusals.push(refusal("expired"));
+  return { action: "create", mode, refusals };
+}
+
+/**
+ * The server's check for one create request: confirm=live (from the dialog), then the
+ * allowed-actions refusals. Empty means it may proceed.
+ * @param {Parameters<typeof allowedActions>[0]} ctx
+ * @param {{ confirm?: unknown }} request
+ */
+export function createRefusals(ctx, { confirm }) {
+  const out = confirm === "live" ? [] : [refusal("confirm")];
+  return out.concat(allowedActions(ctx).refusals);
 }
 
 // LinkedIn's image limits (the CLI's images.py), checked on the bytes the server sends.
