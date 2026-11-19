@@ -9,6 +9,10 @@
 //                                      or null when everything is fine, the event is
 //                                      cancelled, or `date` is a holiday-week Tuesday
 //                                      with no events row (isHolidayWeek)
+//   linkedinExpiryAlerts({ connections, now, siteUrl })
+//                                      one "reconnect LinkedIn" alert per connection with
+//                                      under 10 days left or expired (linkedin/rules.mjs
+//                                      expiryAlertDue); [] when none is due or none exists
 //   alertSiteUrl({ deployContext, siteUrl, env })   the origin the Click link opens
 //   readNtfyConfig(env)                { topic, server } | { problem } | null (unset)
 //   sendNtfy(alert, config, { fetch }) POST JSON to the server root; 5 s timeout; errors
@@ -22,6 +26,7 @@
 
 import { CHANNELS, CHANNEL_KEYS } from "../admin/social-rules.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
+import { expiryAlertDue, expiryLevel } from "../linkedin/rules.mjs";
 
 export { isHolidayWeek };
 
@@ -161,6 +166,51 @@ export function failureAlert({ date, siteUrl = null }) {
     tags: ["warning"],
     click: origin ? `${origin}/admin/social/next` : null,
   };
+}
+
+/** The alert for a check that couldn't read the LinkedIn connections. */
+export function linkedinFailureAlert({ siteUrl = null } = {}) {
+  const origin = originOf(siteUrl);
+  return {
+    title: "BOCC LinkedIn: the Thursday check couldn't read the connection",
+    message: "The check couldn't read the LinkedIn connection's expiry (see Netlify -> Logs -> Functions -> social-check). Check /admin/account/ by hand.",
+    priority: "high",
+    tags: ["warning"],
+    click: origin ? `${origin}/admin/account/` : null,
+  };
+}
+
+/** "Sunday, November 22, 2026" for an instant, in Eastern time. */
+const easternLongDate = (at) => new Date(at).toLocaleDateString("en-US", {
+  timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric",
+});
+
+/**
+ * The LinkedIn connection alerts (ADR 0012): one per connection that is due
+ * (expiryAlertDue: under 10 days left, or expired), so it is renewed before Tuesday's
+ * event has to be created. Only the name and the expiry come in, never token data.
+ * @param {{ connections: Array<{ name?: string|null, expiresAt: Date|string }>, now?: Date, siteUrl?: string|null }} s
+ * @returns {Array<{ title: string, message: string, priority: "high", tags: string[], click: string|null }>}
+ */
+export function linkedinExpiryAlerts({ connections, now = new Date(), siteUrl = null }) {
+  const origin = originOf(siteUrl);
+  return connections.filter((c) => expiryAlertDue(c.expiresAt, now)).map((c) => {
+    const who = `${String(c.name ?? "").trim() || "an Admin"}'s`;
+    const { level, daysLeft } = expiryLevel(c.expiresAt, now);
+    const on = easternLongDate(c.expiresAt);
+    const left = daysLeft === 0 ? "less than a day" : daysLeft === 1 ? "1 day" : `${daysLeft} days`;
+    const expired = level === "red";
+    return {
+      title: expired ? `BOCC LinkedIn: ${who} connection has expired` : `BOCC LinkedIn: ${who} connection expires in ${left}`,
+      message: [
+        expired ? `${who} LinkedIn connection expired on ${on}.` : `${who} LinkedIn connection expires on ${on} (in ${left}).`,
+        "Reconnect at /admin/account/ before Tuesday's LinkedIn event has to be created.",
+      ].join("\n"),
+      priority: "high",
+      tags: ["warning"],
+      click: origin ? `${origin}/admin/account/` : null,
+    };
+  });
 }
 
 /**

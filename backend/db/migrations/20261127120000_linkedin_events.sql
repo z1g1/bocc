@@ -1,4 +1,4 @@
--- Migration 0014 — linkedin_events: the LinkedIn event ledger (ADR 0012, issues #25/#26).
+-- Migration 0015 — linkedin_events: the LinkedIn event ledger (ADR 0012, issues #25/#26).
 --
 -- Applied by backend/scripts/migrate.js in ONE transaction; guarded so it also applies
 -- on a vanilla Postgres (scripts/test-db.sh).

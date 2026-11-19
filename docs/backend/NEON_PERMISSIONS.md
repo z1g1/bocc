@@ -17,7 +17,7 @@ in Neon Object Storage).
 | `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`; `SELECT` on `held_occurrences`, `streaks` | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
 | `site_reader` | public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, rendered on request in the Astro SSR function (ADR 0009 decision 4) | `USAGE` on `public`; `SELECT` on `events`, `event_links` only | Netlify env `SITE_DB_URL` (secret) |
-| `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_posts`, `social_post_channels`; `SELECT (id, event_date, kind, status)` on `event_media` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
+| `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_posts`, `social_post_channels`; `SELECT (id, event_date, kind, status)` on `event_media`; `SELECT (user_id, expires_at)` on `linkedin_connections`; `USAGE` on `auth` and `SELECT (id, name)` on `auth."user"` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
 | `neondb_owner` | operator only: `npm run migrate` | owner of schema objects, creates roles | local `.env.local` from `neon link` (gitignored). **Never in Netlify.** |
 | Storage credential (one per branch) | admin app: presigned media URLs (`src/lib/admin/storage.mjs`); `scripts/storage-cors.mjs` | `storage:read`, `storage:write` on the branch it was made on and its descendants. Not a Postgres role | Netlify env `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY`; see "Storage" |
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
@@ -48,7 +48,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is un-readied, never removed) |
 | `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
-| `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261126120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves) |
+| `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261127120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
 see every row; there is deliberately no INSERT or DELETE policy. It has **no** `INSERT` or
@@ -63,10 +63,11 @@ else is granted on them: `checkin_writer` and `public` get nothing, and Supabase
 `authenticated` roles are revoked if they exist. `event_links` (Phase 4) is the same, plus
 `site_reader`'s SELECT. `social_posts` and `social_post_channels` (Phase 5) are the same, with
 no `site_reader` grant. `linkedin_connections` (Phase 6) is granted to `admin_app` only:
-`site_reader`, `checkin_writer` and `social_checker` get nothing (the Thursday expiry alert
-adds a column grant for `social_checker` later). The database holds only ciphertext; the key
-is in Netlify env, never in Postgres. `linkedin_events` (Phase 6) is the same: `admin_app` only,
-and without DELETE.
+`site_reader` and `checkin_writer` get nothing; `social_checker` gets a column grant on
+`user_id` and `expires_at` only, for the Thursday expiry alert (migration
+`20261126120000_social_checker_linkedin.sql`), never the token. The database holds only ciphertext; the key
+is in Netlify env, never in Postgres. `linkedin_events` (Phase 6) is
+`admin_app` only, and without DELETE.
 
 ### site_reader
 
@@ -101,9 +102,12 @@ Its grants, exactly:
 | schema `public` | `USAGE` |
 | `events`, `event_links`, `social_posts`, `social_post_channels` | `SELECT` |
 | `event_media` columns `id`, `event_date`, `kind`, `status` | `SELECT` (enough to tell whether the attached promo video is ready; no object keys, sizes or uploader) |
+| `linkedin_connections` columns `user_id`, `expires_at` | `SELECT` (the LinkedIn expiry alert, #24; never the token, member URN, LinkedIn display name or scope) |
+| schema `auth` | `USAGE` |
+| `auth."user"` columns `id`, `name` | `SELECT` (to name whose connection is expiring; no email or anything else) |
 
-Nothing else: no attendees, check-ins, reports, `audit_log`, `user_roles` or `auth`, and no
-writes. Its URL (`SOCIAL_CHECK_DB_URL`) is the **pooled** `social_checker` URL. It has its own
+Nothing else: no attendees, check-ins, reports, `audit_log`, `user_roles` or any other `auth`
+table or column, and no writes. Its URL (`SOCIAL_CHECK_DB_URL`) is the **pooled** `social_checker` URL. It has its own
 value per Netlify context and is marked secret.
 
 ## Connection
@@ -409,6 +413,11 @@ Run as `social_checker` once `20261123120000_social_checker.sql` is applied, ins
       `select original_key from event_media limit 1` → permission denied
 - [ ] `select 1 from attendees limit 1` / `from event_reports` → permission denied
 - [ ] `update social_post_channels set status = status` → permission denied
+- [ ] once `20261126120000_social_checker_linkedin.sql` is applied:
+      `select user_id, expires_at from linkedin_connections` → succeeds;
+      `select token_ciphertext from linkedin_connections` → permission denied;
+      `select id, name from auth."user"` → succeeds; `select email from auth."user"` →
+      permission denied
 
 `npm run test:db` asserts all of the above against a throwaway Postgres with the real
 migrations (`tests/admin/permissions.test.mjs`); this list is for the real Neon branches.

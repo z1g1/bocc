@@ -1,6 +1,6 @@
 // The LinkedIn event ledger, preview and dry run (ADR 0012, issue #25) against the
 // throwaway database (npm run test:db):
-//   1. migration 20261126120000_linkedin_events.sql: grants (admin_app SELECT/INSERT/
+//   1. migration 20261127120000_linkedin_events.sql: grants (admin_app SELECT/INSERT/
 //      UPDATE, no DELETE; nobody else anything), one active row per date, retiring a
 //      pending row frees the date, only forward status moves
 //   2. the use-case as admin_app with a fake LinkedIn client: preview, the refusals,
@@ -76,7 +76,7 @@ const ledgerAudits = (date) => owner.query(
   `select action from audit_log where target_table = 'linkedin_events' and details->>'eventDate' = $1`, [date]).then((r) => r.rows);
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
-describe("migration 20261126120000_linkedin_events.sql", () => {
+describe("migration 20261127120000_linkedin_events.sql", () => {
   test("grants: admin_app SELECT, INSERT, UPDATE and no DELETE; nobody else anything", async () => {
     const { rows } = await owner.query(
       `select g.grantee || ':' || g.privilege_type as g
