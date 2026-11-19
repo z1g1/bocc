@@ -91,3 +91,38 @@ describe("Readiness: the Event Image line", () => {
     assert.equal(readiness(event, {}, null).items.find((i) => i.key === "event_image"), undefined);
   });
 });
+
+// The checked-in default files on the server (the LinkedIn upload of the logo cover).
+// The Netlify SSR function bundle has no public/ directory, so the file is fetched
+// from the site's own origin when it isn't on disk.
+describe("readPublicAsset: disk first, then the site's own origin", async () => {
+  const { readPublicAsset } = await import("../../src/lib/admin/public-asset.mjs");
+  const PATH = "/assets/images/brand/bocc-logo-wide-16x9.png";
+  const NOWHERE = new URL("file:///nonexistent-bundle/");
+
+  test("reads the file from public/ when it's there (dev, tests)", async () => {
+    const bytes = await readPublicAsset(PATH, { fetch: () => assert.fail("no fetch when on disk") });
+    assert.deepEqual([...bytes.subarray(1, 4)], [0x50, 0x4e, 0x47]);
+  });
+
+  test("not on disk (the function bundle): GETs it from BETTER_AUTH_URL, no redirects", async () => {
+    const calls = [];
+    const bytes = await readPublicAsset(PATH, {
+      root: NOWHERE,
+      baseURL: "https://716coffee.club",
+      fetch: async (url, init) => { calls.push([String(url), init.redirect]); return new Response(new Uint8Array([1, 2, 3]), { status: 200 }); },
+    });
+    assert.deepEqual(calls, [["https://716coffee.club/assets/images/brand/bocc-logo-wide-16x9.png", "error"]]);
+    assert.deepEqual([...bytes], [1, 2, 3]);
+  });
+
+  test("a failed fetch is an error, never empty bytes", async () => {
+    await assert.rejects(readPublicAsset(PATH, {
+      root: NOWHERE, baseURL: "https://716coffee.club", fetch: async () => new Response("nope", { status: 404 }),
+    }), /HTTP 404/);
+  });
+
+  test("refuses a path outside /assets/", async () => {
+    await assert.rejects(readPublicAsset("/../package.json", {}), /refused/);
+  });
+});
