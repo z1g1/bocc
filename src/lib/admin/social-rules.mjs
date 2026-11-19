@@ -231,7 +231,7 @@ export function readyProblems({ event, post, video, lumaUrl, channels = [] }) {
   if (!video) out.push({ key: "video", message: "Upload the promo video." });
   else if (video.kind !== "promo_video" || video.status !== "ready") out.push({ key: "video", message: "The promo video hasn't finished uploading." });
   if (!post?.baseCaption) out.push({ key: "baseCaption", message: "Write the base caption." });
-  if (!lumaUrl) out.push({ key: "luma", message: "Add the Luma listing (under Listings): it is the only link the posts use." });
+  if (!lumaUrl) out.push({ key: "luma", message: "Add the Luma listing (under Online Event Listings): it is the only link the posts use." });
   for (const c of channels) {
     if (c.overLimit) {
       out.push({ key: `caption_${c.channel}`, message: `The ${CHANNELS[c.channel]} caption is ${c.captionLength} characters; the limit is ${c.captionLimit}.` });

@@ -424,7 +424,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     const signin = section("signin");
     const socialSec = section("social");
     assert.match(signin, /<h2[^>]*>Sign-in board<\/h2>/);
-    assert.match(socialSec, /<h2[^>]*>Social photos<\/h2>/);
+    assert.match(socialSec, /<h2[^>]*>Photos from Event<\/h2>/);
     assert.match(signin, /data-media-upload[^>]*data-kind="signin_board"/);
     assert.match(signin, /<input type="hidden" name="kind" value="signin_board"/);
     assert.match(socialSec, /<input type="hidden" name="kind" value="social_photo"/);
@@ -450,7 +450,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
 
     const evil = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: "https://evil.example/" } });
     assert.equal(evil.status, 303);
-    assert.equal(evil.headers.get("location"), `/admin/events/${date}/?media=deleted#event-media`, "the row's own event page");
+    assert.equal(evil.headers.get("location"), `/admin/events/${date}/?tab=post&media=deleted#event-media`, "the row's own event page");
     assert.equal(await row(plan.id), undefined);
     for (const v of ["original", "display", "thumb"]) assert.equal(await exists(`events/${date}/${plan.id}/${v}.jpg`), false);
     assert.deepEqual((await audits(plan.id)).map((a) => [a.action, a.actor_user_id]),
@@ -527,7 +527,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
       const del = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: ret } });
       assert.equal(del.status, 303);
       const loc = del.headers.get("location");
-      assert.equal(loc, `/admin/events/${date}/?media=deleted#event-media`, ret);
+      assert.equal(loc, `/admin/events/${date}/?tab=post&media=deleted#event-media`, ret);
       assert.equal(new URL(loc, BASE).origin, BASE);
     }
   });

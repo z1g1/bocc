@@ -10,7 +10,7 @@
 //   - canvas.toBlob wrapped in a Promise; canvas export drops EXIF/GPS
 //   - fetch PUT straight to the bucket with the presigned URL and its Content-Type
 // Several files upload one after another. The event page has one form per kind (sign-in
-// board, social photos), each with a hidden `kind` field and its own aria-live status
+// board, Photos from Event), each with a hidden `kind` field and its own aria-live status
 // line. One upload at a time across the forms: a finished upload reloads the page.
 
 import {

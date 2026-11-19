@@ -482,6 +482,42 @@ on-device checks and production are open.
 - [x] Update `docs/social/README.md` and supersede `WEEKLY_SOCIAL_POSTING_PLAN.md`. The two
       Chrome task prompts are in [`docs/social/CHROME_TASKS.md`](../social/CHROME_TASKS.md)
 
+## Phase 6: LinkedIn events and the event-page prefactor (ADR 0012)
+
+Spec: GitHub issue #18. One combined production release with the prefactor and the LinkedIn
+work (to save deploy credits); everything is verified on staging first.
+
+- [ ] Event page tabs (#19): Readiness above three server-rendered tabs, `?tab=info|social|post`,
+      default Event Info for a future date and Post Event for today or earlier (Eastern time),
+      every form returning to its tab. Renames: "Listings" → **Online Event Listings**,
+      "Social photos" → **Photos from Event** (labels only; `social_photo` and the
+      `event_links` slots are unchanged)
+- [ ] Event Image (`event_image` media: upload or reference a recent publicly usable photo,
+      the logo as the default, a 16:9 cover copy), previews and downloads for the hand-entered
+      listings, and the Social Post cover image defaulting to it
+- [ ] Migrations: `linkedin_connections` (token encrypted under `LINKEDIN_TOKEN_KEY`),
+      `linkedin_events` (the ledger, unique on `event_date`), the `event_media` changes and the
+      social post's cover. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
+      connections only), `social_checker` the connection expiry only, nothing for
+      `site_reader`/`checkin_writer`
+- [ ] LinkedIn OAuth connect, status ("Connected as …, expires …"), reconnect and disconnect,
+      for Admins, with the production and staging callback URLs on the LinkedIn app
+- [ ] The LinkedIn event section on Social Posts: preview, "Create live event" with a confirm
+      dialog, dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
+      (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
+      the `linkedin_event` listing filled on post, drift and cancellation notices
+- [ ] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
+- [ ] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
+- [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
+      environments), `LINKEDIN_LIVE=1` (production only)
+- [ ] Import the CLI's local ledger into `linkedin_events` before the first webapp create
+- [ ] Release runbook (`PHASE6_RELEASE.md`): prefactor checked on staging, then production,
+      **before** the first live create. Reminder: `LinkedIn-Version: 202609` sunsets
+      2027-09-15
+- [ ] After the first successful live create from production: delete `tools/linkedin-events/`,
+      rewrite the LinkedIn permissions doc for the web OAuth flow and repoint the
+      `bocc-linkedin-event` skill (docs-only, batched into a later deploy)
+
 ## Later, not in the MVP
 
 - Email login, magic links and transactional email

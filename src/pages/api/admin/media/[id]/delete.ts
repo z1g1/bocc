@@ -1,9 +1,9 @@
 // POST /api/admin/media/{id}/delete: delete one photo's (or promo video's) row
 // (audited) and then its objects. Admin only, Origin-checked.
-//   form post (gallery button)  -> 303 to /admin/events/<the photo's date>/ with
-//                                  ?media=deleted, or ?media=deleted-partial when an
+//   form post (gallery button)  -> 303 to /admin/events/<the photo's date>/?tab=post with
+//                                  &media=deleted, or ?media=deleted-partial when an
 //                                  object couldn't be removed (logged with its key)
-//                                  (a promo video: ?media=video-deleted[-partial]#social; it
+//                                  (a promo video: ?tab=social&media=video-deleted[-partial]#social; it
 //                                  is also cleared from the social post and un-readies it)
 //   JSON (upload script giving up on a failed upload) -> 200 { id, eventDate, kind, leftovers[] }
 //   404 · 401/403 · 405 · 503 when storage is off (the row is kept, so nothing is orphaned)
