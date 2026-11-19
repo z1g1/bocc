@@ -11,6 +11,44 @@
  *                                 post_urn, posted_at } } }          (posted)
  * Path: --ledger <file>, else $LINKEDIN_LEDGER_FILE, else
  * ${XDG_STATE_HOME:-~/.local/state}/bocc-linkedin/ledger.json (the CLI's own default).
+ *
+ * Dry run by default: reads the ledger, prints one row per entry and counts; with a
+ * database URL it also compares against what is stored. `--apply` writes, in ONE
+ * transaction, and refuses to run while there are errors, or conflicts unless
+ * `--prefer-db`.
+ *
+ * Runs as the database OWNER (DATABASE_URL_UNPOOLED, else DATABASE_URL), like
+ * migrate.js: an operator tool, never deployed. One audit_log row (actor NULL, action
+ * `linkedin_event.import`) summarises a run that changed something; a run that changes
+ * nothing writes nothing, so running it again is safe.
+ *
+ * Usage (from backend/):
+ *   node scripts/import-linkedin-ledger.js                                   # plan only, no DB
+ *   node --env-file=../.env.local scripts/import-linkedin-ledger.js          # dry run vs the DB
+ *   node --env-file=../.env.local scripts/import-linkedin-ledger.js --apply [--prefer-db] [--ledger <file>]
+ *
+ * Mapping, per entry (keyed by event date):
+ *   posted   → a `posted` row: event id and URL, post URN and its feed URL, timestamps
+ *   created  → a `created` row (the page then offers Publish event)
+ *   pending  → SKIPPED and reported: the CLI never learnt whether LinkedIn created it.
+ *              Check LinkedIn, finish it with the CLI or `bocc-event forget` it, re-run.
+ *   anything else, a bad id/URL/URN/timestamp, an id written as a JSON number → error
+ *   (`forget` removes an entry from the CLI ledger, so a forgotten week isn't there at all.)
+ *   name and attempted_at come from the entry; commentary too (older entries have none:
+ *   the CLI posted the default); location `food_hall` when the commentary is the food
+ *   hall text, `lobby` for the normal text, else null. created_by and the image columns
+ *   are null: the CLI didn't record them.
+ * Against what is stored, per date (the active, not retired, row):
+ *   none                                   add (and the events row, `scheduled`, if missing)
+ *   same event id, same status             unchanged
+ *   same event id, stored created, CLI posted   mark posted
+ *   same event id, stored posted, CLI created   unchanged (the web posted it since)
+ *   stored pending, another event id, or another post URN   CONFLICT: never overwritten
+ * A posted week gets its `linkedin_event` listing when it has none (a web post fills it
+ * too); a different stored listing is kept and listed for information. Existing events'
+ * status and location are never touched.
+ *
+ * Exit codes: 0 ok, 1 errors or a refused --apply (nothing written), 2 usage.
  */
 
 const fs = require('fs');

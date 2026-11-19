@@ -70,6 +70,10 @@ refused. If a run dies mid-create, the entry stays `pending`. In that case, chec
 events on LinkedIn, then run `uv run bocc-event forget --date YYYY-MM-DD` to allow a retry.
 The tool also refuses if LinkedIn already lists an event with the same name or date.
 
+Before the first create from the admin app, this ledger is imported into Postgres with
+`backend/scripts/import-linkedin-ledger.js` (see "Import the CLI's local ledger" in
+`docs/admin/ADMIN_APP_PLAN.md`). Resolve any `pending` entry first: the import skips it.
+
 An event that was created but never posted is invisible and **can't be deleted**. Publish it
 with `post`. To remove a published event, delete its post, which deletes the event.
 
