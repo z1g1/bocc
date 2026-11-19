@@ -1,0 +1,146 @@
+---
+// The Event Image section of the Event Info tab (ADR 0012 decision 3). Admin only.
+//   <EventImage date="2026-11-24" image={resolvedEventImage} />
+// `image` comes from src/lib/admin/event-image.mjs getEventImage (the page also uses it
+// for the Readiness line).
+//
+// - Two previews with download buttons: the square/original (for Luma) and the 16:9
+//   cover (for the listings entered by hand). Stored files through short-lived
+//   presigned GETs (re-signed on every render, downloads with a signed
+//   Content-Disposition); the logo default from the site itself.
+// - Upload (set or change): /js/admin-media.js checks the image (PNG/JPEG, at least
+//   480x270, at most 8 MiB; a warning when it isn't 16:9), makes the display,
+//   thumbnail and 16:9 centre-crop cover copies and PUTs all four to the bucket.
+//   Hidden until that script runs. The new image replaces the old one on complete.
+// - Clear: a plain form post to /api/admin/media/event-image/clear (back to the logo).
+// - Unfinished Event Image uploads over a day old, with a delete button.
+// - Storage not configured: the message, and the previews only when it's the logo.
+import { hasRole } from "../../lib/admin/roles.mjs";
+import { getStorage, isIsoDate } from "../../lib/admin/storage.mjs";
+import { STORAGE_OFF_MESSAGE } from "../../lib/admin/media-http.mjs";
+
+interface Props {
+  /** The event's date, YYYY-MM-DD. */
+  date: string;
+  /** The resolved Event Image (event-image-rules.mjs EventImage). */
+  image: any;
+}
+const { date, image } = Astro.props;
+const allowed = hasRole(Astro.locals, "admin") && isIsoDate(date);
+const { storage } = allowed ? getStorage() : { storage: null };
+
+const NOTICES: Record<string, string> = {
+  "event-image-cleared": "Event Image cleared. The event uses the BOCC logo.",
+  "event-image-cleared-partial": "Event Image cleared. Some of its files couldn't be removed from storage; they are logged for cleanup.",
+  "event-image-unchanged": "There was no Event Image to clear.",
+  deleted: "Unfinished upload deleted.",
+  "deleted-partial": "Unfinished upload deleted. Some of its files couldn't be removed from storage; they are logged for cleanup.",
+};
+const notice = NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+
+const isDefault = image?.source === "default";
+const ext = (key: string) => key.split(".").pop();
+/** A file's preview and download links, or null when it can't be shown. */
+function links(file: any, downloadName: string) {
+  if (!file) return null;
+  if ("path" in file) return { src: file.path, href: file.path, download: file.path.split("/").pop() };
+  if (!storage) return null;
+  return {
+    src: storage.presignGet({ key: file.key }).url,
+    href: storage.presignGet({ key: file.key, downloadName }).url,
+    download: "",
+  };
+}
+let square: ReturnType<typeof links> = null;
+let cover: ReturnType<typeof links> = null;
+let stale: any[] = [];
+if (allowed && image) {
+  const sq = links(image.display, "");
+  const orig = links(image.original, `bocc-${date}-event-image.${"key" in image.original ? ext(image.original.key) : "png"}`);
+  square = sq && orig ? { ...orig, src: sq.src } : null;
+  cover = links(image.cover, `bocc-${date}-event-image-16x9.jpg`);
+  if (storage) {
+    const { listStalePending } = await import("../../lib/admin/media.mjs");
+    const { pool } = await import("../../lib/admin/db.mjs");
+    stale = (await listStalePending(pool, { date })).filter((m: any) => m.kind === "event_image");
+  }
+}
+const statusId = `event-image-status-${date}`;
+const warningId = `event-image-warning-${date}`;
+const inputId = `event-image-file-${date}`;
+const fmtTime = (d: Date) =>
+  new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
+---
+{allowed && image && (
+  <section class="event-image" id="event-image" aria-labelledby="h-event-image">
+    <h2 id="h-event-image">Event Image</h2>
+    <p class="muted">One image for every Online Event Listing this week. The square/original is for Luma; the 16:9 version is for the listings entered by hand.</p>
+    {notice && <p class="notice" role="status">{notice}</p>}
+    <p class="source">
+      {isDefault ? "Using the default: the BOCC logo."
+        : image.source === "uploaded" ? "Uploaded for this event."
+          : `A photo from the ${image.eventDate} event.`}
+    </p>
+
+    <div class="previews">
+      <figure>
+        {square ? <img src={square.src} alt={`Event Image, square/original, ${date}`} loading="lazy" decoding="async"> : <p class="muted">Preview not available.</p>}
+        <figcaption>Square/original <span class="muted">(Luma)</span></figcaption>
+        {square && <p><a class="button small" href={square.href} download={square.download}>Download square/original</a></p>}
+      </figure>
+      <figure>
+        {cover ? <img src={cover.src} alt={`Event Image, 16:9 cover, ${date}`} loading="lazy" decoding="async"> : <p class="muted">No 16:9 version yet.</p>}
+        <figcaption>16:9 <span class="muted">(listings entered by hand)</span></figcaption>
+        {cover && <p><a class="button small" href={cover.href} download={cover.download}>Download 16:9</a></p>}
+      </figure>
+    </div>
+
+    {!storage ? <p class="muted" data-media-off>{STORAGE_OFF_MESSAGE}</p> : (
+      <>
+        <p class="muted" data-media-nojs>Uploading the Event Image needs JavaScript.</p>
+        <form class="media-upload" data-media-upload data-kind="event_image" data-event-date={date} data-status={statusId} data-warning={warningId} hidden>
+          <input type="hidden" name="kind" value="event_image">
+          <label for={inputId}>{isDefault ? "Upload an Event Image" : "Change the Event Image"} <span class="muted">(PNG or JPEG, at least 480×270, up to 8 MB; 16:9 is best)</span></label>
+          <input id={inputId} type="file" name="files" accept="image/jpeg,image/png" required>
+          <p class="warning" id={warningId} role="status" aria-live="polite"></p>
+          <button type="submit">{isDefault ? "Upload Event Image" : "Replace Event Image"}</button>
+        </form>
+        <p class="media-status" id={statusId} role="status" aria-live="polite"></p>
+
+        {!isDefault && image.source === "uploaded" && (
+          <form method="post" action="/api/admin/media/event-image/clear" class="inline" data-confirm="Clear the Event Image? The event goes back to the BOCC logo, and the uploaded image is deleted.">
+            <input type="hidden" name="eventDate" value={date}>
+            <button type="submit" class="secondary">Clear (use the BOCC logo)</button>
+          </form>
+        )}
+
+        {stale.length > 0 && (
+          <div class="media-stale">
+            <h3>Unfinished uploads</h3>
+            <ul class="plain">
+              {stale.map((m: any) => (
+                <li>
+                  <span>Event Image, started {fmtTime(m.createdAt)}</span>
+                  <form method="post" action={`/api/admin/media/${m.id}/delete`} class="inline" data-confirm="Delete this unfinished upload?">
+                    <button type="submit" class="small secondary">Delete</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <script is:inline type="module" src="/js/admin-media.js"></script>
+      </>
+    )}
+  </section>
+)}
+
+<style>
+  .previews { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; }
+  .previews figure { margin: 0; flex: 0 1 18rem; }
+  .previews img { display: block; max-width: 100%; height: auto; max-height: 12rem; border: 1px solid var(--line); border-radius: 4px; }
+  .previews figcaption { margin-top: 0.25rem; font-weight: 600; }
+  .previews p { margin: 0.25rem 0; }
+  .warning { min-height: 1.2em; color: var(--err); }
+  .media-status { min-height: 1.5em; }
+</style>

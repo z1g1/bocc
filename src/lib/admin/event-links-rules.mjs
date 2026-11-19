@@ -137,8 +137,11 @@ export const publicPath = (date) => `/events/${date}/`;
  *             items: Array<{ key: string, label: string, ok: boolean|null, note?: string, href?: string }> }}
  *   ok null = not checked; href (the public page) only when it exists. `ready` is the
  *   listings only (as the lists' "n/4 listings" tag); the social lines are extra items.
+ * @param {{ eventImage?: { source: "uploaded"|"referenced"|"default", eventDate: string|null } }} [extra]
+ *   eventImage: the resolved Event Image (src/lib/admin/event-image-rules.mjs); adds its
+ *   line, ok null when the BOCC logo default is in use (fine, but worth a look)
  */
-export function readiness(event, links = {}, social = null) {
+export function readiness(event, links = {}, social = null, { eventImage } = {}) {
   const items = PLATFORM_KEYS.map((p) => ({ key: p, label: `${PLATFORMS[p]} listing`, ok: Boolean(links[p]?.url) }));
   const listings = items.filter((i) => i.ok).length;
   const lumaId = Boolean(links.luma?.externalId);
@@ -153,6 +156,15 @@ export function readiness(event, links = {}, social = null) {
     note: !publicPageExists(event) ? "a 404 until the event is saved (any save creates it)"
       : event.status === "cancelled" ? "shows a cancelled notice, no RSVP" : undefined,
   });
+  if (eventImage) {
+    const set = eventImage.source !== "default";
+    items.push({
+      key: "event_image", label: "Event Image", ok: set ? true : null,
+      note: eventImage.source === "uploaded" ? "uploaded"
+        : eventImage.source === "referenced" ? `photo from ${eventImage.eventDate}`
+          : "default: the BOCC logo",
+    });
+  }
   const channels = social?.exists ? social.channels ?? [] : [];
   const scheduled = channels.filter((c) => c.status === "scheduled" || c.status === "live").length;
   if (!social?.exists) {
