@@ -508,7 +508,9 @@ work (to save deploy credits); everything is verified on staging first.
       for Admins (#23: `/api/admin/linkedin/{connect,callback,disconnect}`, the LinkedIn client
       adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
       production and staging callback URLs
-- [ ] The LinkedIn event section on Social Posts: preview, "Create live event" with a confirm
+- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
+      Image; it is made Tuesday afternoon for the next week's event, alongside the other
+      online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
       dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
       the `linkedin_event` listing filled on post, drift and cancellation notices
@@ -557,7 +559,7 @@ work (to save deploy credits); everything is verified on staging first.
       with no `linkedin_event` listing gets one. A stored web row that disagrees is a
       CONFLICT and refuses `--apply` unless `--prefer-db` (keeps the stored row). One
       `linkedin_event.import` audit row per run that changed something. Afterwards each
-      imported week's Social Posts tab shows **Posted on LinkedIn** with the event and post
+      imported week's Event Info tab shows **Posted on LinkedIn** with the event and post
       links, and Create live event is refused for it
 - [ ] Release runbook (`PHASE6_RELEASE.md`): prefactor checked on staging, then production,
       **before** the first live create. Reminder: `LinkedIn-Version: 202609` sunsets

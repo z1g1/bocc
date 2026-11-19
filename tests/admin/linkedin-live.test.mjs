@@ -415,7 +415,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     }
     return fetch(`${BASE}${path}`, { method, headers, body, redirect: "manual" });
   };
-  const page = (date) => req(`/admin/events/${date}/?tab=social`, { cookie: admin.cookie }).then((r) => r.text());
+  const page = (date) => req(`/admin/events/${date}/?tab=info`, { cookie: admin.cookie }).then((r) => r.text());
   const post = (date, action, who = admin, form = {}, opts = {}) =>
     req(`/admin/events/${date}/`, { cookie: who.cookie, method: "POST", form: { action, ...form }, ...opts });
 
@@ -424,7 +424,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     await seedEvent(date, { location: "lobby" });
     const res = await post(date, "linkedin_create", admin, { confirm: "live" });
     assert.equal(res.status, 303);
-    assert.equal(res.headers.get("location"), `/admin/events/${date}/?tab=social&notice=linkedin_posted#linkedin-event`);
+    assert.equal(res.headers.get("location"), `/admin/events/${date}/?tab=info&notice=linkedin_posted#linkedin-event`);
     assert.equal((await ledger(date))[0].status, "posted");
     assert.equal(await listing(date), EVENT_URL);
     const html = await page(date);
@@ -444,6 +444,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.equal(res.status, 502);
     const html = await res.text();
     assert.ok(html.includes("ADMINISTRATOR or CONTENT_ADMINISTRATOR"));
+    assert.match(html, /<a\b[^>]*href="\?tab=info"[^>]*aria-current="page"/, "rendered on the Event Info tab");
     assert.match(html, /name="action" value="linkedin_publish"/);
     assert.match(html, />Publish event</);
     assert.equal((await ledger(date))[0].status, "created");
@@ -454,7 +455,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
 
     const retry = await post(date, "linkedin_publish", admin, { confirm: "live" });
     assert.equal(retry.status, 303);
-    assert.equal(retry.headers.get("location"), `/admin/events/${date}/?tab=social&notice=linkedin_posted#linkedin-event`);
+    assert.equal(retry.headers.get("location"), `/admin/events/${date}/?tab=info&notice=linkedin_posted#linkedin-event`);
     const sent = fake.ops().slice(before).filter((o) => o !== "listOrganizerEvents");
     assert.deepEqual(sent, ["initializeImageUpload", "uploadImage", "createEvent", "createPost", "createPost"]);
     assert.equal((await ledger(date))[0].status, "posted");
@@ -503,7 +504,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.equal((await post(date, "linkedin_allow_retry", admin, {}, { origin: "https://evil.example" })).status, 403);
     const ok = await post(date, "linkedin_allow_retry", admin);
     assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get("location"), `/admin/events/${date}/?tab=social&notice=linkedin_retry#linkedin-event`);
+    assert.equal(ok.headers.get("location"), `/admin/events/${date}/?tab=info&notice=linkedin_retry#linkedin-event`);
     const [row] = await ledger(date);
     assert.equal(row.status, "retired");
     assert.equal(row.retired_by, admin.user.id);
