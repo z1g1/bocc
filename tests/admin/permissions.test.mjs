@@ -43,6 +43,7 @@ describe("migrations", () => {
       "20261130120000_linkedin_events_post_claim.sql",
       "20261201120000_social_post_status.sql",
       "20261202120000_event_media_cover_outdated.sql",
+      "20261203120000_glossary_rename_expand.sql",
     ]);
   });
 

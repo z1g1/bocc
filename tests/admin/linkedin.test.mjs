@@ -67,14 +67,14 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
       `select g.grantee || ':' || g.privilege_type as g
          from information_schema.role_table_grants g
          join pg_class c on c.relname = g.table_name and c.relnamespace = 'public'::regnamespace
-        where g.table_schema = 'public' and g.table_name = 'linkedin_connections'
+        where g.table_schema = 'public' and g.table_name = 'linkedin_authentications'
           and g.grantee <> pg_get_userbyid(c.relowner)
         order by 1`);
     assert.deepEqual(rows.map((r) => r.g), ["admin_app:DELETE", "admin_app:INSERT", "admin_app:SELECT", "admin_app:UPDATE"]);
     const { rows: cols } = await owner.query(
       `select grantee || ':' || privilege_type || ':' || column_name as g from information_schema.column_privileges
-        where table_schema = 'public' and table_name = 'linkedin_connections' and grantee <> 'admin_app'
-          and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_connections')
+        where table_schema = 'public' and table_name = 'linkedin_authentications' and grantee <> 'admin_app'
+          and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_authentications')
         order by 1`);
     assert.deepEqual(cols.map((r) => r.g), ["social_checker:SELECT:display_name", "social_checker:SELECT:expires_at", "social_checker:SELECT:user_id"]);
   });
@@ -93,7 +93,7 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
            values ($1, $2, now(), 'urn:li:person:x2', 'Y')`, [user.id, Buffer.alloc(40, 1)], /duplicate key/);
         await assertAllowed(admin, `update linkedin_connections set display_name = 'Z' where user_id = $1`, [user.id]);
         await assertAllowed(admin, `delete from linkedin_connections where user_id = $1`, [user.id]);
-        await assertRefused(admin, `truncate linkedin_connections`);
+        await assertRefused(admin, `truncate linkedin_authentications`);
       });
       for (const db of others) {
         await db.query("begin");

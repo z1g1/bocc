@@ -17,7 +17,7 @@ in Neon Object Storage).
 | `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`; `SELECT` on `held_occurrences`, `streaks` | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
 | `site_reader` | public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, rendered on request in the Astro SSR function (ADR 0009 decision 4) | `USAGE` on `public`; `SELECT` on `events`, `event_links` only | Netlify env `SITE_DB_URL` (secret) |
-| `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_posts`, `social_post_channels`; `SELECT (id, event_date, kind, status)` on `event_media`; `SELECT (user_id, expires_at, display_name)` on `linkedin_connections`; nothing in `auth` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
+| `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_plans`, `social_media_posts`; `SELECT (id, event_date, kind, status)` on `event_media`; `SELECT (user_id, expires_at, display_name)` on `linkedin_authentications`; the same on the deprecated compatibility views `social_posts`, `social_post_channels`, `linkedin_connections` (see "Contract later"); nothing in `auth` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
 | `neondb_owner` | the "Migrate and deploy" workflow; operator fallback `npm run migrate` | owner of schema objects, creates roles | GitHub environment secret `NEON_OWNER_URL` (`dev`, `production`); locally `.env.local` from `neon link` (gitignored, points at production). **Never in Netlify.** |
 | Storage credential (one per branch) | admin app: presigned media URLs (`src/lib/admin/storage.mjs`); `scripts/storage-cors.mjs` | `storage:read`, `storage:write` on the branch it was made on and its descendants. Not a Postgres role | Netlify env `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY`; see "Storage" |
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
@@ -44,10 +44,11 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
 | `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`; covers `events.event_image_media_id`, the Event Image picked from a Photo from Event, migration `20261128120000_event_image_reference.sql`, no new grant) |
-| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its `cover_key`, migration `20261125120000_event_image.sql`, and `cover_outdated`, migration `20261202120000_event_media_cover_outdated.sql`, no new grant) |
+| `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its 16:9 Event Image `image_16x9_key`, migration `20261125120000_event_image.sql`, and `image_16x9_outdated`, migration `20261202120000_event_media_cover_outdated.sql`, both renamed from `cover_*` by migration `20261203120000_glossary_rename_expand.sql`, no new grant) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
-| `social_posts`, `social_post_channels` | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`; no DELETE: a post is never removed (set its status back to To do instead); covers the cover image override `cover_media_id`, migration `20261127120000_social_post_cover.sql`, no new grant, and the post `status` that replaced `ready`, migration `20261201120000_social_post_status.sql`, which restates the table grants and keeps the deprecated `ready` column for now: see "Contract later" below) |
-| `linkedin_connections` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, ADR 0012; one row per Admin, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
+| `social_plans` (was `social_posts`), `social_media_posts` (was `social_post_channels`) | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`, tables renamed by `20261203120000_glossary_rename_expand.sql`; no DELETE: a Social plan is never removed (set its Plan status back to To do instead); covers the Thumbnail `thumbnail_media_id` (was `cover_media_id`), migration `20261127120000_social_post_cover.sql`, no new grant, and the post `status` that replaced `ready`, migration `20261201120000_social_post_status.sql`, which restates the table grants and keeps the deprecated `ready` column for now: see "Contract later" below) |
+| `linkedin_authentications` (was `linkedin_connections`) | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, renamed by `20261203120000_glossary_rename_expand.sql`, ADR 0012; one row per Admin's LinkedIn authentication, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
+| `social_posts`, `social_post_channels`, `linkedin_connections` (views) | DEPRECATED compatibility views under the old table names, with the same privileges as their tables (see "Contract later: the glossary rename") |
 | `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261129120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves. `post_claimed_at`, migration `20261130120000_linkedin_events_post_claim.sql`, is the one-Publish-at-a-time claim; no new grant) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
@@ -61,8 +62,8 @@ The Phase 3 tables (`events`, `event_reports`, `event_media`) have no RLS, like 
 `audit_log`: their rows aren't split between users, so the grants are the whole policy. Nothing
 else is granted on them: `checkin_writer` and `public` get nothing, and Supabase-style `anon` /
 `authenticated` roles are revoked if they exist. `event_links` (Phase 4) is the same, plus
-`site_reader`'s SELECT. `social_posts` and `social_post_channels` (Phase 5) are the same, with
-no `site_reader` grant. `linkedin_connections` (Phase 6) is granted to `admin_app` only:
+`site_reader`'s SELECT. `social_plans` and `social_media_posts` (Phase 5) are the same, with
+no `site_reader` grant. `linkedin_authentications` (Phase 6) is granted to `admin_app` only:
 `site_reader` and `checkin_writer` get nothing; `social_checker` gets a column grant on
 `user_id`, `expires_at` and `display_name` only, for the Thursday expiry alert (migration
 `20261126120000_social_checker_linkedin.sql`), never the token or member URN. The database holds only ciphertext; the key
@@ -74,6 +75,47 @@ is expand-only: it adds and backfills `status` and drops the old `social_posts_r
 keeps the `ready` column (and the table grants that cover it), marked deprecated, so the code
 live before the deploy keeps working between migrate and deploy. The current code never reads
 or writes `ready`. A follow-up migration drops the column after the production release.
+The glossary rename (below) carries `ready` through: it stays on `social_plans` and in the
+`social_posts` view until #44 drops it.
+
+**Contract later: the glossary rename.** Migration `20261203120000_glossary_rename_expand.sql`
+(#50, parent #49) gives the schema GLOSSARY.md's names in one transaction:
+`social_posts` -> `social_plans` (`cover_media_id` -> `thumbnail_media_id`, `cover_note` ->
+`thumbnail_timecode`), `social_post_channels` -> `social_media_posts`, `linkedin_connections`
+-> `linkedin_authentications`, `event_reports.gives_asks_count` -> `attendee_count`,
+`event_media.cover_key` / `cover_outdated` -> `image_16x9_key` / `image_16x9_outdated`, and
+it lets `events.status` be `reported` and `event_media.kind` be `event_photo`. Constraints, indexes and triggers are renamed to
+match; grants follow the renamed tables, so every role keeps the same privileges. It is
+expand-only, so the code live between migrate and deploy keeps working:
+
+- **Views under the old table names**, exposing the old column names: `social_posts`,
+  `social_post_channels` (`security_invoker`) and `linkedin_connections` (owner's rights,
+  because an invoker view would need `social_checker` to read every column of the table,
+  and it may read only `user_id`, `expires_at`, `display_name`; it also exposes `xmax`,
+  which the old connect code reads). Each is a single-table view, so reads, writes, `ON
+  CONFLICT` and `FOR UPDATE` pass through. Their grants are the tables' grants:
+  `admin_app` `SELECT, INSERT, UPDATE` on the two social views and `SELECT, INSERT, UPDATE,
+  DELETE` on `linkedin_connections`; `social_checker` `SELECT` on the two social views and
+  `SELECT (user_id, expires_at, display_name)` on `linkedin_connections`; nothing for
+  `site_reader` or `checkin_writer`.
+- **Shadow columns** under the old names on the tables that keep theirs:
+  `event_reports.gives_asks_count`, `event_media.cover_key`, `event_media.cover_outdated`. A
+  BEFORE trigger keeps each equal to its new column, whichever one a statement writes. They
+  are covered by `admin_app`'s table-level grants; `social_checker`'s `event_media` column
+  grant doesn't include them.
+- **Old values**: the `events.status` and `event_media.kind` CHECKs accept both the old and
+  the new value. The value switch itself (backfill `held` -> `reported` and `social_photo`
+  -> `event_photo`, plus a BEFORE trigger rewriting an old-value write for the old code)
+  can't be aliased the way a name can: old code that filters on `held` would silently find
+  nothing. So it ships as its own migration with the code that reads the new value (#51
+  for `reported`, #54 for `event_photo`), in the same release.
+- The LinkedIn token's associated data stays the literal `linkedin_connections:<user id>`
+  (`src/lib/linkedin/crypto.mjs`), so stored tokens still decrypt.
+
+After production runs the new code, a contract migration drops the three views, the shadow
+columns, the compat triggers and their functions (`event_reports_glossary_compat`,
+`event_media_glossary_compat`, and the value-mapping triggers #51 and #54 add), and tightens
+the two CHECKs to the new values only (and drops `social_plans.ready` if #44 hasn't).
 
 ### site_reader
 
@@ -111,9 +153,9 @@ Its grants, exactly:
 | Object | Privileges |
 |---|---|
 | schema `public` | `USAGE` |
-| `events`, `event_links`, `social_posts`, `social_post_channels` | `SELECT` (on `social_posts` this includes `status`, restated by migration `20261201120000_social_post_status.sql`: the Thursday check counts `ready`, `posted` and `error` as ready) |
+| `events`, `event_links`, `social_plans`, `social_media_posts` (and the deprecated views `social_posts`, `social_post_channels`) | `SELECT` (on `social_plans` this includes `status`, the Plan status, restated by migration `20261201120000_social_post_status.sql`: the Thursday check counts `ready`, `posted` and `error` as ready) |
 | `event_media` columns `id`, `event_date`, `kind`, `status` | `SELECT` (enough to tell whether the attached promo video is ready; no object keys, sizes or uploader) |
-| `linkedin_connections` columns `user_id`, `expires_at`, `display_name` | `SELECT` (the LinkedIn expiry alert, #24, names the connection by its LinkedIn display name; never the token, member URN or scope) |
+| `linkedin_authentications` columns `user_id`, `expires_at`, `display_name` (and the same columns of the deprecated view `linkedin_connections`) | `SELECT` (the LinkedIn expiry alert, #24, names the LinkedIn authentication by its LinkedIn display name; never the token, member URN or scope) |
 
 `events` table-wide includes `event_image_media_id` (Phase 6). With its `event_media` column
 grant, `social_checker` can tell which photo row (date, kind, status) an event picked as its
