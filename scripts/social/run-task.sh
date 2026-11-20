@@ -14,6 +14,7 @@
 #   BOCC_CHROME_PORT  default 9222 (remote debugging, bound to 127.0.0.1 only)
 #   CHROME_BIN        default: google-chrome on Linux, Google Chrome.app on macOS
 #   CLAUDE_MODEL      optional, passed to `claude --model`
+#   BOCC_TRACE        1 also prints each browser tool call (progress.mjs)
 #   CLAUDE_CODE_OAUTH_TOKEN  recommended for cron: a long-lived token from `claude setup-token`
 #                     (a /login sign-in expires within days and a scheduled run can't renew it)
 #
@@ -45,6 +46,19 @@ fi
 
 mkdir -p "$PROFILE" "$DOWNLOADS" "$LOGS"
 
+# Everything below goes to the terminal and to the run log. Progress lines carry the UTC time
+# to the second, "runner step X of Y" (this script) or "task step X of Y" (the prompt's own
+# steps, printed by progress.mjs), and START or END with what is starting or ending.
+STAMP="$(date -u +%Y-%m-%d-%H%M)"
+RUNLOG="$LOGS/$TASK-$STAMP.log"
+exec > >(tee -a "$RUNLOG") 2>&1
+case "$TASK" in
+  chrome) STEPS=1 ;;
+  verify) STEPS=3 ;;
+  schedule) STEPS=4 ;;
+esac
+log() { printf '%s  runner step %s of %s  %-5s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$STEPS" "$2" "$3"; }
+
 chrome_up() { curl -fsS "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; }
 
 start_chrome() {
@@ -72,18 +86,30 @@ start_chrome() {
   echo "Chrome did not open its debugging port $PORT." >&2; exit 1
 }
 
+log 1 START "Start the task Chrome (port $PORT, profile $PROFILE)"
+if chrome_up; then CHROME_NOTE="already running"; else CHROME_NOTE="started"; fi
 start_chrome
+log 1 END "Start the task Chrome: $CHROME_NOTE"
 [[ "$TASK" == "chrome" ]] && exit 0
 
 : "${BOCC_SITE:?set BOCC_SITE (https://716coffee.club or the staging URL)}"
 BOCC_SITE="${BOCC_SITE%/}"
 
 # Last week's files must not be mistaken for this week's.
+log 2 START "Clear the downloads folder $DOWNLOADS"
 find "$DOWNLOADS" -mindepth 1 -maxdepth 1 -type f -delete
+log 2 END "Clear the downloads folder: done"
 
-STAMP="$(date +%Y-%m-%d-%H%M)"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"; [[ "$TASK" == "schedule" ]] && find "$DOWNLOADS" -mindepth 1 -maxdepth 1 -type f -delete' EXIT
+cleanup() {
+  rm -rf "$WORK"
+  if [[ "$TASK" == "schedule" ]]; then
+    log 4 START "Delete the downloaded video and cover"
+    find "$DOWNLOADS" -mindepth 1 -maxdepth 1 -type f -delete
+    log 4 END "Delete the downloaded video and cover: done"
+  fi
+}
+trap cleanup EXIT
 
 # --workspace: the only folder upload_file may read from (the server's default is the OS temp
 # folder, so without it the downloaded video and cover are "not within any of the configured
@@ -112,6 +138,7 @@ ALLOWED_TOOLS=("${ALLOWED_TOOLS[@]/#/mcp__chrome-devtools__}")
 cd "$WORK"
 MODEL_ARGS=()
 [[ -n "${CLAUDE_MODEL:-}" ]] && MODEL_ARGS=(--model "$CLAUDE_MODEL")
+log 3 START "Run the $TASK task against $BOCC_SITE (Claude Code driving the task Chrome)"
 set +e
 claude -p "$PROMPT" \
   ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
@@ -120,8 +147,9 @@ claude -p "$PROMPT" \
   --permission-mode dontAsk \
   --allowedTools "${ALLOWED_TOOLS[@]}" \
   --disallowedTools "mcp__chrome-devtools__evaluate_script" "Bash" "Edit" "Write" "WebFetch" "WebSearch" \
-  --output-format text \
-  </dev/null 2>&1 | tee "$LOGS/$TASK-$STAMP.log"
+  --output-format stream-json --verbose \
+  </dev/null 2>&1 | node "$HERE/progress.mjs" "$LOGS/$TASK-$STAMP.jsonl"
 STATUS="${PIPESTATUS[0]}"
 set -e
+log 3 END "Run the $TASK task: claude exited with status $STATUS. Log: $RUNLOG"
 exit "$STATUS"

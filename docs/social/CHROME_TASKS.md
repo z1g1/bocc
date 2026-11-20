@@ -26,8 +26,21 @@ runner script [`scripts/social/run-task.sh`](../../scripts/social/run-task.sh) d
   name, `mcp__chrome-devtools`, left `click` unapproved in the first staging run.)
 - starts the DevTools server with `--workspace=~/bocc-chrome/downloads`: the only folder
   `upload_file` may read from (its default is the OS temp folder)
-- writes the run's report to `~/bocc-chrome/logs/<task>-<date>.log`, and after the Wednesday
-  run deletes the downloaded video and cover
+- prints its progress to the terminal as it goes, and to `~/bocc-chrome/logs/<task>-<date>.log`
+  (the date in UTC). Each line has the UTC time to the second, the step as "runner step X of
+  Y" (the script's own: start Chrome, clear downloads, run the task, delete the files) or
+  "task step X of Y" (the prompt's steps, which the task marks with `PROGRESS` lines), and
+  START or END with what is starting or ending. Tool errors and the final report are printed
+  too; `BOCC_TRACE=1` adds every browser tool call. The raw Claude Code stream is kept next to
+  the log as `.jsonl`. [`progress.mjs`](../../scripts/social/progress.mjs) does the formatting.
+  For example:
+
+  ```
+  2026-11-20T15:36:04Z  runner step 3 of 4  START  Run the schedule task against https://716coffee.club (...)
+  2026-11-20T15:36:12Z  task step 1 of 7  START  Open the work order page
+  2026-11-20T15:36:16Z  task step 1 of 7  END    Open the work order page: Ready for Posting, 4 channels pending
+  ```
+- after the Wednesday run, deletes the downloaded video and cover
 
 The prompts are [`scripts/social/prompts/schedule.txt`](../../scripts/social/prompts/schedule.txt)
 (Wednesday) and [`scripts/social/prompts/verify.txt`](../../scripts/social/prompts/verify.txt)
