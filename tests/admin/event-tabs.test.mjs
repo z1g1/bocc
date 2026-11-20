@@ -230,7 +230,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "social_post", baseCaption: "Tabs caption" }, "social", "social_post", "#social"],
       [future, { action: "social_video", videoMediaId: video }, "social", "social_video", "#social"],
       [future, { action: "social_channel", channel: "threads", caption: "Threads tabs", firstComment: "" }, "social", "social_channel", "#social"],
-      [past, { action: "report", givesAsksCount: "12", blingGiven: "no", notes: "", blingDetails: "" }, "post", "report"],
+      [past, { action: "report", attendeeCount: "12", blingGiven: "no", notes: "", blingDetails: "" }, "post", "report"],
     ];
     for (const [d, form, tab, notice, anchor = ""] of cases) {
       // Posted from a different tab's URL: the form's own tab still wins.
@@ -253,7 +253,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "save", status: "cancelled", cancelReason: "" }, "info"],
       [future, { action: "social_post", baseCaption: "x", status: "ready" }, "social"],
       [future, { action: "social_video", videoMediaId: "nope" }, "social"],
-      [past, { action: "report", givesAsksCount: "-1", blingGiven: "" }, "post"],
+      [past, { action: "report", attendeeCount: "-1", blingGiven: "" }, "post"],
     ];
     for (const [d, form, tab] of cases) {
       const res = await req(`/admin/events/${d}/?tab=${tab === "info" ? "social" : "info"}`, { cookie: admin.cookie, method: "POST", form });

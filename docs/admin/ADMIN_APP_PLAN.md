@@ -368,8 +368,8 @@ on-device checks and production are open.
     (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Held
     (past dates) leaves cancelled and clears the reason. The separate cancel and un-cancel
     forms are gone; the audit actions are unchanged.
-  - report form (Gives and Asks count, notes, Bling given and details)
-  - calculated check-in count shown next to the report
+  - report form (Attendee count, notes, Bling given and details)
+  - calculated Check-in count shown next to the Attendee count (labelled "not attendance")
   - Built on `dev` 2026-11-17 (`src/lib/admin/events.mjs`). Audit actions `event.update`,
     `event.cancel`, `event.uncancel`, `event_report.submit`, `event_report.update`. A date
     without a row renders as a new scheduled event; the first save creates it. Reports are
