@@ -463,12 +463,12 @@ Run as `admin_app` once `20261118120000_events_media.sql` is applied, inside `be
 Run as `social_checker` once `20261123120000_social_checker.sql` is applied, inside
 `begin; … rollback;`:
 
-- [ ] `select count(*) from social_posts` / `social_post_channels` / `events` / `event_links` →
+- [ ] `select count(*) from social_plans` / `social_media_posts` / `events` / `event_links` →
       succeeds
 - [ ] `select id, kind, status from event_media limit 1` → succeeds;
       `select original_key from event_media limit 1` → permission denied
 - [ ] `select 1 from attendees limit 1` / `from event_reports` → permission denied
-- [ ] `update social_post_channels set status = status` → permission denied
+- [ ] `update social_media_posts set status = status` → permission denied
 - [ ] once `20261126120000_social_checker_linkedin.sql` is applied:
       `select user_id, expires_at, display_name from linkedin_connections` → succeeds;
       `select token_ciphertext from linkedin_connections` / `select member_urn from

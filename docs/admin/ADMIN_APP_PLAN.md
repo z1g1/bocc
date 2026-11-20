@@ -435,7 +435,15 @@ on-device checks and production are open.
 
 ## Phase 5: social work order (ADR 0011)
 
-- [x] Migration: `social_posts`, `social_post_channels`: `20261122120000_social_posts.sql`
+Since #56 (the glossary rename, spec #49) one Event's work order is its **Social plan**
+(`social_plans`, shown on the Social plan tab with its Plan status) and each Channel's row is a
+**social media post** (`social_media_posts`, with its Post status). The code below moved to
+`src/lib/admin/social-plan.mjs` (was `social.mjs`), `social-plan-rules.mjs` (was
+`social-rules.mjs`) and `src/components/admin/SocialPlan.astro` (was `SocialPost.astro`);
+`setChannelResult()` is now `setPostResult()`. The items keep the names they were built with.
+
+- [x] Migration: `social_posts`, `social_post_channels` (now `social_plans`,
+      `social_media_posts`): `20261122120000_social_posts.sql`
       (admin_app SELECT/INSERT/UPDATE, no DELETE; the video FK is on (event_date, id), so it is
       always the same event's media)
 - [x] Promo video upload (`promo_video` media), base caption, `publish_at` defaulting to Monday
@@ -515,7 +523,7 @@ work (to save deploy credits); everything is verified on staging first.
       the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
       status, or "not set up yet"), its problems (not once Posted) and channels under it. The
       events list and home tag became "x/5 listings" with the same count
-- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
+- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, now the Social plan tab, after the Event
       Image; it is made Tuesday afternoon for the next week's event, alongside the other
       online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
       dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine

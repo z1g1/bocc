@@ -3,35 +3,36 @@
 ## Weekly promo video
 
 Since Phase 5 ([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md)), the week's
-vertical promo video is one work order in the admin app. It is posted at 7:00 AM ET on the
+vertical promo video is one **Social plan** in the admin app: one social media post per Channel,
+handed to the Chrome tasks as a work order. It is posted at 7:00 AM ET on the
 Monday before the event to Facebook, Instagram, Threads, TikTok and the LinkedIn page. The app
 never posts anything itself. The old API plan
 ([WEEKLY_SOCIAL_POSTING_PLAN.md](../backend/WEEKLY_SOCIAL_POSTING_PLAN.md)) is superseded.
 
 | When | Who | What |
 |---|---|---|
-| By Tuesday night | Zack (admin) | On `/admin/events/<date>/?tab=social` (the Social Posts tab), "Social post" section: upload the video (MP4/MOV up to 100 MB; an iPhone upload works), write the base caption, and add extra TikTok hashtags or a **Thumbnail timecode** (the frame to use as the thumbnail where a cover image can't be uploaded, e.g. "0:03") if wanted. The **Cover image** is the event's Event Image (the BOCC logo by default); choose a Photo from Event instead if it suits the video better, or go back to the Event Image. Check that the Luma listing is there (Online Event Listings, on the Event Info tab). Then set **Status** to **Ready for Posting**. The app refuses until the video, caption and Luma link are all there, every caption is within its platform's limit, and the publish time (default Monday 7:00 AM ET) is in the future. Each channel's final text is shown, and can be overridden per channel |
-| Wednesday | Modron's Claude in Chrome task | Opens `/admin/social/next/` as the `social` user. Downloads the video and the cover image, schedules every `pending` channel (setting the cover where the platform takes a custom one: [CHROME_TASKS.md](CHROME_TASKS.md#video-cover-image-per-channel)) for the publish time (Business Suite for Facebook and Instagram, Threads web, TikTok Studio, the LinkedIn page), and saves each channel's status (`scheduled`) and post URL back through its form. If nothing is ready, it stops and reports why |
-| Thursday 9 AM ET (10 AM in summer) | the app | A Netlify scheduled function checks the coming Tuesday. If there is no post, the post isn't ready, or a channel isn't `scheduled`/`live`, Zack gets an **ntfy push** whose link opens `/admin/social/next/`. Otherwise nothing is sent. Separately, when a LinkedIn connection has under 10 days left or has expired, it pushes a second alert naming the connection by its LinkedIn display name, with a link to `/admin/account/` to reconnect |
-| Monday about 7:20 AM ET | Modron's Claude in Chrome task | Opens `/admin/social/verify/`, opens each post, marks it `live` or `failed`, posts the Luma link as the first comment on Instagram and TikTok, and records that it did |
+| By Tuesday night | Zack (admin) | On `/admin/events/<date>/?tab=social` (the Social plan tab): upload the video (MP4/MOV up to 100 MB; an iPhone upload works), write the base caption, and add extra TikTok hashtags or a **Thumbnail timecode** (the frame to use as the thumbnail where a cover image can't be uploaded, e.g. "0:03") if wanted. The **Cover image** is the event's Event Image (the BOCC logo by default); choose a Photo from Event instead if it suits the video better, or go back to the Event Image. Check that the Luma listing is there (Online Event Listings, on the Event Info tab). Then set **Plan status** to **Ready for Posting**. The app refuses until the video, caption and Luma link are all there, every caption is within its platform's limit, and the publish time (default Monday 7:00 AM ET) is in the future. Each social media post's final text is shown, and can be overridden per post |
+| Wednesday | Modron's Claude in Chrome task | Opens `/admin/social/next/` as the `social` user. Downloads the video and the cover image, schedules every `pending` social media post (setting the cover where the platform takes a custom one: [CHROME_TASKS.md](CHROME_TASKS.md#video-cover-image-per-channel)) for the publish time (Business Suite for Facebook and Instagram, Threads web, TikTok Studio, the LinkedIn page), and saves each post's Post status (`scheduled`) and post URL back through its form. If nothing is ready, it stops and reports why |
+| Thursday 9 AM ET (10 AM in summer) | the app | A Netlify scheduled function checks the coming Tuesday. If there is no Social plan, the plan isn't ready, or a social media post isn't `scheduled`/`live`, Zack gets an **ntfy push** whose link opens `/admin/social/next/`. Otherwise nothing is sent. Separately, when a LinkedIn connection has under 10 days left or has expired, it pushes a second alert naming the connection by its LinkedIn display name, with a link to `/admin/account/` to reconnect |
+| Monday about 7:20 AM ET | Modron's Claude in Chrome task | Opens `/admin/social/verify/`, opens each social media post, marks it `live` or `failed`, posts the Luma link as the first comment on Instagram and TikTok, and records that it did |
 
-**Post status** (the Status dropdown in the Social post section; [ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 1, amended for #39). Each channel keeps its own status (pending, scheduled, live, failed); the post status sums up the whole post:
+***Plan status** (the Plan status dropdown on the Social plan tab; [ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 1, amended for #39 and #56). Each social media post keeps its own **Post status** (Pending, Scheduled, Live, Failed); the Plan status sums up the whole Social plan:
 
-| Status | Meaning | Set by |
+| Plan status | Meaning | Set by |
 |---|---|---|
 | **To do** | being prepared; the Chrome tasks ignore it | Zack (the default) |
 | **Ready for Posting** | the work order is offered to the Chrome tasks | Zack, once nothing blocks it (the reasons show next to the dropdown) |
-| **Posted** | every channel is scheduled or live | automatically, when the Chrome task's channel updates leave every channel scheduled or live; Zack can also set it |
-| **Error** | at least one channel failed | automatically, when a channel is recorded as failed; Zack can also set it. The Wednesday task still schedules the other channels, and a failed channel scheduled again moves the post to Posted |
+| **Posted** | every social media post is scheduled or live | automatically, when the Chrome task's post updates leave every post scheduled or live; Zack can also set it |
+| **Error** | at least one social media post failed | automatically, when a post is recorded as failed; Zack can also set it. The Wednesday task still schedules the other posts, and a failed post scheduled again moves the plan to Posted |
 
 **Holiday break:** there is no meeting on any Tuesday from December 22 through January 4, so
-those weeks have no work order. The Wednesday task gets the first week after the break and the
+those weeks have no Social plan. The Wednesday task gets the first week after the break and the
 Thursday check stays quiet. To meet on one of those Tuesdays anyway, open
 `/admin/events/<date>/` and save it: a saved row makes it a normal week
 ([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 7).
 
 The prompts for the two Chrome tasks, and what to do when one reports a problem, are in
-[CHROME_TASKS.md](CHROME_TASKS.md). Caption rules, in code (`src/lib/admin/social-rules.mjs`):
+[CHROME_TASKS.md](CHROME_TASKS.md). Caption rules, in code (`src/lib/admin/social-plan-rules.mjs`):
 - Facebook, Threads and LinkedIn get the caption plus "RSVP: <Luma link>".
 - Instagram and TikTok get the caption plus "Link in bio", with the Luma link as the first
   comment.
