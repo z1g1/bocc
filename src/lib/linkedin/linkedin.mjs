@@ -62,7 +62,7 @@ import {
 import { setLinkInTransaction } from "../admin/event-links.mjs";
 import { LINKEDIN_TAB } from "../admin/event-tabs.mjs";
 import { ConflictError, getEvent } from "../admin/events.mjs";
-import { getEventImage, loadCoverBytes } from "../admin/event-image.mjs";
+import { getEventImage, load16x9Bytes } from "../admin/event-image.mjs";
 
 /** The state cookie, scoped to the LinkedIn routes. */
 export const STATE_COOKIE = "bocc_linkedin_state";
@@ -381,15 +381,15 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
     }
   }
 
-  if (preview.image.coverOutdated) {
+  if (preview.image.image16x9Outdated) {
     // Made under the old centre-crop rule (ticket #40): wait for the event page to remake it.
-    return refuse([{ code: "image", message: `${REFUSALS.image} Its 16:9 version is being remade: open this event's Event Info tab, let it finish, then try again.` }]);
+    return refuse([{ code: "image", message: `${REFUSALS.image} Its 16:9 Event Image is being remade: open this event's Event Info tab, let it finish, then try again.` }]);
   }
   let cover;
   try {
-    cover = await loadCoverBytes(preview.image, { storage, readAsset });
+    cover = await load16x9Bytes(preview.image, { storage, readAsset });
   } catch (err) {
-    log("error", `linkedin cover unreadable: ${describeError(err)}`, { date });
+    log("error", `linkedin 16:9 Event Image unreadable: ${describeError(err)}`, { date });
     return refuse([{ code: "image", message: `${REFUSALS.image} It couldn't be read: try again, or set the Event Image again.` }]);
   }
   const image = checkCoverImage(cover.bytes);
@@ -464,7 +464,7 @@ async function succeeded(userId, date, cfg, now, extra = {}) {
  * Never retried automatically: a failure stops at the last committed state.
  */
 async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, image, eventImage, cfg, now, duplicateCheck }) {
-  const c = eventImage.cover;
+  const c = eventImage.image16x9;
   let row;
   try {
     row = await withAudit(userId, async (client) => {

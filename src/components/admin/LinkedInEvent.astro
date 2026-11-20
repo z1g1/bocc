@@ -58,9 +58,9 @@ const when = p?.spec ? `${longDay(date)}, ${time.format(p.spec.startsAt)} to ${t
 const a = EVENT_ADDRESS;
 const address = `${a.line1}, ${a.city}, ${a.geographicArea} ${a.postalCode}, ${a.country}`;
 
-// The cover: a checked-in file from the site, a stored copy through a presigned GET.
+// The 16:9 Event Image: a checked-in file from the site, a stored copy through a presigned GET.
 let coverSrc: string | null = null;
-const cover = p?.image?.cover;
+const cover = p?.image?.image16x9;
 if (cover) {
   if ("path" in cover) coverSrc = cover.path;
   else {
@@ -75,7 +75,7 @@ const STATUS: Record<string, string> = {
   posted: "Posted on LinkedIn.",
 };
 const STEP: Record<string, string> = {
-  image_init: "starting the cover upload", image_upload: "uploading the cover", create: "creating the event", post: "publishing the post",
+  image_init: "starting the 16:9 Event Image upload", image_upload: "uploading the 16:9 Event Image", create: "creating the event", post: "publishing the post",
 };
 const failure = result && !result.ok ? result.failure ?? null : null;
 const json = (v: unknown) => JSON.stringify(v, null, 2);
@@ -192,9 +192,9 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
               <dt>Venue details</dt><dd>{p.spec.venueDetails}</dd>
               <dt>External link</dt><dd><a href={EXTERNAL_URL} rel="noopener noreferrer">{EXTERNAL_URL}</a></dd>
               <dt>Visibility</dt><dd>LISTED (public, discoverable), organized by the BOCC page</dd>
-              <dt>Cover</dt>
+              <dt>16:9 Event Image</dt>
               <dd>
-                {coverSrc ? <img src={coverSrc} alt="The 16:9 cover" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
+                {coverSrc ? <img src={coverSrc} alt="The 16:9 Event Image" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
                 <span class="muted"> {SOURCE[p.image.source] ?? p.image.source}{cover && "path" in cover ? ` (${cover.path})` : ""}</span>
               </dd>
               <dt>Post commentary</dt><dd><blockquote>{p.spec.commentary}</blockquote></dd>

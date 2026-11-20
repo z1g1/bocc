@@ -15,25 +15,25 @@
 //
 // The Event Image form (kind event_image, on the Event Info tab, ADR 0012 decision 3)
 // takes one file. On pick it is decoded and checked (PNG/JPEG, at least 480x270, at
-// most 8 MiB), a warning shows when it isn't square, and the 16:9 version is drawn
-// into the preview; the upload adds that as a fourth copy, the cover: 1920x1080, the
+// most 8 MiB), a warning shows when it isn't square, and the 16:9 Event Image is drawn
+// into the preview; the upload adds that as a fourth file (the upload variant `cover`): 1920x1080, the
 // decoded original at full height centred on the "Just the Beans" background
-// (COVER_BACKGROUND, from the site itself), never cropped (ticket #40).
+// (IMAGE_16X9_BACKGROUND, from the site itself), never cropped (ticket #40).
 //
 // The Event Image picker (form[data-event-image-pick], ticket #21) is a plain form
-// post. When the chosen Photo from Event has no 16:9 cover copy yet (data-needs-cover),
-// the cover is made first: the photo's display copy is fetched from the bucket
+// post. When the chosen Photo from Event has no 16:9 Event Image yet (data-needs-16x9),
+// one is made first: the photo's display copy is fetched from the bucket
 // (presigned GET in data-display-url; the bucket's CORS allows GET), composed on the
 // beans background, and PUT through /api/admin/media/{id}/cover and /cover-complete;
-// then the form is submitted. form[data-make-cover] does the same for a photo already
+// then the form is submitted. form[data-make-16x9] does the same for a photo already
 // picked without one, then reloads; with data-auto it runs as soon as the page opens
-// (a 16:9 version made under the old centre-crop rule, being remade).
-// form[data-remake-covers] (the /admin/media/covers page) remakes every such version,
+// (a 16:9 Event Image made under the old centre-crop rule, being remade).
+// form[data-remake-16x9] (the /admin/media/covers page) remakes every such image,
 // one after another.
 
 import {
-  COVER_BACKGROUND, COVER_QUALITY, DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
-  checkEventImage, checkFile, composeCover, eventImageRequestBody, fitWithin, formatBytes,
+  IMAGE_16X9_BACKGROUND, IMAGE_16X9_QUALITY, DISPLAY_EDGE, DISPLAY_QUALITY, THUMB_EDGE, THUMB_QUALITY, UNREADABLE_MESSAGE,
+  checkEventImage, checkFile, compose16x9, eventImageRequestBody, fitWithin, formatBytes,
   uploadRequestBody,
 } from "./admin-media-lib.js";
 
@@ -49,8 +49,8 @@ if (forms.length) {
   });
 }
 for (const form of document.querySelectorAll("form[data-event-image-pick]")) setUpPick(form);
-for (const form of document.querySelectorAll("form[data-make-cover]")) setUpMakeCover(form);
-for (const form of document.querySelectorAll("form[data-remake-covers]")) setUpRemakeCovers(form);
+for (const form of document.querySelectorAll("form[data-make-16x9]")) setUpMake16x9(form);
+for (const form of document.querySelectorAll("form[data-remake-16x9]")) setUpRemake16x9(form);
 for (const form of document.querySelectorAll("form[data-confirm]")) {
   form.addEventListener("submit", (e) => {
     if (!window.confirm(form.getAttribute("data-confirm"))) e.preventDefault();
@@ -85,7 +85,7 @@ function setUpUpload(form) {
         const r = await checkPicked(file);
         warning.textContent = r.ok ? r.warning || "" : r.message;
         if (r.ok && preview) {
-          const blob = await composedCover(file);
+          const blob = await composed16x9(file);
           if (input.files && input.files[0] === file) {
             previewUrl = URL.createObjectURL(blob);
             preview.src = previewUrl;
@@ -141,25 +141,25 @@ function setUpPick(form) {
   const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
   form.addEventListener("submit", async (e) => {
     const chosen = form.querySelector('input[name="mediaId"]:checked');
-    if (!chosen || !chosen.hasAttribute("data-needs-cover")) return; // a plain post
+    if (!chosen || !chosen.hasAttribute("data-needs-16x9")) return; // a plain post
     e.preventDefault();
     if (busy) { say("Wait for the upload to finish."); return; }
     busy = true;
     button.disabled = true;
     try {
-      await makePhotoCover(chosen.value, chosen.getAttribute("data-display-url"), say);
+      await make16x9(chosen.value, chosen.getAttribute("data-display-url"), say);
       say("Using this photo…");
       busy = false;
       form.submit(); // doesn't fire "submit" again
     } catch (err) {
       busy = false;
       button.disabled = false;
-      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
+      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 Event Image. Try again.");
     }
   });
 }
 
-function setUpMakeCover(form) {
+function setUpMake16x9(form) {
   const status = document.getElementById(form.getAttribute("data-status"));
   const button = form.querySelector('button[type="submit"]');
   const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
@@ -170,26 +170,26 @@ function setUpMakeCover(form) {
     busy = true;
     button.disabled = true;
     try {
-      await makePhotoCover(form.getAttribute("data-media-id"), form.getAttribute("data-display-url"), say);
+      await make16x9(form.getAttribute("data-media-id"), form.getAttribute("data-display-url"), say);
       busy = false;
-      say("16:9 version made. Refreshing…");
+      say("16:9 Event Image made. Refreshing…");
       window.location.reload();
     } catch (err) {
       busy = false;
       button.disabled = false;
-      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 version. Try again.");
+      say(err instanceof UserError ? err.message : "something went wrong making the 16:9 Event Image. Try again.");
     }
   });
-  // A 16:9 version made under the old rule is remade as soon as the page opens.
+  // A 16:9 Event Image made under the old rule is remade as soon as the page opens.
   if (form.hasAttribute("data-auto")) form.requestSubmit();
 }
 
 /**
- * The /admin/media/covers page: remake every 16:9 version still made under the old
- * centre-crop rule, one at a time (li[data-cover-id][data-display-url] in the form's
+ * The /admin/media/covers page: remake every 16:9 Event Image still made under the old
+ * centre-crop rule, one at a time (li[data-image-16x9-id][data-display-url] in the form's
  * list), then reload. One failure doesn't stop the rest.
  */
-function setUpRemakeCovers(form) {
+function setUpRemake16x9(form) {
   const status = document.getElementById(form.getAttribute("data-status"));
   const button = form.querySelector('button[type="submit"]');
   const say = (text) => { status.textContent = text.charAt(0).toUpperCase() + text.slice(1); };
@@ -197,7 +197,7 @@ function setUpRemakeCovers(form) {
   form.hidden = false;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const items = Array.from(document.querySelectorAll("li[data-cover-id]"));
+    const items = Array.from(document.querySelectorAll("li[data-image-16x9-id]"));
     if (items.length === 0) { say("Nothing to remake."); return; }
     busy = true;
     button.disabled = true;
@@ -206,7 +206,7 @@ function setUpRemakeCovers(form) {
       const li = items[i];
       const prefix = `${i + 1} of ${items.length}: `;
       try {
-        await makePhotoCover(li.getAttribute("data-cover-id"), li.getAttribute("data-display-url"), (t) => say(prefix + t));
+        await make16x9(li.getAttribute("data-image-16x9-id"), li.getAttribute("data-display-url"), (t) => say(prefix + t));
         li.setAttribute("data-done", "");
       } catch (err) {
         failed.push(`${li.getAttribute("data-label")}: ${err instanceof UserError ? err.message : "something went wrong"}`);
@@ -223,43 +223,43 @@ function setUpRemakeCovers(form) {
   });
 }
 
-/** A photo's (or an uploaded Event Image's) 16:9 version: compose its display copy, PUT it, confirm it. */
-async function makePhotoCover(mediaId, displayUrl, step) {
-  step("making the 16:9 version…");
+/** A photo's (or an uploaded Event Image's) 16:9 Event Image: compose its display copy, PUT it, confirm it. */
+async function make16x9(mediaId, displayUrl, step) {
+  step("making the 16:9 Event Image…");
   let res;
   try {
     res = await fetch(displayUrl, { credentials: "omit" });
   } catch {
-    throw new UserError("the photo couldn't be downloaded to make its 16:9 version. Check your connection and try again.");
+    throw new UserError("the photo couldn't be downloaded to make its 16:9 Event Image. Check your connection and try again.");
   }
   if (!res.ok) throw new UserError(`the photo couldn't be downloaded (${res.status}). Reload the page and try again.`);
   const src = await decode(await res.blob());
   let canvas;
   try {
-    canvas = await drawCover(src);
+    canvas = await draw16x9(src);
   } finally {
     src.close();
   }
   let cover;
   try {
-    cover = await toJpeg(canvas, COVER_QUALITY);
+    cover = await toJpeg(canvas, IMAGE_16X9_QUALITY);
   } finally {
     canvas.width = 0; canvas.height = 0;
   }
 
-  step("uploading the 16:9 version…");
+  step("uploading the 16:9 Event Image…");
   const start = await postJson(`/api/admin/media/${mediaId}/cover`, { size: cover.size });
-  if (start.status !== 201) throw new UserError(await serverMessage(start, "the 16:9 version couldn't start"));
+  if (start.status !== 201) throw new UserError(await serverMessage(start, "the 16:9 Event Image couldn't start"));
   const plan = await start.json();
   let put;
   try {
     put = await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: cover, credentials: "omit" });
   } catch {
-    throw new UserError("the 16:9 version upload failed (network). Try again.");
+    throw new UserError("the 16:9 Event Image upload failed (network). Try again.");
   }
-  if (!put.ok) throw new UserError(`the 16:9 version upload was refused (${put.status}). Try again.`);
+  if (!put.ok) throw new UserError(`the 16:9 Event Image upload was refused (${put.status}). Try again.`);
   const done = await postJson(`/api/admin/media/${mediaId}/cover-complete`, {});
-  if (done.status !== 200) throw new UserError(await serverMessage(done, "the 16:9 version couldn't be confirmed"));
+  if (done.status !== 200) throw new UserError(await serverMessage(done, "the 16:9 Event Image couldn't be confirmed"));
 }
 
 /** Decode the picked Event Image just to measure it, and check it. */
@@ -311,7 +311,7 @@ async function uploadOne(file, opts, step) {
   const parts = [
     ["thumb", thumb, "thumbnail"],
     ["display", display, "display copy"],
-    ...(cover ? [["cover", cover, "16:9 cover"]] : []),
+    ...(cover ? [["cover", cover, "16:9 Event Image"]] : []),
     ["original", file, `original (${formatBytes(file.size)})`],
   ];
   for (const [variant, blob, label] of parts) {
@@ -367,17 +367,17 @@ async function serverMessage(res, fallback) {
 
 // ── Resizing ────────────────────────────────────────────────────────────────
 
-async function makeCopies(file, { cover: withCover = false } = {}) {
+async function makeCopies(file, { cover: with16x9 = false } = {}) {
   const src = await decode(file);
   const { width, height } = src;
   let displayCanvas;
   let thumbCanvas;
-  let coverCanvas;
+  let wideCanvas;
   try {
     const d = fitWithin(src.width, src.height, DISPLAY_EDGE);
     displayCanvas = drawScaled(src.image, d);
-    // The 16:9 version is drawn from the decoded original, not the display copy.
-    if (withCover) coverCanvas = await drawCover(src);
+    // The 16:9 Event Image is drawn from the decoded original, not the display copy.
+    if (with16x9) wideCanvas = await draw16x9(src);
   } finally {
     src.close();
   }
@@ -386,11 +386,11 @@ async function makeCopies(file, { cover: withCover = false } = {}) {
     thumbCanvas = drawScaled(displayCanvas, t);
     const display = await toJpeg(displayCanvas, DISPLAY_QUALITY);
     const thumb = await toJpeg(thumbCanvas, THUMB_QUALITY);
-    const cover = coverCanvas ? await toJpeg(coverCanvas, COVER_QUALITY) : null;
+    const cover = wideCanvas ? await toJpeg(wideCanvas, IMAGE_16X9_QUALITY) : null;
     return { display, thumb, cover, width, height };
   } finally {
     // iOS keeps canvas memory until the canvas is shrunk.
-    for (const c of [displayCanvas, thumbCanvas, coverCanvas]) if (c) { c.width = 0; c.height = 0; }
+    for (const c of [displayCanvas, thumbCanvas, wideCanvas]) if (c) { c.width = 0; c.height = 0; }
   }
 }
 
@@ -419,17 +419,17 @@ async function decode(file) {
   }
 }
 
-/** The 16:9 version of a picked file, as a JPEG blob (for the preview). */
-async function composedCover(file) {
+/** The 16:9 Event Image of a picked file, as a JPEG blob (for the preview). */
+async function composed16x9(file) {
   const src = await decode(file);
   let canvas;
   try {
-    canvas = await drawCover(src);
+    canvas = await draw16x9(src);
   } finally {
     src.close();
   }
   try {
-    return await toJpeg(canvas, COVER_QUALITY);
+    return await toJpeg(canvas, IMAGE_16X9_QUALITY);
   } finally {
     canvas.width = 0; canvas.height = 0;
   }
@@ -442,7 +442,7 @@ function loadBackground() {
     background = (async () => {
       const img = new Image();
       img.decoding = "async";
-      img.src = COVER_BACKGROUND;
+      img.src = IMAGE_16X9_BACKGROUND;
       await (img.decode ? img.decode() : new Promise((ok, no) => { img.onload = ok; img.onerror = no; }));
       return img;
     })().catch(() => {
@@ -453,15 +453,15 @@ function loadBackground() {
   return background;
 }
 
-/** The 16:9 version of a decoded image: the beans background, the image at full height, centred. */
-async function drawCover(src) {
+/** The 16:9 Event Image of a decoded image: the beans background, the image at full height, centred. */
+async function draw16x9(src) {
   const bg = await loadBackground();
-  const c = composeCover(src.width, src.height);
+  const c = compose16x9(src.width, src.height);
   const canvas = document.createElement("canvas");
   canvas.width = c.canvas.width;
   canvas.height = c.canvas.height;
   const ctx = canvas.getContext("2d");
-  if (!ctx) throw new UserError("this browser couldn't make the 16:9 version. Try another browser.");
+  if (!ctx) throw new UserError("this browser couldn't make the 16:9 Event Image. Try another browser.");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);

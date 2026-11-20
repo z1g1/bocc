@@ -7,13 +7,13 @@ import { linkedInFollowUp } from "../../src/lib/linkedin/rules.mjs";
 import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 
 const EVENT_URL = "https://www.linkedin.com/events/7249812613549670400/";
-const LOGO = { source: "default", mediaId: null, eventDate: null, cover: { path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png" } };
-const UPLOADED = { source: "uploaded", mediaId: "m1", eventDate: "2078-01-04", cover: { key: "events/2078-01-04/m1/cover.jpg", contentType: "image/jpeg" } };
-const PICKED = { source: "referenced", mediaId: "m2", eventDate: "2077-12-28", cover: { key: "events/2077-12-28/m2/cover.jpg", contentType: "image/jpeg" } };
+const LOGO = { source: "default", mediaId: null, eventDate: null, image16x9: { path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png" } };
+const UPLOADED = { source: "uploaded", mediaId: "m1", eventDate: "2078-01-04", image16x9: { key: "events/2078-01-04/m1/cover.jpg", contentType: "image/jpeg" } };
+const PICKED = { source: "referenced", mediaId: "m2", eventDate: "2077-12-28", image16x9: { key: "events/2077-12-28/m2/cover.jpg", contentType: "image/jpeg" } };
 
 /** A posted ledger row as the use-case reads it, sent with the lobby wording and the logo. */
 const posted = (over = {}) => ({
-  status: "posted", location: "lobby", imageSource: "default", imageRef: LOGO.cover.path,
+  status: "posted", location: "lobby", imageSource: "default", imageRef: LOGO.image16x9.path,
   eventUrl: EVENT_URL, cancelledOnLinkedInAt: null, ...over,
 });
 const scheduled = (location = "lobby") => ({ status: "scheduled", location });
@@ -46,11 +46,11 @@ describe("linkedInFollowUp: drift", () => {
     const up = linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: UPLOADED });
     assert.deepEqual(up.drift.changes, ["image"]);
     assert.match(up.drift.message, /Event Image/);
-    const sentPicked = posted({ imageSource: "referenced", imageRef: PICKED.cover.key });
+    const sentPicked = posted({ imageSource: "referenced", imageRef: PICKED.image16x9.key });
     assert.equal(linkedInFollowUp({ ledger: sentPicked, event: scheduled(), eventImage: PICKED }).drift, null);
-    const other = { ...PICKED, mediaId: "m3", cover: { key: "events/2077-12-28/m3/cover.jpg", contentType: "image/jpeg" } };
+    const other = { ...PICKED, mediaId: "m3", image16x9: { key: "events/2077-12-28/m3/cover.jpg", contentType: "image/jpeg" } };
     assert.deepEqual(linkedInFollowUp({ ledger: sentPicked, event: scheduled(), eventImage: other }).drift.changes, ["image"]);
-    assert.deepEqual(linkedInFollowUp({ ledger: sentPicked, event: scheduled(), eventImage: { ...PICKED, cover: null } }).drift.changes, ["image"]);
+    assert.deepEqual(linkedInFollowUp({ ledger: sentPicked, event: scheduled(), eventImage: { ...PICKED, image16x9: null } }).drift.changes, ["image"]);
   });
 
   it("names both changes", () => {

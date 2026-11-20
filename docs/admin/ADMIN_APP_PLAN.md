@@ -497,7 +497,7 @@ work (to save deploy credits); everything is verified on staging first.
       "Social photos" → **Photos from Event** (labels only; `social_photo` and the
       `event_links` slots are unchanged)
 - [ ] Event Image (`event_image` media: upload or reference a recent publicly usable photo,
-      the logo as the default, a 16:9 cover copy), previews and downloads for the hand-entered
+      the logo as the default, a 16:9 Event Image), previews and downloads for the hand-entered
       listings, and the Social Post cover image defaulting to it
 - [ ] Migrations: `linkedin_connections` (token encrypted under `LINKEDIN_TOKEN_KEY`),
       `linkedin_events` (the ledger, unique on `event_date`), the `event_media` changes and the
@@ -530,7 +530,7 @@ work (to save deploy credits); everything is verified on staging first.
       language. A failed step leaves the last committed state, even when LinkedIn clearly
       refused before creating anything: the page then says it is safe to allow retry.
       #27 done: drift is flagged, not synced: once posted, a change of location (by its
-      wording: not set reads as the lobby) or of the Event Image's cover shows "LinkedIn is
+      wording: not set reads as the lobby) or of the 16:9 Event Image shows "LinkedIn is
       out of date…" in Readiness and the LinkedIn section, linking the event (a CLI-imported
       row with no image recorded compares the location only). A cancelled event with a
       posted row shows a red "Cancel the LinkedIn event on LinkedIn" item in Cancel and

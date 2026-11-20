@@ -200,6 +200,19 @@ describe("checkCoverImage: PNG/JPEG by magic bytes, 480x270 minimum, 8 MiB cap, 
     assert.match(r.warnings[0], /16:9/);
     assert.deepEqual(rules.checkCoverImage(png(1300, 720)).warnings, []);
   });
+  it("its messages name the 16:9 Event Image, never the cover", () => {
+    const msgs = [
+      ...rules.checkCoverImage(Buffer.from("GIF89a........")).errors,
+      ...rules.checkCoverImage(png(479, 270, 8 * 1024 * 1024)).errors,
+      ...rules.checkCoverImage(png(8000, 4600)).errors,
+      ...rules.checkCoverImage(png(1280, 640)).warnings,
+    ];
+    assert.equal(msgs.length, 5);
+    for (const m of msgs) {
+      assert.match(m, /16:9 Event Image/);
+      assert.doesNotMatch(m, /cover/i);
+    }
+  });
 });
 
 describe("allowedActions: state x date x cancelled x location x connection x environment", () => {
