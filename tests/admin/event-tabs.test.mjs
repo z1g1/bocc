@@ -86,7 +86,7 @@ async function insertMedia(d, kind) {
     `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
      values ($1, $2, $3, $4, $5, $6, $7, 4800000, 'ready', $8)`,
     [id, d, kind, `${base}/original.${video ? "mp4" : "jpg"}`, video ? null : `${base}/display.jpg`, video ? null : `${base}/thumb.jpg`,
-      video ? "video/mp4" : "image/jpeg", kind === "social_photo"]);
+      video ? "video/mp4" : "image/jpeg", kind === "event_photo"]);
   return id;
 }
 
@@ -209,7 +209,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       const post = await page(`/admin/events/${d}/?tab=post`);
       assert.match(post, /<h2 id="h-media-social"[^>]*>Photos from Event<\/h2>/);
       assert.ok(!/[Ss]ocial photos?/.test(post), "no 'social photo' label left");
-      assert.ok(post.includes('data-kind="social_photo"'), "the media kind is unchanged");
+      assert.ok(post.includes('data-kind="event_photo"'), "the media kind is event_photo");
     }
     // The social post's "no Luma link" reason names the renamed section.
     await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_post", baseCaption: "Renames" } });
@@ -266,7 +266,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
 
   test("the media delete route lands on the tab of what was deleted", { skip: !STORAGE && "storage not configured" }, async () => {
     const past = pastDate();
-    const photo = await insertMedia(past, "social_photo");
+    const photo = await insertMedia(past, "event_photo");
     const del = await req(`/api/admin/media/${photo}/delete`, { cookie: admin.cookie, method: "POST" });
     assert.equal(del.status, 303);
     assert.equal(del.headers.get("location"), `/admin/events/${past}/?tab=post&media=deleted#event-media`);
