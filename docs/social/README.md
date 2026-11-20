@@ -11,9 +11,9 @@ never posts anything itself. The old API plan
 | When | Who | What |
 |---|---|---|
 | By Tuesday night | Zack (admin) | On `/admin/events/<date>/?tab=social` (the Social Posts tab), "Social post" section: upload the video (MP4/MOV up to 100 MB; an iPhone upload works), write the base caption, and add extra TikTok hashtags or a **Thumbnail timecode** (the frame to use as the thumbnail where a cover image can't be uploaded, e.g. "0:03") if wanted. The **Cover image** is the event's Event Image (the BOCC logo by default); choose a Photo from Event instead if it suits the video better, or go back to the Event Image. Check that the Luma listing is there (Online Event Listings, on the Event Info tab). Then set **Status** to **Ready for Posting**. The app refuses until the video, caption and Luma link are all there, every caption is within its platform's limit, and the publish time (default Monday 7:00 AM ET) is in the future. Each channel's final text is shown, and can be overridden per channel |
-| Wednesday | Modron's Claude in Chrome task | Opens `/admin/social/next/` as the `social` user. Downloads the video and the cover image, schedules every `pending` channel (setting the cover where the platform takes a custom one: [CHROME_TASKS.md](CHROME_TASKS.md#video-cover-image-per-channel)) for the publish time (Business Suite for Facebook and Instagram, Threads web, TikTok Studio, the LinkedIn page), and saves each channel's status (`scheduled`) and post URL back through its form. If nothing is ready, it stops and reports why |
+| Wednesday | Modron's Chrome task (Claude Code driving Chrome, [CHROME_TASKS.md](CHROME_TASKS.md#how-they-run)) | Opens `/admin/social/next/` as the `social` user. Downloads the video and the cover image, schedules every `pending` channel (setting the cover where the platform takes a custom one: [CHROME_TASKS.md](CHROME_TASKS.md#video-cover-image-per-channel)) for the publish time (Business Suite for Facebook and Instagram, Threads web, TikTok Studio), and saves each channel's status (`scheduled`) and post URL back through its form. If nothing is ready, it stops and reports why |
 | Thursday 9 AM ET (10 AM in summer) | the app | A Netlify scheduled function checks the coming Tuesday. If there is no post, the post isn't ready, or a channel isn't `scheduled`/`live`, Zack gets an **ntfy push** whose link opens `/admin/social/next/`. Otherwise nothing is sent. Separately, when a LinkedIn connection has under 10 days left or has expired, it pushes a second alert naming the connection by its LinkedIn display name, with a link to `/admin/account/` to reconnect |
-| Monday about 7:20 AM ET | Modron's Claude in Chrome task | Opens `/admin/social/verify/`, opens each post, marks it `live` or `failed`, posts the Luma link as the first comment on Instagram and TikTok, and records that it did |
+| Monday about 7:20 AM ET | Modron's Chrome task | Opens `/admin/social/verify/`, opens each post, marks it `live` or `failed`, posts the Luma link as the first comment on Instagram and TikTok, and records that it did |
 
 **Post status** (the Status dropdown in the Social post section; [ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 1, amended for #39). Each channel keeps its own status (pending, scheduled, live, failed); the post status sums up the whole post:
 
@@ -30,8 +30,8 @@ Thursday check stays quiet. To meet on one of those Tuesdays anyway, open
 `/admin/events/<date>/` and save it: a saved row makes it a normal week
 ([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 7).
 
-The prompts for the two Chrome tasks, and what to do when one reports a problem, are in
-[CHROME_TASKS.md](CHROME_TASKS.md). Caption rules, in code (`src/lib/admin/social-rules.mjs`):
+How the two Chrome tasks run, their setup, and what to do when one reports a problem are in
+[CHROME_TASKS.md](CHROME_TASKS.md); the prompts are in `scripts/social/prompts/`. Caption rules, in code (`src/lib/admin/social-rules.mjs`):
 - Facebook, Threads and LinkedIn get the caption plus "RSVP: <Luma link>".
 - Instagram and TikTok get the caption plus "Link in bio", with the Luma link as the first
   comment.

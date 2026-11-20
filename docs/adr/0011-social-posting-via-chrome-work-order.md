@@ -1,4 +1,4 @@
-# ADR 0011 — Weekly social posts are done by Claude in Chrome tasks that read a work order from the app
+# ADR 0011 — Weekly social posts are done by Chrome tasks that read a work order from the app
 
 - **Status:** Accepted (2026-11-16). This supersedes the API-based approach in
   [`WEEKLY_SOCIAL_POSTING_PLAN.md`](../backend/WEEKLY_SOCIAL_POSTING_PLAN.md) for the weekly
@@ -77,8 +77,8 @@ accounts at risk under the platforms' terms.
    - Threads follows FB, since its links appear clickable (Phase 0). Confirm in the first
      rehearsal.
    - **Luma is the only link used.**
-3. **Two Claude in Chrome scheduled tasks on Modron's machine pull the work order.** The app
-   never calls them.
+3. **Two scheduled browser tasks on Modron's machine pull the work order** (Claude in Chrome
+   at first; Claude Code driving Chrome since 2026-11-20, below). The app never calls them.
    - **Wednesday:** open `/admin/social/next`, schedule each `pending` channel in Business Suite
      (Facebook and Instagram), the **Threads web app**, TikTok Studio and LinkedIn, and save
      each post URL and status back to the page. Threads is its own step because Business Suite
@@ -86,6 +86,29 @@ accounts at risk under the platforms' terms.
      immediately (amended 2026-11-16). The first rehearsal confirms Threads web can schedule.
    - **Monday at about 7:20 AM ET:** open `/admin/social/verify`, confirm each post is live by
      opening its URL, add the first comments, and write back `live` / `failed`.
+   - *Amended 2026-11-20 (Zack, after the first staging run): **the tasks run in Claude Code,
+     not Claude in Chrome.*** Claude in Chrome's upload tool only takes files attached to a
+     chat, up to 10 MB; a scheduled task has no chat, and the rehearsal's video was 20.5 MB, so
+     it couldn't attach the video (or the cover) on any platform. Now each task is
+     `claude -p`, run by cron or launchd through `scripts/social/run-task.sh`, driving a
+     dedicated, visible Chrome profile on Modron's machine through the Chrome DevTools MCP
+     server, whose `upload_file` takes a local path. The prompts are
+     `scripts/social/prompts/schedule.txt` and `verify.txt`.
+     - The task Chrome listens for remote debugging on `127.0.0.1` only, and its sign-ins are
+       made by hand once, as before. It runs from Modron's own connection, not a datacenter.
+     - Claude Code runs from an empty folder with only the browser tools; script evaluation
+       on pages, the shell and file tools are denied. Downloads go to a fixed folder the
+       runner clears before and after the Wednesday run.
+     - The work order, its forms, the `social` role and the Thursday check don't change.
+     - **LinkedIn leaves the tasks** (same day): LinkedIn won't make Modron's account an admin
+       of the BOCC page, so both prompts leave the `linkedin_page` channel alone. Zack
+       schedules that post by hand and saves the channel on the work-order pages himself. The
+       channel stays in the work order, so the Thursday check still flags it until he does.
+     - This replaces "`claude --chrome` and `-p` are not documented for unattended use" in the
+       context: `-p` is Claude Code's documented headless mode, and the DevTools server
+       doesn't need `--chrome`. The new risk is that a browser driven over remote debugging
+       may look more automated to the platforms than the extension; the rehearsal checks
+       it, and a verification prompt makes the task mark that channel failed.
 4. **The pages are built for an agent to read:** plain server-rendered HTML, stable labels, one
    section per channel, explicit form buttons, and a "nothing ready" state. No MCP server for
    now. A JSON API underneath leaves room to add one later.
@@ -128,10 +151,10 @@ accounts at risk under the platforms' terms.
 
 - One upload and one caption per week replace five uploads, and no platform tokens live in
   Netlify.
-- It depends on Modron's machine being awake with Chrome open. Unofficial reports say scheduled
-  runs may wait for someone to click, so test that early. The Thursday check catches missed runs.
-  Anthropic's help says tasks run "as long as Chrome is open"; the unattended test on Modron's
-  machine is still pending (Phase 0).
+- It depends on Modron's machine being awake and signed in to its desktop session. The
+  Thursday check catches missed runs. (Since 2026-11-20 the runs are cron or launchd jobs, so
+  the Claude in Chrome questions about unattended runs no longer apply; launchd catches up on a
+  run missed during sleep, cron doesn't.)
 - *Phase 0 (2026-11-16):* Meta Business Suite reportedly doesn't post to Threads, and Instagram's
   "Share to Threads" only works for posts published immediately. Threads links appear clickable.
   Threads became its own Wednesday step (accepted the same day).
