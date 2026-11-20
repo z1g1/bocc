@@ -166,8 +166,10 @@ const CHANNEL_DONE = ["scheduled", "live"];
  *   eventImage: the resolved Event Image (src/lib/admin/event-image-rules.mjs);
  *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#25/#27). "LinkedIn event posted"
  *   is not listed for a cancelled event (the cancel line covers it).
- * @typedef {{ key: string, label: string, ok: boolean, note?: string, href?: string }} Item
+ * @typedef {{ key: string, label: string, ok: boolean, caution?: true, note?: string, href?: string }} Item
  *   href: a link (the public page only when it exists; the LinkedIn lines)
+ *   caution: done, with a caveat in the note (shown ⚠, not ✓): the LinkedIn event was made
+ *   outside the app (a LinkedIn listing URL but no posted ledger row)
  * @returns {{ ready: boolean,
  *   listings: { done: number, total: number, cover: string|null, label: string, ok: boolean, publicHref?: string, parts: Item[], items: Item[] },
  *   social: { exists: boolean, status: string|null, label: string, ok: boolean, scheduled: number, total: number, items: Item[] } }}
@@ -185,9 +187,15 @@ export function readiness(event, links = {}, social = null, { eventImage, linked
   const cover = !eventImage ? null : eventImage.source === "default" ? "Default Cover Image" : "Custom Cover Image";
   const items = parts.filter((i) => !i.ok);
   if (linkedIn && event.status !== "cancelled") {
+    const listed = links.linkedin_event?.url;
     items.push(linkedIn.eventUrl
       ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: linkedIn.eventUrl }
-      : { key: "linkedin_posted", label: "LinkedIn event posted", ok: false, note: "not posted yet (LinkedIn event, Event Info tab)" });
+      // Made outside the app (by hand, or the bocc-linkedin-event skill) and pasted into the
+      // listings: posted, but the app has no ledger row, so no drift or cancel follow-up.
+      : listed
+        ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, caution: true, href: listed,
+            note: "created manually outside the app, so location, Event Image and cancel changes aren't tracked" }
+        : { key: "linkedin_posted", label: "LinkedIn event posted", ok: false, note: "not posted yet (LinkedIn event, Event Info tab)" });
   }
   if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: linkedIn.drift.href });
   if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: linkedIn.cancel.href });

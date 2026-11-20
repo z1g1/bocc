@@ -170,6 +170,25 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     assert.ok(!social.includes('id="linkedin-event"'), "nor its form");
   });
 
+  test("a LinkedIn listing made outside the app: a caution line, a 'Listed' note, and the create tools folded away", async () => {
+    const d = futureDate();
+    const before = await page(`/admin/events/${d}/?tab=info`);
+    assert.match(before, /✗<\/span>\s*LinkedIn event posted/, "no listing: the red cross");
+    assert.doesNotMatch(before, /<details\b[^>]*class="linkedin-tools"/, "no listing: the tools are not folded");
+
+    const url = "https://www.linkedin.com/events/7000000000000000001/";
+    const saved = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "link", platform: "linkedin_event", url } });
+    assert.equal(saved.status, 303);
+
+    const info = await page(`/admin/events/${d}/?tab=info`);
+    assert.match(info, /<li\b[^>]*class="caution"[^>]*>\s*<span class="mark"[^>]*>⚠<\/span>/, "a caution mark, not a cross");
+    assert.match(info, /LinkedIn event posted<\/a>[\s\S]{0,600}created manually outside the app/, "the readiness note");
+    assert.match(info, /Listed: <a href="https:\/\/www\.linkedin\.com\/events\/7000000000000000001\/"/);
+    assert.match(info, /<details\b(?![^>]*\bopen\b)[^>]*class="linkedin-tools"[^>]*>|<details\b[^>]*class="linkedin-tools"(?![^>]*\bopen\b)[^>]*>/, "the tools start folded");
+    const notice = await page(`/admin/events/${d}/?tab=info&notice=linkedin_retry`);
+    assert.match(notice, /<details\b[^>]*\bopen\b[^>]*class="linkedin-tools"|<details\b[^>]*class="linkedin-tools"[^>]*\bopen\b/, "open while a LinkedIn notice shows");
+  });
+
   test("no tab, or an unknown one: Event Info for a future date, Post Event for a past one", async () => {
     const future = futureDate();
     const past = pastDate();

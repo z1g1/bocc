@@ -16,7 +16,10 @@
 //                linkedin_allow_retry: 303 once posted or retired, else rendered
 //                without a redirect, 409 when refused, 502 when a LinkedIn step failed),
 //                and the "LinkedIn is out of date…" notice when the location or Event
-//                Image changed after it was posted (#27: flagged, not synced)
+//                Image changed after it was posted (#27: flagged, not synced). Once a
+//                LinkedIn listing URL is saved, a "Listed:" link (noting when it was
+//                created manually outside the app) and the connection and create
+//                tools folded in a <details>
 //   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
@@ -220,7 +223,13 @@ const linkVal = (p: string) => {
     : { url: links[p]?.url ?? "", externalId: links[p]?.externalId ?? "" };
 };
 const linkErr = (p: string) => (linkPosted(p) ? errors : {});
-const mark = (ok: boolean) => (ok ? "✓" : "✗");
+const mark = (ok: boolean, caution = false) => (caution ? "⚠" : ok ? "✓" : "✗");
+// A LinkedIn listing URL is saved (made from here, or by hand outside the app): the
+// create tools fold away under a <details>, open again while a LinkedIn action or its
+// notice is on screen, or when there is no listing.
+const linkedInListing = links.linkedin_event?.url ?? null;
+const linkedInOpen = !linkedInListing || Boolean(linkedInResult)
+  || (Astro.url.searchParams.get("notice") ?? "").startsWith("linkedin_");
 const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
@@ -253,10 +262,10 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
             {b.items.length > 0 && (
               <ul class="checklist">
                 {b.items.map((i) => (
-                  <li class={i.ok ? "ok" : "todo"}>
-                    <span class="mark" aria-hidden="true">{mark(i.ok)}</span>
+                  <li class={i.caution ? "caution" : i.ok ? "ok" : "todo"}>
+                    <span class="mark" aria-hidden="true">{mark(i.ok, i.caution)}</span>
                     {i.href ? (/^https?:/.test(i.href) ? <a href={i.href} target="_blank" rel="noopener">{i.label}</a> : <a href={i.href}>{i.label}</a>) : i.label}
-                    <span class="visually-hidden">{i.ok ? " (done)" : " (missing)"}</span>
+                    <span class="visually-hidden">{i.caution ? " (done, with a caution)" : i.ok ? " (done)" : " (missing)"}</span>
                     {i.note && <span class="muted"> · {i.note}</span>}
                   </li>
                 ))}
@@ -372,8 +381,23 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
     {linkedIn.drift && (
       <p class="linkedin-drift" role="alert">{linkedIn.drift.message} <a href={linkedIn.eventUrl} target="_blank" rel="noopener">Open the LinkedIn event</a></p>
     )}
-    <LinkedInConnection returnTo={date} />
-    <LinkedInEvent date={date} result={linkedInResult} />
+    {linkedInListing ? (
+      <>
+        <p>Listed: <a href={linkedInListing} target="_blank" rel="noopener">the LinkedIn event</a>{linkedIn.eventUrl
+          ? <span class="muted"> (created from here)</span>
+          : <span class="muted"> (created manually outside the app: location, Event Image and cancel changes aren't tracked)</span>}</p>
+        <details class="linkedin-tools" open={linkedInOpen}>
+          <summary>LinkedIn connection and create</summary>
+          <LinkedInConnection returnTo={date} />
+          <LinkedInEvent date={date} result={linkedInResult} />
+        </details>
+      </>
+    ) : (
+      <>
+        <LinkedInConnection returnTo={date} />
+        <LinkedInEvent date={date} result={linkedInResult} />
+      </>
+    )}
   </section>
 
   </>)}
@@ -470,6 +494,8 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .ready .mark { display: inline-block; width: 1.1em; font-weight: 700; }
   .ready .ok > .mark { color: var(--accent); }
   .ready .todo > .mark { color: var(--err); }
+  .ready .caution > .mark { color: var(--warn); }
+  .linkedin-tools > summary { cursor: pointer; color: var(--muted); }
   .link-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
   .link-row label:first-of-type { font-weight: 600; }
   .link-row input { width: 100%; }
