@@ -19,19 +19,20 @@
 //                                      status or reason, event.uncancel when it leaves
 //                                      cancelled, event.update otherwise.
 //   submitReport(actor, date, input)   event_report.submit (new) / event_report.update (edit);
-//                                      the event moves to `held` in the same transaction
+//                                      the event moves to `reported` in the same transaction
 // The first save of any kind creates the events row (details.created = true): there is
 // no separate "create event" step.
 //
 // Choices (plan Phase 3):
 //   - A report is refused on a cancelled event (un-cancel first) and on a date after
 //     today (Eastern); today itself is allowed, since the report is filed after the event.
-//   - Cancelling is refused once a report exists (the event was held). Cancelling ahead
+//   - Cancelling is refused once a report exists (the event is Reported). Cancelling ahead
 //     of time, or re-saving a cancelled event's reason/announced flag, is allowed.
-//   - One form sets the status (scheduled, held or cancelled) and the location together.
-//     Cancelled needs a reason; leaving cancelled (to scheduled or held) clears the cancel
-//     fields in the same UPDATE, as the CHECKs require. `scheduled` and `cancelled` are
-//     refused while a report exists, and `held` on a date after today.
+//   - One form sets the Event status (scheduled, reported or cancelled; GLOSSARY.md) and
+//     the location together. Cancelled needs a reason; leaving cancelled (to scheduled or
+//     reported) clears the cancel fields in the same UPDATE, as the CHECKs require.
+//     `scheduled` and `cancelled` are refused while a report exists, and `reported` on a
+//     date after today. ("Held" is not a status: it means the event took place.)
 //   - The check-in count is calculated here and never stored. It is not attendance: not
 //     everyone checks in.
 //   - Editing an imported report (source google_form/pre_form) makes it source = 'admin'
@@ -46,9 +47,9 @@ import { isHolidayWeek } from "../holiday-weeks.mjs";
 
 export { parseDate };
 
-export const STATUSES = Object.freeze(["scheduled", "held", "cancelled"]);
+export const STATUSES = Object.freeze(["scheduled", "reported", "cancelled"]);
 /** Each status's label, in STATUSES order (the Status dropdown, badges and lists). */
-export const STATUS_LABELS = Object.freeze({ scheduled: "Scheduled", held: "Held", cancelled: "Cancelled" });
+export const STATUS_LABELS = Object.freeze({ scheduled: "Scheduled", reported: "Reported", cancelled: "Cancelled" });
 export const LOCATIONS = Object.freeze({ lobby: "Lobby", food_hall: "Food hall", other: "Other" });
 export const CANCEL_REASONS = Object.freeze({
   weather: "Weather",
@@ -240,7 +241,7 @@ function validateLocation(input, errors) {
 }
 
 /**
- * @returns {{ status: "scheduled"|"held"|"cancelled"|null, location, locationOther,
+ * @returns {{ status: "scheduled"|"reported"|"cancelled"|null, location, locationOther,
  *   cancel: { reason, reasonOther, announced } | null }}  status null = keep; cancel only
  *   when the status is cancelled (the cancel fields are ignored otherwise)
  */
@@ -250,7 +251,7 @@ export function validateEventInput(input) {
   let status = null;
   if (rawStatus !== "") {
     if (STATUSES.includes(rawStatus)) status = rawStatus;
-    else errors.status = "Choose Scheduled, Held or Cancelled.";
+    else errors.status = "Choose Scheduled, Reported or Cancelled.";
   }
   const loc = validateLocation(input, errors);
   const cancel = status === "cancelled" ? validateCancel(input, errors) : null;
@@ -361,28 +362,28 @@ async function audited(actorUserId, date, table, fn) {
 const CANCEL_FIELDS = ["cancel_reason", "cancel_reason_other", "cancel_announced"];
 
 /**
- * Status (scheduled, held or cancelled), location and, for cancelled, the reason and
+ * Status (scheduled, reported or cancelled), location and, for cancelled, the reason and
  * announced flag: one UPDATE. Creates the event on its first save.
- * `held` is refused for a date after today (Eastern), like a report; `scheduled` and
- * `cancelled` once a report exists (the event was held).
+ * `reported` is refused for a date after today (Eastern), like a report; `scheduled` and
+ * `cancelled` once a report exists (the event is Reported).
  * @param {{ today?: string }} [opts]  "today" (Eastern); tests pass it
  */
 export async function saveEvent(actorUserId, date, input, { today = todayEastern() } = {}) {
   checkDate(date);
   const v = validateEventInput(input);
-  if (v.status === "held" && date > today) {
-    throw new ConflictError({ status: "That date hasn't happened yet, so it can't be held." });
+  if (v.status === "reported" && date > today) {
+    throw new ConflictError({ status: "That date hasn't happened yet, so it can't be Reported." });
   }
   return audited(actorUserId, date, "events", async (client) => {
     const { created, row } = await lockEvent(client, date);
     const status = v.status ?? row.status;
-    // A report means it was held: no way back to scheduled, and no cancelling. (A
+    // A report means it is Reported: no way back to scheduled, and no cancelling. (A
     // cancelled event can't have a report, so only a change of status needs the check.)
-    if (status !== row.status && status !== "held" && (await hasReport(client, date))) {
+    if (status !== row.status && status !== "reported" && (await hasReport(client, date))) {
       throw new ConflictError({
         status: status === "cancelled"
-          ? "This event has a report, so it was held and can't be cancelled."
-          : "This event has a report, so it was held.",
+          ? "This event has an Event Report, so it is Reported and can't be cancelled."
+          : "This event has an Event Report, so it is Reported.",
       });
     }
     // Cancel fields: the posted ones when cancelling, kept when a cancelled event is
@@ -409,7 +410,7 @@ export async function saveEvent(actorUserId, date, input, { today = todayEastern
 }
 
 /**
- * Submit or edit the report; the event moves to `held` in the same transaction.
+ * Submit or edit the report; the event moves to `reported` in the same transaction.
  * @param {{ today?: string }} [opts]  "today" (Eastern) for the future-date check; tests pass it
  */
 export async function submitReport(actorUserId, date, input, { today = todayEastern() } = {}) {
@@ -419,7 +420,7 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
   return audited(actorUserId, date, "event_reports", async (client) => {
     const { created, row } = await lockEvent(client, date);
     if (row.status === "cancelled") {
-      throw new ConflictError({ date: "This event is cancelled. Set its status to Held (Event Info tab) before filing a report." });
+      throw new ConflictError({ date: "This event is cancelled. Set its status to Reported (Event Info tab) before filing a report." });
     }
     const { rows } = await client.query(
       `select attendee_count, notes, bling_given, bling_details, source, submitted_by
@@ -430,17 +431,17 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
     };
     if (existing) {
       const d = diff(existing, { ...after, source: "admin" });
-      if (d.changed.length === 0 && row.status === "held") throw NOOP;
+      if (d.changed.length === 0 && row.status === "reported") throw NOOP;
       await client.query(
         `update public.event_reports
             set attendee_count = $2, notes = $3, bling_given = $4, bling_details = $5,
                 source = 'admin', submitted_by = $6
           where event_date = $1::date`,
         [date, v.attendeeCount, v.notes, v.blingGiven, v.blingDetails, actorUserId]);
-      await setHeld(client, date, row.status);
+      await setReported(client, date, row.status);
       return {
         action: "event_report.update",
-        details: { eventStatus: { before: row.status, after: "held" }, before: d.before, after: d.after },
+        details: { eventStatus: { before: row.status, after: "reported" }, before: d.before, after: d.after },
       };
     }
     await client.query(
@@ -448,16 +449,16 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
          (event_date, attendee_count, notes, bling_given, bling_details, submitted_by, source)
        values ($1::date, $2, $3, $4, $5, $6, 'admin')`,
       [date, v.attendeeCount, v.notes, v.blingGiven, v.blingDetails, actorUserId]);
-    await setHeld(client, date, row.status);
+    await setReported(client, date, row.status);
     return {
       action: "event_report.submit",
-      details: { created, eventStatus: { before: row.status, after: "held" }, after },
+      details: { created, eventStatus: { before: row.status, after: "reported" }, after },
     };
   });
 }
 
-async function setHeld(client, date, current) {
-  if (current !== "held") {
-    await client.query(`update public.events set status = 'held' where event_date = $1::date`, [date]);
+async function setReported(client, date, current) {
+  if (current !== "reported") {
+    await client.query(`update public.events set status = 'reported' where event_date = $1::date`, [date]);
   }
 }

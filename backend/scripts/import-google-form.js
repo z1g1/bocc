@@ -35,7 +35,7 @@
  *   - Location: "Lobby (normal)" → lobby, "Food Hall" → food_hall, blank → NULL, else
  *     other + the text. A stored location is never replaced (only filled when NULL).
  *   - "Did you have to cancel event?" = Yes → events.status cancelled, reason mapped
- *     from the answer (else `other` + the text), no report. Otherwise status `held`
+ *     from the answer (else `other` + the text), no report. Otherwise status `reported`
  *     plus a report.
  *   - Idempotent: a date whose report is identical is left alone; an imported report
  *     that differs is updated; a report with source `admin` is NEVER touched, and
@@ -274,7 +274,7 @@ function planImport(rows) {
         }
         if (blingDetails && blingDetails.length > 1000) throw new Error('Bling details longer than 1000 characters');
         if (notes && notes.length > 4000) throw new Error('notes longer than 4000 characters');
-        item.status = 'held';
+        item.status = 'reported';
         item.report = { attendeeCount, notes, blingGiven, blingDetails };
       }
       if (seen.has(date)) {
@@ -327,7 +327,7 @@ function decide(item, ev, rep, warnings) {
     warnings.push(`${item.date}: stored location kept (differs from the CSV)`);
   }
   if (!ev && !rep) return { action: 'create' };
-  const eventSame = ev && ev.status === 'held' && (ev.location !== null || item.location === null);
+  const eventSame = ev && ev.status === 'reported' && (ev.location !== null || item.location === null);
   const reportSame = rep && rep.source === item.source &&
     REPORT_FIELDS.every(([k, col]) => (rep[col] ?? null) === (item.report[k] ?? null));
   return eventSame && reportSame ? { action: 'unchanged' } : { action: rep ? 'update' : 'create' };
@@ -361,12 +361,12 @@ async function write(db, item, ev, rep) {
       [item.date, item.location, item.locationOther, c.reason, c.reasonOther, c.announced]);
     return;
   }
-  // Held: the event (location only filled when unset), then the report.
+  // Reported: the event (location only filled when unset), then the report.
   await db.query(
     `insert into public.events (event_date, status, location, location_other)
-     values ($1::date, 'held', $2, $3)
+     values ($1::date, 'reported', $2, $3)
      on conflict (event_date) do update
-       set status = 'held',
+       set status = 'reported',
            location = coalesce(public.events.location, excluded.location),
            location_other = case when public.events.location is null then excluded.location_other
                                  else public.events.location_other end`,
@@ -490,7 +490,7 @@ async function main(argv, env, out = console) {
   out.log('');
   out.log(`${mode} rows: ${items.length + errors.length} | importable: ${items.length} | errors: ${errors.length}`);
   out.log(`${mode} source: google_form ${by((i) => i.source === 'google_form')}, pre_form ${by((i) => i.source === 'pre_form')}`);
-  out.log(`${mode} status: held ${by((i) => i.status === 'held')}, cancelled ${by((i) => i.status === 'cancelled')}`);
+  out.log(`${mode} status: reported ${by((i) => i.status === 'reported')}, cancelled ${by((i) => i.status === 'cancelled')}`);
   out.log(`${mode} bling: yes ${by((i) => i.report?.blingGiven === true)}, no ${by((i) => i.report?.blingGiven === false)}, blank ${by((i) => i.report && i.report.blingGiven == null)}`);
   out.log(`${mode} location: lobby ${by((i) => i.location === 'lobby')}, food_hall ${by((i) => i.location === 'food_hall')}, other ${by((i) => i.location === 'other')}, blank ${by((i) => i.location == null)}`);
   if (items.length) out.log(`${mode} dates: ${items[0].date} … ${items[items.length - 1].date}`);

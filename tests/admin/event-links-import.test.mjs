@@ -126,8 +126,8 @@ describe("import script against the database", () => {
   before(async () => {
     owner = await connect(OWNER_URL);
     dir = mkdtempSync(join(tmpdir(), "bocc-links-import-"));
-    // 2083-01-12 already exists, held, with its Luma link stored without the id.
-    await owner.query(`insert into events (event_date, status) values ('2083-01-12', 'held')`);
+    // 2083-01-12 already exists, reported, with its Luma link stored without the id.
+    await owner.query(`insert into events (event_date, status) values ('2083-01-12', 'reported')`);
     await owner.query(`insert into event_links (event_date, platform, url) values ('2083-01-12', 'luma', 'https://luma.com/bbb')`);
   });
   after(async () => {
@@ -177,7 +177,7 @@ describe("import script against the database", () => {
     assert.match(first.out, /\[apply\] links: insert 7, fill id 1, unchanged 0, conflicts 0/);
     const snap = await snapshot();
     assert.deepEqual(snap.events.map((e) => [e.event_date, e.status]),
-      [["2083-01-05", "scheduled"], ["2083-01-12", "held"], ["2083-01-19", "scheduled"], ["2083-01-26", "scheduled"]]);
+      [["2083-01-05", "scheduled"], ["2083-01-12", "reported"], ["2083-01-19", "scheduled"], ["2083-01-26", "scheduled"]]);
     assert.equal(snap.links.length, 8);
     assert.deepEqual(snap.links.find((l) => l.event_date === "2083-01-12" && l.platform === "luma").external_id, "evt-BBB222");
     const audits = await importAudits();

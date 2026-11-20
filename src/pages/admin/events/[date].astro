@@ -2,7 +2,7 @@
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
 // The Readiness section (#42: Online Event Listings x/5 with the cover image, and Social
 // Posts: <status>) sits above three tabs (ADR 0012 decision 1):
-//   ?tab=info    Event Info: status (scheduled, held or cancelled, with the cancel reason
+//   ?tab=info    Event Info: status (scheduled, reported or cancelled, with the cancel reason
 //                fields shown only while Cancelled is selected) and location in one form;
 //                below it, for a cancelled event that was posted on LinkedIn, the red
 //                "Cancel the LinkedIn event on LinkedIn" item and its "Done on LinkedIn"
@@ -71,7 +71,7 @@ if (!date) return notFound();
 
 const NOTICES: Record<string, string> = {
   saved: "Saved.",
-  report: "Report saved. The event is marked held.",
+  report: "Report saved. The event is marked Reported.",
   link: "Listing saved.",
   unlink: "Listing cleared.",
   social_post: "Social post saved.",
@@ -415,7 +415,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       </p>
     )}
     {event.status === "cancelled"
-      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Held (Event Info tab) first.</p>
+      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Reported (Event Info tab) first.</p>
       : isFuture
         ? null
         : (
@@ -485,7 +485,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .checkins { margin: 0; }
   .badge { display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
   .badge.cancelled, .badge.missing { color: var(--err); border-color: var(--err); }
-  .badge.held { color: var(--accent); border-color: var(--accent); }
+  .badge.reported { color: var(--accent); border-color: var(--accent); }
   .ready { margin-top: 1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
   .ready h2 { margin: 0; font-size: 1.1rem; }
   .bullets { list-style: none; padding: 0; margin: 0.25rem 0 0; }

@@ -2,7 +2,7 @@
 // through a real `astro dev` server connected as site_reader (TEST_SITE_URL from
 // scripts/test-db.sh), with "today" pinned by BOCC_TODAY:
 //   scheduled (embed, RSVP to Luma, sameAs only in JSON-LD), scheduled without a Luma
-//   link (calendar fallback), cancelled, past (held, and scheduled but past), unknown
+//   link (calendar fallback), cancelled, past (reported, and scheduled but past), unknown
 //   and malformed dates (404), a holiday-break Tuesday with no row (404 "No meeting this
 //   week") and with a saved row (the override: the normal page), /events/ (302), the
 //   sitemap, and every cache header.
@@ -27,7 +27,7 @@ process.env.SITE_DB_URL = process.env.TEST_SITE_URL;
 process.env.BOCC_TODAY = "2031-06-04"; // a Wednesday
 
 const D = {
-  heldPast: "2031-05-27",
+  reportedPast: "2031-05-27",
   scheduledPast: "2031-06-03",
   upcoming: "2031-06-10",
   noLuma: "2031-06-17",
@@ -51,9 +51,9 @@ async function seed() {
   await owner.query("delete from events where event_date = any($1::date[])", [dates]);
   await owner.query(
     `insert into events (event_date, status, location, cancel_reason) values
-       ($1, 'held', 'lobby', null), ($2, 'scheduled', 'lobby', null), ($3, 'scheduled', 'food_hall', null),
+       ($1, 'reported', 'lobby', null), ($2, 'scheduled', 'lobby', null), ($3, 'scheduled', 'food_hall', null),
        ($4, 'scheduled', null, null), ($5, 'cancelled', 'lobby', 'weather'), ($6, 'scheduled', null, null)`,
-    [D.heldPast, D.scheduledPast, D.upcoming, D.noLuma, D.cancelled, D.holidayOverride]);
+    [D.reportedPast, D.scheduledPast, D.upcoming, D.noLuma, D.cancelled, D.holidayOverride]);
   await owner.query(
     `insert into event_links (event_date, platform, url, external_id) values
        ($1, 'luma', $2, $3), ($1, 'eventbrite', $4, null), ($1, 'facebook_event', $5, null), ($1, 'linkedin_event', $6, null),
@@ -61,7 +61,7 @@ async function seed() {
        ($8, 'luma', $2, $3), ($8, 'linkedin_event', $6, null),
        ($9, 'luma', $2, $3)`,
     [D.upcoming, LUMA.url, LUMA.id, OTHERS.eventbrite, OTHERS.facebook_event, OTHERS.linkedin_event,
-      D.noLuma, D.cancelled, D.heldPast]);
+      D.noLuma, D.cancelled, D.reportedPast]);
 }
 
 const get = (path) => fetch(`${BASE}${path}`, { redirect: "manual" });
@@ -146,7 +146,7 @@ describe("public event pages from the database", { timeout: 300_000 }, () => {
     assert.deepEqual(ld.sameAs, [OTHERS.linkedin_event]);
   });
 
-  for (const [label, date] of [["held", D.heldPast], ["scheduled but past", D.scheduledPast]]) {
+  for (const [label, date] of [["reported", D.reportedPast], ["scheduled but past", D.scheduledPast]]) {
     test(`past (${label}): "has passed", the next event, noindex, no embed`, async () => {
       const res = await get(`/events/${date}/`);
       assert.equal(res.status, 200);
@@ -224,7 +224,7 @@ describe("public event pages from the database", { timeout: 300_000 }, () => {
     const xml = await res.text();
     assert.match(xml, new RegExp(`<loc>https://716coffee.club/events/${D.upcoming}/</loc>\\n<lastmod>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+00:00</lastmod>`));
     assert.ok(xml.includes(`/events/${D.noLuma}/`));
-    for (const d of [D.cancelled, D.heldPast, D.scheduledPast, D.unknown, D.holiday]) assert.ok(!xml.includes(`/events/${d}/`), d);
+    for (const d of [D.cancelled, D.reportedPast, D.scheduledPast, D.unknown, D.holiday]) assert.ok(!xml.includes(`/events/${d}/`), d);
     assert.ok(xml.indexOf(D.upcoming) < xml.indexOf(D.noLuma), "soonest first");
     assert.match(xml, /<url>\n<loc>https:\/\/716coffee.club\/<\/loc>\n<\/url>/, "content pages still listed");
     assert.match(xml, /<loc>https:\/\/716coffee.club\/code-of-conduct\/<\/loc>/);

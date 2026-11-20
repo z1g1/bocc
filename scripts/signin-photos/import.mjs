@@ -18,7 +18,7 @@
 // 3. Apply (writes): uploads three objects per photo through storage.mjs presignPut,
 //    (the original is the untouched file: HEIC stays HEIC, image/heic, which migration
 //    20261119120000 allows for signin_board only; display and thumbnail are JPEGs),
-//    then, in ONE transaction as the owner, creates missing events rows as `held`,
+//    then, in ONE transaction as the owner, creates missing events rows as `reported`,
 //    inserts the event_media rows (kind signin_board, never publicly_usable, status
 //    ready, uploaded_by NULL) and one summary audit_log row.
 //      node --env-file=.env.local --env-file=<storage env> scripts/signin-photos/import.mjs \
@@ -160,7 +160,7 @@ export async function applyImport({ client, storage, resolved, paths, convert, w
     const eventsCreated = [];
     for (const date of [...new Set(uploaded.map((u) => u.date))].sort()) {
       const r = await client.query(
-        "insert into public.events (event_date, status) values ($1, 'held') on conflict (event_date) do nothing", [date]);
+        "insert into public.events (event_date, status) values ($1, 'reported') on conflict (event_date) do nothing", [date]);
       if (r.rowCount === 1) eventsCreated.push(date);
     }
     for (const u of uploaded) {
@@ -243,7 +243,7 @@ async function main() {
       const newEvents = [...new Set(resolved.plan.map((p) => p.date))].filter((d) => !known.has(d)).sort();
       console.log(`\nWith ${a.confirm}: every uncertain row is confirmed. --apply would import ${resolved.plan.length}` +
         ` (${resolved.plan.filter((p) => p.overridden).length} with a changed date), skip ${resolved.skipped.length},` +
-        ` and create ${newEvents.length} events as held${newEvents.length ? `: ${newEvents.join(", ")}` : ""}.`);
+        ` and create ${newEvents.length} events as reported${newEvents.length ? `: ${newEvents.join(", ")}` : ""}.`);
       for (const p of resolved.plan.filter((x) => x.overridden)) console.log(`  ${p.name} -> ${p.date}`);
       console.log("Dry run: nothing was written.");
       return;
@@ -258,7 +258,7 @@ async function main() {
       convert: pythonConverter(a.python), workDir,
     });
     console.log(`imported ${result.imported.length}, already there ${result.already.length}, skipped ${result.skipped.length}; ` +
-      `events created (held): ${result.eventsCreated.join(", ") || "none"}`);
+      `events created (reported): ${result.eventsCreated.join(", ") || "none"}`);
   } finally {
     await client?.end();
   }

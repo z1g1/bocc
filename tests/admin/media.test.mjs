@@ -552,7 +552,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
       assert.equal(res.status, 200, variant);
     }
     // As the import does it (scripts/signin-photos/import.mjs): as the owner, ready, no uploader.
-    await owner.query("insert into events (event_date, status) values ($1, 'held')", [date]);
+    await owner.query("insert into events (event_date, status) values ($1, 'reported')", [date]);
     await owner.query(
       `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes,
                                 publicly_usable, status, uploaded_by)

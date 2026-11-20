@@ -1,7 +1,7 @@
 // Phase 3 admin events (ADR 0009): /admin/events/, /admin/events/YYYY-MM-DD/ and the
 // dashboard block, against the throwaway database (npm run test:db):
 //   1. src/lib/admin/events.mjs as admin_app: first save creates the event, cancelling
-//      and leaving cancelled within the CHECK constraints, a report moves the event to held with an
+//      and leaving cancelled within the CHECK constraints, a report moves the event to Reported with an
 //      audit row, validation, refused states, "report missing" in Eastern time, and the
 //      check-in count leaving out test rows
 //   2. the routes over HTTP through a real `astro dev` server: roles, Origin, methods,
@@ -165,16 +165,16 @@ describe("events module", () => {
     });
   });
 
-  test("a cancelled event can go straight to held (past dates only)", async () => {
+  test("a cancelled event can go straight to reported (past dates only)", async () => {
     const d = pastDate();
     await ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "facility" });
     const dayBefore = new Date(Date.parse(`${d}T00:00:00Z`) - 86400_000).toISOString().slice(0, 10);
-    await assert.rejects(ev.saveEvent(actor.id, d, { status: "held" }, { today: dayBefore }), ConflictError);
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "reported" }, { today: dayBefore }), ConflictError);
     assert.equal((await eventRow(d)).status, "cancelled");
 
-    await ev.saveEvent(actor.id, d, { status: "held", location: "lobby" }, { today: TODAY });
+    await ev.saveEvent(actor.id, d, { status: "reported", location: "lobby" }, { today: TODAY });
     assert.deepEqual(await eventRow(d), {
-      status: "held", location: "lobby", location_other: null,
+      status: "reported", location: "lobby", location_other: null,
       cancel_reason: null, cancel_reason_other: null, cancel_announced: false,
     });
     assert.equal((await auditRows(d)).at(-1).action, "event.uncancel");
@@ -182,11 +182,11 @@ describe("events module", () => {
     assert.deepEqual(await ev.submitReport(actor.id, d, REPORT, { today: TODAY }), { changed: true });
   });
 
-  test("submitting a report moves the event to held and writes an audit row", async () => {
+  test("submitting a report moves the event from scheduled to reported and writes an audit row", async () => {
     const d = pastDate();
     await ev.saveEvent(actor.id, d, { location: "lobby" });
     assert.deepEqual(await ev.submitReport(actor.id, d, REPORT, { today: TODAY }), { changed: true });
-    assert.equal((await eventRow(d)).status, "held");
+    assert.equal((await eventRow(d)).status, "reported");
     assert.deepEqual(await reportRow(d), {
       attendee_count: 31, notes: "Good turnout.\nNew faces.", bling_given: false, bling_details: null,
       source: "admin", submitted_by: actor.id,
@@ -194,7 +194,7 @@ describe("events module", () => {
     const submit = (await auditRows(d)).at(-1);
     assert.equal(submit.action, "event_report.submit");
     assert.equal(submit.target_table, "event_reports");
-    assert.deepEqual(submit.details.eventStatus, { before: "scheduled", after: "held" });
+    assert.deepEqual(submit.details.eventStatus, { before: "scheduled", after: "reported" });
     assert.equal(submit.details.after.attendee_count, 31, "the audit row names the Attendee count attendee_count");
 
     // Edit: event_report.update with only the changed fields.
@@ -206,18 +206,26 @@ describe("events module", () => {
       { changed: false });
 
     const got = await ev.getEvent(pool, d);
-    assert.deepEqual([got.exists, got.status, got.report.attendeeCount, got.report.by], [true, "held", 31, "Report Writer"]);
-    // Held with a report: can't go back to scheduled, can't be cancelled.
+    assert.deepEqual([got.exists, got.status, got.report.attendeeCount, got.report.by], [true, "reported", 31, "Report Writer"]);
+    // Reported: can't go back to scheduled, can't be cancelled.
     await assert.rejects(ev.saveEvent(actor.id, d, { status: "scheduled", location: "lobby" }), ConflictError);
     await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "weather" }, { today: TODAY }),
       (e) => e instanceof ConflictError && /can't be cancelled/.test(e.errors.status));
-    assert.equal((await eventRow(d)).status, "held");
+    assert.equal((await eventRow(d)).status, "reported");
   });
 
-  test("a report on a date with no row creates the event as held", async () => {
+  test("`held` is no longer a status: refused with the new words", async () => {
+    const d = pastDate();
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "held" }, { today: TODAY }),
+      (e) => e instanceof ValidationError && e.errors.status === "Choose Scheduled, Reported or Cancelled.");
+    assert.equal(await eventRow(d), null);
+    assert.deepEqual(ev.STATUSES.map((s) => ev.STATUS_LABELS[s]), ["Scheduled", "Reported", "Cancelled"]);
+  });
+
+  test("a report on a date with no row creates the event as reported", async () => {
     const d = pastDate();
     await ev.submitReport(actor.id, d, REPORT, { today: TODAY });
-    assert.equal((await eventRow(d)).status, "held");
+    assert.equal((await eventRow(d)).status, "reported");
     assert.equal((await auditRows(d))[0].details.created, true);
   });
 
@@ -246,26 +254,26 @@ describe("events module", () => {
     assert.equal((await eventRow(d)).status, "cancelled");
 
     await assert.rejects(ev.submitReport(actor.id, "2026-11-18", REPORT, { today: TODAY }), ConflictError);
-    // Nor can a future date be marked held by hand (it would show as held, no report).
+    // Nor can a future date be marked reported by hand (it would show as reported, no report).
     // A 2001 date with "today" the day before stands in for a future date.
     const f = pastDate();
     const dayBefore = new Date(Date.parse(`${f}T00:00:00Z`) - 86400_000).toISOString().slice(0, 10);
-    await assert.rejects(ev.saveEvent(actor.id, f, { status: "held" }, { today: dayBefore }),
+    await assert.rejects(ev.saveEvent(actor.id, f, { status: "reported" }, { today: dayBefore }),
       (e) => e instanceof ConflictError && "status" in e.errors);
     assert.equal(await eventRow(f), null);
     await ev.saveEvent(actor.id, f, { status: "scheduled", location: "lobby" }, { today: dayBefore });
     assert.equal((await eventRow(f)).status, "scheduled");
-    await ev.saveEvent(actor.id, f, { status: "held", location: "lobby" }, { today: f });
-    assert.equal((await eventRow(f)).status, "held", "held is fine on the day itself");
+    await ev.saveEvent(actor.id, f, { status: "reported", location: "lobby" }, { today: f });
+    assert.equal((await eventRow(f)).status, "reported", "reported is fine on the day itself");
     // Today itself is fine (Eastern); use a 2001 date as "today" to keep the DB tidy.
     const t = pastDate();
     await ev.submitReport(actor.id, t, REPORT, { today: t });
-    assert.equal((await eventRow(t)).status, "held");
+    assert.equal((await eventRow(t)).status, "reported");
   });
 
   test("editing an imported report makes it the admin's", async () => {
     const d = pastDate();
-    await owner.query(`insert into events (event_date, status) values ($1, 'held')`, [d]);
+    await owner.query(`insert into events (event_date, status) values ($1, 'reported')`, [d]);
     await owner.query(`insert into event_reports (event_date, attendee_count, source) values ($1, 20, 'pre_form')`, [d]);
     await ev.submitReport(actor.id, d, { ...REPORT, attendeeCount: "20" }, { today: TODAY });
     const r = await reportRow(d);
@@ -320,7 +328,7 @@ describe("events module", () => {
 
     const [a, b, c, d] = [pastDate(), pastDate(), pastDate(), pastDate()];
     await ev.saveEvent(actor.id, a, { status: "scheduled" });      // past, scheduled -> missing
-    await ev.submitReport(actor.id, b, REPORT, { today: TODAY });  // held
+    await ev.submitReport(actor.id, b, REPORT, { today: TODAY });  // reported
     await ev.saveEvent(actor.id, c, { status: "cancelled", cancelReason: "weather" }); // cancelled
     await ev.saveEvent(actor.id, d, { status: "scheduled" });      // "today"
 
@@ -383,7 +391,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
       assert.equal(out.status, 302, `signed out ${p}`);
       assert.match(out.headers.get("location"), /^\/login\/\?next=/);
     }
-    const form = { action: "save", status: "held" };
+    const form = { action: "save", status: "reported" };
     for (const who of [social, noRole]) {
       assert.equal((await req(`/admin/events/${d}/`, { cookie: who.cookie, method: "POST", form })).status, 403);
     }
@@ -566,7 +574,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
   test("POST without or with a foreign Origin is 403; other methods 405", async () => {
     const d = pastDate();
     for (const origin of [null, "https://evil.example"]) {
-      const res = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", origin, form: { action: "save", status: "held" } });
+      const res = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", origin, form: { action: "save", status: "reported" } });
       assert.equal(res.status, 403, `origin ${origin}`);
     }
     for (const method of ["PUT", "DELETE", "PATCH"]) {
@@ -597,7 +605,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(home.includes('href="/admin/events/"') && /\d+ reports? missing/.test(home) && home.includes("/admin/events/?missing=1"));
   });
 
-  test("report over HTTP: 303, event held, audit row; invalid input 400 with messages by the fields", async () => {
+  test("report over HTTP: 303, event reported, audit row; invalid input 400 with messages by the fields", async () => {
     const d = pastDate();
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "report", attendeeCount: "lots", blingGiven: "no", blingDetails: "Pat", notes: "kept <b>" } });
@@ -611,9 +619,16 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
       form: { action: "report", attendeeCount: "27", blingGiven: "yes", blingDetails: "Pat brought Sam", notes: "" } });
     assert.equal(ok.status, 303);
     assert.equal(ok.headers.get("location"), `/admin/events/${d}/?tab=post&notice=report`);
-    assert.equal((await eventRow(d)).status, "held");
+    assert.equal((await eventRow(d)).status, "reported");
     const [audit] = await auditRows(d);
     assert.deepEqual([audit.action, audit.actor_user_id], ["event_report.submit", admin.user.id]);
+    const saved = await (await req(`/admin/events/${d}/?tab=post&notice=report`, { cookie: admin.cookie })).text();
+    assert.ok(saved.includes("Report saved. The event is marked Reported."), "the notice says Reported");
+    assert.match(saved, /class="badge reported"[^>]*>\s*Reported\s*</, "the badge says Reported");
+    assert.ok(!/\bHeld\b/.test(saved), "no Held status on the page");
+    const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
+    const listRow = list.match(new RegExp(`<tr[^>]*>\\s*<td[^>]*><a href="/admin/events/${d}/"[\\s\\S]*?</tr>`))?.[0] ?? "";
+    assert.match(listRow, /<td[^>]*>Reported<\/td>/, "the events list says Reported");
 
     // #53: the Event Report records the Attendee count; the Check-in count sits beside it, not attendance.
     const page = await (await req(`/admin/events/${d}/?tab=post`, { cookie: admin.cookie })).text();
@@ -627,7 +642,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
 
     const cancel = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", status: "cancelled", cancelReason: "weather" } });
     assert.equal(cancel.status, 409);
-    assert.match(await cancel.text(), /so it was held and can(&#39;|')t be cancelled/);
+    assert.match(await cancel.text(), /so it is Reported and can(&#39;|')t be cancelled/);
   });
 
   // #35: Status and Location are dropdowns; the "Other" text boxes show only when Other is chosen.
@@ -679,7 +694,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const d = pastDate();
     const blank = detailsForm(await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text());
     assert.deepEqual(options(blank, "status").map((o) => [o.value, o.label]),
-      [["scheduled", "Scheduled"], ["held", "Held"], ["cancelled", "Cancelled"]]);
+      [["scheduled", "Scheduled"], ["reported", "Reported"], ["cancelled", "Cancelled"]]);
     assert.deepEqual(options(blank, "location").map((o) => [o.value, o.label]),
       [["", "Not set"], ["lobby", "Lobby"], ["food_hall", "Food hall"], ["other", "Other"]]);
     assert.deepEqual([chosen(blank, "status"), chosen(blank, "location")], [["scheduled"], [""]]);
@@ -690,26 +705,26 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     }
 
     await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "save", status: "held", location: "other", locationOther: "Rooftop" } });
-    const held = detailsForm(await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text());
-    assert.deepEqual([chosen(held, "status"), chosen(held, "location")], [["held"], ["other"]]);
-    assert.match(held, /name="locationOther"[^>]*value="Rooftop"/);
+      form: { action: "save", status: "reported", location: "other", locationOther: "Rooftop" } });
+    const reported = detailsForm(await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text());
+    assert.deepEqual([chosen(reported, "status"), chosen(reported, "location")], [["reported"], ["other"]]);
+    assert.match(reported, /name="locationOther"[^>]*value="Rooftop"/);
   });
 
   test("a refused save re-fills the dropdowns with what was posted; Other's text is checked as before", async () => {
     const d = pastDate();
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "save", status: "held", location: "other", locationOther: "  " } });
+      form: { action: "save", status: "reported", location: "other", locationOther: "  " } });
     assert.equal(bad.status, 400);
     const form = detailsForm(await bad.text());
-    assert.deepEqual([chosen(form, "status"), chosen(form, "location")], [["held"], ["other"]]);
+    assert.deepEqual([chosen(form, "status"), chosen(form, "location")], [["reported"], ["other"]]);
     const other = form.match(/<div class="location-other"[^>]*>[\s\S]*?<\/div>/)?.[0] ?? "";
     assert.match(other, /name="locationOther"[^>]*aria-invalid="true"/);
     assert.match(other, /<p class="error" role="alert"[^>]*>[^<]+<\/p>/, "the message sits next to the Other text box");
     assert.equal(await eventRow(d), null);
 
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "save", status: "held", location: "food_hall", locationOther: "left over" } });
+      form: { action: "save", status: "reported", location: "food_hall", locationOther: "left over" } });
     assert.equal(ok.status, 303);
     assert.deepEqual([(await eventRow(d)).location, (await eventRow(d)).location_other], ["food_hall", null], "text with a non-Other choice is dropped");
   });
@@ -738,7 +753,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     const d = pastDate();
     const save = (form) => req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", ...form } });
     for (const [form, status] of [
-      [{ status: "held", location: "lobby" }, "held"],
+      [{ status: "reported", location: "lobby" }, "reported"],
       [{ status: "cancelled", location: "lobby", cancelReason: "other", cancelReasonOther: "Parade" }, "cancelled"],
       [{ status: "scheduled", location: "lobby", cancelReason: "other", cancelReasonOther: "Parade" }, "scheduled"],
     ]) {
