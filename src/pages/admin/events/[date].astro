@@ -204,7 +204,7 @@ const det = from("save") ?? {
 };
 const r = event.report;
 const rep = from("report") ?? {
-  givesAsksCount: r?.givesAsksCount == null ? "" : String(r.givesAsksCount),
+  attendeeCount: r?.attendeeCount == null ? "" : String(r.attendeeCount),
   notes: r?.notes ?? "",
   blingGiven: r?.blingGiven == null ? "" : r.blingGiven ? "yes" : "no",
   blingDetails: r?.blingDetails ?? "",
@@ -421,17 +421,17 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
         : (
           <form method="post" class="narrow">
             <input type="hidden" name="action" value="report">
-            <label for="givesAsksCount">People counted at Gives and Asks</label>
+            <label for="attendeeCount">Attendee count</label>
             <div class="count-row">
-              <input id="givesAsksCount" name="givesAsksCount" type="number" inputmode="numeric" min="0" max={LIMITS.givesAsks} step="1"
-                required value={rep.givesAsksCount} aria-invalid={repErr.givesAsksCount ? "true" : undefined} aria-describedby="checkin-note">
+              <input id="attendeeCount" name="attendeeCount" type="number" inputmode="numeric" min="0" max={LIMITS.attendeeCount} step="1"
+                required value={rep.attendeeCount} aria-invalid={repErr.attendeeCount ? "true" : undefined} aria-describedby="checkin-note">
               <p id="checkin-note" class="checkins">
-                <strong>{event.checkinCount}</strong> checked in on the form
-                <span class="muted">(not attendance: not everyone checks in; test check-ins left out)</span>
+                Check-in count (not attendance): <strong>{event.checkinCount}</strong>
+                <span class="muted">(not everyone checks in; test check-ins left out)</span>
                 {event.checkinCount > 0 && <> · <a href={`/admin/checkins/?date=${date}`}>who</a></>}
               </p>
             </div>
-            {repErr.givesAsksCount && <p class="error" role="alert">{repErr.givesAsksCount}</p>}
+            {repErr.attendeeCount && <p class="error" role="alert">{repErr.attendeeCount}</p>}
 
             <fieldset>
               <legend>Bring a Friend Bling given out?</legend>
