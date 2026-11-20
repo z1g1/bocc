@@ -2,7 +2,7 @@
 // The "Social plan" section of /admin/events/YYYY-MM-DD (the Social plan tab; ADR 0011;
 // plan Phase 5; words: GLOSSARY.md). Admin only: anyone else gets nothing rendered (the
 // social role reads the work order on its own pages). The page handles the POSTs
-// (actions social_plan, social_video, social_cover, social_media_post;
+// (actions social_plan, social_video, social_thumbnail, social_media_post;
 // src/lib/admin/social-plan.mjs) and passes back what was posted and the errors on a
 // refused save:
 //   <SocialPlan date="2026-11-24" order={workOrder} posted={posted} errors={errors} />
@@ -12,10 +12,11 @@
 //   and the upload form. /js/admin-video.js PUTs the file to the private bucket and
 //   then submits the hidden "attach" form. Delete buttons POST to
 //   /api/admin/media/{id}/delete (it also clears the video from the plan).
-// - Cover image (#social-cover, ticket #22): the promo video's cover, the Event Image
-//   unless overridden with a publicly usable Photo from Event (social-plan.mjs
-//   listCoverChoices; action social_cover, mediaId "" = back to the Event Image).
-// - The plan form: base caption, TikTok's extra hashtags, thumbnail timecode, publish time
+// - Thumbnail (#social-thumbnail, tickets #22, #57): the promo video's Thumbnail, the Event
+//   Image unless overridden with a publicly usable Photo from Event (social-plan.mjs
+//   listThumbnailChoices; action social_thumbnail, mediaId "" = back to the Event Image).
+//   Not to be confused with `thumb`, the small preview copy every photo has (thumb_key).
+// - The plan form: base caption, TikTok's extra hashtags, Thumbnail timecode, publish time
 //   (an Eastern datetime-local; shown in Eastern and UTC), and the Plan status dropdown
 //   (ticket #39: To do / Ready for Posting / Posted / Error, rules.PLAN_STATUSES;
 //   Posted and Error are also set by the social role's social media post updates).
@@ -53,25 +54,26 @@ if (allowed && storage) {
 }
 const others = videos.ready.filter((m: any) => m.id !== current?.id);
 
-// Cover image (ticket #22): order.cover is resolveSocialCover() (social-plan-rules.mjs).
-const cover = order.cover;
+// Thumbnail (tickets #22, #57): order.thumbnail is resolveThumbnail() (social-plan-rules.mjs);
+// its preview is the small `thumb` copy of that image.
+const thumbnail = order.thumbnail;
 const signThumb = (f: any) => ("path" in f ? f.path : storage ? storage.presignGet({ key: f.key }).url : null);
-const coverPreview = allowed && cover ? signThumb(cover.thumb) : null;
+const thumbnailPreview = allowed && thumbnail ? signThumb(thumbnail.thumb) : null;
 const EVENT_IMAGE_LABEL: Record<string, string> = {
   default: "Event Image (the BOCC logo)",
   uploaded: "Event Image (uploaded)",
   referenced: "Event Image (a Photo from Event)",
 };
-const coverLabel = !cover ? "" : cover.source === "override"
-  ? `Photo from Event (${cover.eventDate})`
-  : EVENT_IMAGE_LABEL[cover.eventImageSource] ?? "Event Image";
-let coverChoices: any[] = [];
+const thumbnailLabel = !thumbnail ? "" : thumbnail.source === "override"
+  ? `Photo from Event (${thumbnail.eventDate})`
+  : EVENT_IMAGE_LABEL[thumbnail.eventImageSource] ?? "Event Image";
+let thumbnailChoices: any[] = [];
 if (allowed && storage) {
-  const { listCoverChoices } = await import("../../lib/admin/social-plan.mjs");
+  const { listThumbnailChoices } = await import("../../lib/admin/social-plan.mjs");
   const { pool } = await import("../../lib/admin/db.mjs");
-  coverChoices = (await listCoverChoices(pool, date)).map((p: any) => ({ ...p, thumbUrl: storage.presignGet({ key: p.thumbKey }).url }));
+  thumbnailChoices = (await listThumbnailChoices(pool, date)).map((p: any) => ({ ...p, thumbUrl: storage.presignGet({ key: p.thumbKey }).url }));
 }
-const coverErr = posted?.action === "social_cover" ? errors : {};
+const thumbnailErr = posted?.action === "social_thumbnail" ? errors : {};
 const stale = videos.pending.filter((m: any) => m.stale);
 
 const from = (action: string) => (posted?.action === action ? posted.values : null);
@@ -79,7 +81,7 @@ const errFor = (action: string) => (posted?.action === action ? errors : {});
 const pv = from("social_plan") ?? {
   baseCaption: order.baseCaption ?? "",
   extraHashtags: order.extraHashtags.join(" "),
-  coverNote: order.coverNote ?? "",
+  thumbnailTimecode: order.thumbnailTimecode ?? "",
   publishAt: order.publishAtDisplay.local,
   status: order.status,
 };
@@ -200,46 +202,46 @@ const fmtTime = (d: Date) =>
       </>
     )}
 
-    <div id="social-cover" class="cover-block">
-      <h3 id="h-social-cover">Cover image</h3>
+    <div id="social-thumbnail" class="thumbnail-block">
+      <h3 id="h-social-thumbnail">Thumbnail</h3>
       <p class="muted">
-        The video's cover image on the platforms that support this feature
+        The video's Thumbnail on the platforms that let you upload one: the Event Image, or a Photo from Event chosen here
       </p>
-      {coverErr.cover && <p class="error" role="alert">{coverErr.cover}</p>}
-      {cover && (
-        <div class="cover-current">
-          {coverPreview
-            ? <img src={coverPreview} alt="" width="160" height="160" loading="lazy">
+      {thumbnailErr.thumbnail && <p class="error" role="alert">{thumbnailErr.thumbnail}</p>}
+      {thumbnail && (
+        <div class="thumbnail-current">
+          {thumbnailPreview
+            ? <img src={thumbnailPreview} alt="" width="160" height="160" loading="lazy">
             : <p class="muted" data-media-off>{STORAGE_OFF_MESSAGE}</p>}
-          <p>Cover: <strong>{coverLabel}</strong></p>
-          {cover.source === "override" && (
+          <p>Thumbnail: <strong>{thumbnailLabel}</strong></p>
+          {thumbnail.source === "override" && (
             <form method="post" class="inline">
-              <input type="hidden" name="action" value="social_cover">
+              <input type="hidden" name="action" value="social_thumbnail">
               <input type="hidden" name="mediaId" value="">
               <button type="submit" class="small secondary">Use the Event Image</button>
             </form>
           )}
         </div>
       )}
-      {storage && coverChoices.length > 0 && (
+      {storage && thumbnailChoices.length > 0 && (
         <details>
           <summary>Choose a Photo from Event</summary>
-          <ul class="plain cover-choices">
-            {coverChoices.map((p: any) => (
+          <ul class="plain thumbnail-choices">
+            {thumbnailChoices.map((p: any) => (
               <li>
                 <img src={p.thumbUrl} alt="" width="96" height="96" loading="lazy">
                 <span class="muted">{p.eventDate}</span>
                 <form method="post" class="inline">
-                  <input type="hidden" name="action" value="social_cover">
+                  <input type="hidden" name="action" value="social_thumbnail">
                   <input type="hidden" name="mediaId" value={p.id}>
-                  <button type="submit" class="small" disabled={p.id === cover?.mediaId && cover?.source === "override" || undefined}>Use as cover</button>
+                  <button type="submit" class="small" disabled={p.id === thumbnail?.mediaId && thumbnail?.source === "override" || undefined}>Use as Thumbnail</button>
                 </form>
               </li>
             ))}
           </ul>
         </details>
       )}
-      {storage && coverChoices.length === 0 && (
+      {storage && thumbnailChoices.length === 0 && (
         <p class="muted">No publicly usable Photos from Event yet (upload them on the Post Event tab).</p>
       )}
     </div>
@@ -257,10 +259,10 @@ const fmtTime = (d: Date) =>
         placeholder="#SmallBusiness #Founders" aria-invalid={pe.extraHashtags ? "true" : undefined}>
       {pe.extraHashtags && <p class="error" role="alert">{pe.extraHashtags}</p>}
 
-      <label for="coverNote">Thumbnail timecode <span class="muted">(the frame of the video to use where a cover image can't be uploaded, for example "0:03")</span></label>
-      <textarea id="coverNote" name="coverNote" rows="2" maxlength={rules.LIMITS.coverNote}
-        aria-invalid={pe.coverNote ? "true" : undefined}>{pv.coverNote}</textarea>
-      {pe.coverNote && <p class="error" role="alert">{pe.coverNote}</p>}
+      <label for="thumbnailTimecode">Thumbnail timecode <span class="muted">(the frame of the video to use as the Thumbnail where a Thumbnail can't be uploaded, for example "0:03")</span></label>
+      <textarea id="thumbnailTimecode" name="thumbnailTimecode" rows="2" maxlength={rules.LIMITS.thumbnailTimecode}
+        aria-invalid={pe.thumbnailTimecode ? "true" : undefined}>{pv.thumbnailTimecode}</textarea>
+      {pe.thumbnailTimecode && <p class="error" role="alert">{pe.thumbnailTimecode}</p>}
 
       <label for="publishAt">Publish at, Eastern time <span class="muted">(blank = {rules.publishAtDefaultHint(date)})</span></label>
       <input id="publishAt" name="publishAt" type="datetime-local" step="60" value={pv.publishAt}
@@ -352,7 +354,7 @@ const fmtTime = (d: Date) =>
   .badge.failed { color: var(--err); border-color: var(--err); }
   .social input#extraHashtags { width: 100%; }
   details { margin-top: 0.5rem; }
-  .cover-current img, .cover-choices img { display: block; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
-  .cover-choices { display: flex; flex-wrap: wrap; gap: 0.75rem; }
-  .cover-choices li { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+  .thumbnail-current img, .thumbnail-choices img { display: block; object-fit: cover; border: 1px solid var(--line); border-radius: 4px; }
+  .thumbnail-choices { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+  .thumbnail-choices li { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
 </style>

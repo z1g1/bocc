@@ -149,7 +149,7 @@ describe("publish time", () => {
 describe("ready and the work order", () => {
   const video = { id: "v1", kind: "promo_video", status: "ready", contentType: "video/mp4", sizeBytes: 5_000_000 };
   const stored = (over = {}) => ({
-    videoMediaId: "v1", coverNote: "Frame at 0:03", baseCaption: "Coffee!", extraHashtags: ["#Founders"],
+    videoMediaId: "v1", thumbnailTimecode: "Frame at 0:03", baseCaption: "Coffee!", extraHashtags: ["#Founders"],
     publishAt: new Date("2026-11-23T12:00:00Z"), status: "ready",
     channels: Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, {
       caption: null, firstComment: null, status: "pending", postUrl: null, verifiedAt: null, commentPostedAt: null, notes: null,
@@ -191,7 +191,7 @@ describe("ready and the work order", () => {
   });
 });
 
-describe("the Social plan cover image", () => {
+describe("the Social plan Thumbnail", () => {
   const video = { id: "v1", kind: "promo_video", status: "ready", contentType: "video/mp4", sizeBytes: 5_000_000 };
   const uploaded = resolveEventImage({ uploaded: {
     id: "11111111-1111-4111-8111-111111111111", eventDate: "2026-11-24", kind: "event_image", status: "ready",
@@ -205,20 +205,20 @@ describe("the Social plan cover image", () => {
   };
 
   test("no override: the Event Image, which may be the logo default", () => {
-    const c = r.resolveSocialCover({ override: null, eventImage: DEFAULT_EVENT_IMAGE });
+    const c = r.resolveThumbnail({ override: null, eventImage: DEFAULT_EVENT_IMAGE });
     assert.deepEqual(c, {
       source: "event_image", eventImageSource: "default", mediaId: null, eventDate: null,
       file: { path: "/assets/images/brand/bocc-logo-square.png", contentType: "image/png", width: 2000, height: 2000 },
       thumb: { path: "/assets/images/brand/bocc-logo-square.png", contentType: "image/png", width: 2000, height: 2000 },
     });
-    const u = r.resolveSocialCover({ override: null, eventImage: uploaded });
+    const u = r.resolveThumbnail({ override: null, eventImage: uploaded });
     assert.deepEqual([u.source, u.eventImageSource, u.mediaId, u.file, u.thumb], ["event_image", "uploaded",
       "11111111-1111-4111-8111-111111111111", { key: "events/2026-11-24/1111/display.jpg", contentType: "image/jpeg" },
       { key: "events/2026-11-24/1111/thumb.jpg", contentType: "image/jpeg" }]);
   });
 
   test("an override: that photo's display copy", () => {
-    const c = r.resolveSocialCover({ override: photo, eventImage: uploaded });
+    const c = r.resolveThumbnail({ override: photo, eventImage: uploaded });
     assert.deepEqual(c, {
       source: "override", eventImageSource: null, mediaId: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17",
       file: { key: "events/2026-11-17/2222/display.jpg", contentType: "image/jpeg" },
@@ -228,21 +228,21 @@ describe("the Social plan cover image", () => {
 
   test("an override that can't be used (not ready, not publicly usable, not a photo) falls back to the Event Image", () => {
     for (const bad of [{ status: "pending" }, { publiclyUsable: false }, { kind: "signin_board" }]) {
-      assert.equal(r.resolveSocialCover({ override: { ...photo, ...bad }, eventImage: uploaded }).source, "event_image");
+      assert.equal(r.resolveThumbnail({ override: { ...photo, ...bad }, eventImage: uploaded }).source, "event_image");
     }
   });
 
-  test("the work order carries the cover; the cover never changes what blocks ready", () => {
+  test("the work order carries the Thumbnail; the Thumbnail never changes what blocks ready", () => {
     const post = {
-      videoMediaId: "v1", coverMediaId: photo.id, coverNote: null, baseCaption: "Coffee!", extraHashtags: [],
+      videoMediaId: "v1", thumbnailMediaId: photo.id, thumbnailTimecode: null, baseCaption: "Coffee!", extraHashtags: [],
       publishAt: new Date("2026-11-23T12:00:00Z"), status: "ready", channels: {},
     };
     const base = { date: "2026-11-24", event: { status: "scheduled" }, post, lumaUrl: LUMA, video };
-    const w = r.buildWorkOrder({ ...base, coverMedia: photo, eventImage: uploaded });
-    assert.equal(w.cover.source, "override");
+    const w = r.buildWorkOrder({ ...base, thumbnailMedia: photo, eventImage: uploaded });
+    assert.equal(w.thumbnail.source, "override");
     assert.deepEqual([w.problems, w.actionable], [[], true]);
-    const d = r.buildWorkOrder({ ...base, coverMedia: null, eventImage: DEFAULT_EVENT_IMAGE });
-    assert.equal(d.cover.eventImageSource, "default");
+    const d = r.buildWorkOrder({ ...base, thumbnailMedia: null, eventImage: DEFAULT_EVENT_IMAGE });
+    assert.equal(d.thumbnail.eventImageSource, "default");
     assert.deepEqual(r.buildWorkOrder({ ...base, video: null, eventImage: uploaded }).problems.map((p) => p.key), ["video"]);
   });
 });
@@ -250,7 +250,7 @@ describe("the Social plan cover image", () => {
 describe("the post status (ticket #39)", () => {
   const video = { id: "v1", kind: "promo_video", status: "ready", contentType: "video/mp4", sizeBytes: 5_000_000 };
   const stored = (status, statuses = {}) => ({
-    videoMediaId: "v1", coverNote: null, baseCaption: "Coffee!", extraHashtags: [],
+    videoMediaId: "v1", thumbnailTimecode: null, baseCaption: "Coffee!", extraHashtags: [],
     publishAt: new Date("2026-11-23T12:00:00Z"), status,
     channels: Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, {
       caption: null, firstComment: null, status: statuses[c] ?? "pending", postUrl: null, verifiedAt: null, commentPostedAt: null, notes: null,

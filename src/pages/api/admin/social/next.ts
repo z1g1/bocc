@@ -2,12 +2,12 @@
 // decision 4). Admin and social.
 //   200 { state: "ready", order: { date, status (the Plan status: todo|ready|posted|error), statusLabel,
 //         ready (Ready for Posting or Error: offered), actionable, problems[], publishAt (ISO),
-//         publishAtEastern, publishAtUtc, coverNote, lumaUrl, channels: [{ channel,
+//         publishAtEastern, publishAtUtc, thumbnailTimecode, lumaUrl, channels: [{ channel,
 //         label, status (the Post status), postUrl, verifiedAt, commentPostedAt, notes, caption,
 //         firstComment, captionLength, captionLimit }] },
 //         video: { fileName, downloadUrl, expiresAt, contentType, sizeBytes } | { unavailable } | null,
-//         cover: { source: "event_image" | "override", eventImageSource, fileName, downloadUrl,
-//                  expiresAt (null for the logo default, a link on this site), contentType } | { unavailable } | null }
+//         thumbnail: { source: "event_image" | "override", eventImageSource, fileName, downloadUrl,
+//                      expiresAt (null for the logo default, a link on this site), contentType } | { unavailable } | null }
 //   200 { state: "nothing", reason: "no_post" (no Social plan) | "not_ready" | "problems",
 //         message, date, problems[], upcoming[{ date, status, statusLabel, pendingChannels }] }
 //         about the EARLIEST upcoming week that still has work (findNext): a later

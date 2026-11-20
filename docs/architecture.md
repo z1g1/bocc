@@ -130,7 +130,7 @@ Source of truth: `backend/db/migrations/*.sql`.
 Unique index `checkins_dedup_key` on `(attendee_id, event_id, coalesce(token,''), checkin_date)`.
 
 ### Postgres views
-- `held_occurrences`: the weeks each event actually met (≥1 non-debug check-in)
+- `held_occurrences`: the Held weeks per event: ≥1 non-debug check-in or, for `bocc`, a Reported Event, and never a Cancelled Event (migration `20261203190000_held_from_events.sql`)
 - `streaks`: `current_streak`, `longest_streak`, `is_personal_best` per (attendee, event), via gaps-and-islands ([ADR-0004](adr/0004-streak-computation-model.md))
 
 ### Airtable archive
