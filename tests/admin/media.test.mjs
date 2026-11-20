@@ -98,7 +98,7 @@ describe("upload validation", () => {
 
   test("a good request passes", () => {
     assert.equal(v({}).ok, true);
-    assert.equal(v({ kind: "social_photo", publiclyUsable: true, original: { contentType: "image/png", size: 5 } }).ok, true);
+    assert.equal(v({ kind: "event_photo", publiclyUsable: true, original: { contentType: "image/png", size: 5 } }).ok, true);
   });
   test("bad dates", () => {
     for (const eventDate of ["2026-02-30", "11/24/2026", "", null, "2023-12-31", "2027-11-19"]) {
@@ -136,11 +136,18 @@ describe("upload validation", () => {
   });
   test("publicly_usable comes from the kind, whatever the client sends (ADR 0010 decision 2)", () => {
     const pu = (over) => { const r = v(over); assert.equal(r.ok, true, JSON.stringify(over)); return r.values.publiclyUsable; };
-    assert.equal(pu({ kind: "social_photo" }), true);
-    assert.equal(pu({ kind: "social_photo", publiclyUsable: false }), true);
-    assert.equal(pu({ kind: "social_photo", publiclyUsable: "no" }), true);
+    assert.equal(pu({ kind: "event_photo" }), true);
+    assert.equal(pu({ kind: "event_photo", publiclyUsable: false }), true);
+    assert.equal(pu({ kind: "event_photo", publiclyUsable: "no" }), true);
     assert.equal(pu({ kind: "signin_board" }), false);
     assert.equal(pu({ kind: "signin_board", publiclyUsable: true }), false);
+  });
+  test("a stale tab's old kind 'social_photo' is accepted as event_photo (#54)", () => {
+    const r = v({ kind: "social_photo" });
+    assert.equal(r.ok, true);
+    assert.equal(r.values.kind, "event_photo");
+    assert.equal(r.values.publiclyUsable, true);
+    assert.doesNotMatch(errs({ kind: "photo" }), /social_photo/, "the old kind isn't advertised");
   });
   test("the browser's limits match the server's", () => {
     assert.equal(lib.MAX_ORIGINAL_BYTES, media.LIMITS.original);
@@ -224,7 +231,7 @@ describe("upload flow against MinIO", { skip }, () => {
     assert.equal(a.details.eventCreated, true);
     assert.deepEqual(a.details.signed.display, { contentType: "image/jpeg", size: DISPLAY.length });
 
-    const again = await media.startUpload(actor.id, storage(), body(date, { kind: "social_photo", publiclyUsable: true }));
+    const again = await media.startUpload(actor.id, storage(), body(date, { kind: "event_photo", publiclyUsable: true }));
     assert.equal(again.eventCreated, false, "second upload for the date reuses the event");
     for (const u of Object.values(again.uploads)) {
       assert.equal(u.method, "PUT");
@@ -303,15 +310,23 @@ describe("upload flow against MinIO", { skip }, () => {
     assert.match(logs[0], /still in the bucket: events\/.*original\.jpg/);
   });
 
-  test("a social photo is created publicly usable and a sign-in board photo never, whatever the client sends", async () => {
+  test("a Photo from Event is created publicly usable and a sign-in board photo never, whatever the client sends", async () => {
     const date = await freshDate();
-    const social = await media.startUpload(actor.id, storage(), body(date, { kind: "social_photo", publiclyUsable: false }));
+    const social = await media.startUpload(actor.id, storage(), body(date, { kind: "event_photo", publiclyUsable: false }));
     const board = await media.startUpload(actor.id, storage(), body(date, { publiclyUsable: true }));
     assert.equal((await row(social.id)).publicly_usable, true);
     assert.equal((await row(board.id)).publicly_usable, false);
     assert.equal((await audits(social.id))[0].details.publiclyUsable, true);
     assert.equal((await audits(board.id))[0].details.publiclyUsable, false);
     assert.equal(media.setPubliclyUsable, undefined, "no toggle");
+  });
+
+  test("a stale tab's old kind 'social_photo' is saved as a publicly usable event_photo", async () => {
+    const date = await freshDate();
+    const r = await media.startUpload(actor.id, storage(), body(date, { kind: "social_photo" }));
+    const saved = await row(r.id);
+    assert.deepEqual({ kind: saved.kind, pu: saved.publicly_usable }, { kind: "event_photo", pu: true });
+    assert.equal((await audits(r.id))[0].details.kind, "event_photo");
   });
 
   test("the database allows HEIC/HEIF originals for signin_board only (migration 20261119120000)", async () => {
@@ -330,7 +345,7 @@ describe("upload flow against MinIO", { skip }, () => {
       };
       await ins("signin_board", "image/heic", "heic");
       await ins("signin_board", "image/heif", "heif");
-      for (const [kind, type] of [["social_photo", "image/heic"], ["social_photo", "image/heif"], ["signin_board", "image/gif"],
+      for (const [kind, type] of [["event_photo", "image/heic"], ["event_photo", "image/heif"], ["signin_board", "image/gif"],
         ["promo_video", "image/heic"]]) {
         await admin.query("savepoint s");
         await assert.rejects(ins(kind, type, "heic"), /check constraint/, `${kind} ${type}`);
@@ -439,11 +454,11 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
 
   test("the full flow: upload, PUT to MinIO, complete, gallery, delete", async () => {
     const date = await freshDate();
-    const start = await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "social_photo" }) });
+    const start = await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "event_photo" }) });
     assert.equal(start.status, 201);
     const plan = await start.json();
     assert.equal(plan.eventCreated, true);
-    assert.equal((await row(plan.id)).publicly_usable, true, "social photos are always publicly usable");
+    assert.equal((await row(plan.id)).publicly_usable, true, "Photos from Event are always publicly usable");
 
     const early = await req(`/api/admin/media/${plan.id}/complete`, { cookie: admin.cookie, json: {} });
     assert.equal(early.status, 409);
@@ -476,7 +491,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     assert.match(socialSec, /<h2[^>]*>Photos from Event<\/h2>/);
     assert.match(signin, /data-media-upload[^>]*data-kind="signin_board"/);
     assert.match(signin, /<input type="hidden" name="kind" value="signin_board"/);
-    assert.match(socialSec, /<input type="hidden" name="kind" value="social_photo"/);
+    assert.match(socialSec, /<input type="hidden" name="kind" value="event_photo"/);
     assert.ok(!/<select[^>]*name="kind"/.test(page), "no kind dropdown");
     assert.ok(!page.includes("publiclyUsable"), "no public checkbox or toggle");
     assert.ok(!page.includes("OK to use publicly") && !page.includes("Not public"), "no public badge or button");
@@ -490,7 +505,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     // Headings and empty-state text only: the two intro sentences are gone (issue #37).
     assert.ok(!page.includes("Photos of the paper sign-in board"), "no sign-in board intro");
     assert.ok(!page.includes("They may or may not go on social"), "no Photos from Event intro");
-    assert.ok(socialSec.includes(`${plan.id}/thumb.jpg`), "the social photo is in the social gallery");
+    assert.ok(socialSec.includes(`${plan.id}/thumb.jpg`), "the Photo from Event is in its gallery");
     assert.ok(!signin.includes(plan.id), "and not in the sign-in board's");
     const thumb = page.match(new RegExp(`src="([^"]*/${plan.id}/thumb\\.jpg\\?[^"]*)"`));
     assert.ok(thumb, "thumbnail img");
@@ -575,7 +590,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
     const date = await freshDate();
     const probes = ["/admin/..//evil.example/x", "/admin/%2e%2e//evil.example", "//evil.example", "https://evil.example/"];
     for (const ret of probes) {
-      const plan = await (await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "social_photo" }) })).json();
+      const plan = await (await req("/api/admin/media/uploads", { cookie: admin.cookie, json: body(date, { kind: "event_photo" }) })).json();
       const del = await req(`/api/admin/media/${plan.id}/delete`, { cookie: admin.cookie, form: { return: ret } });
       assert.equal(del.status, 303);
       const loc = del.headers.get("location");
@@ -587,7 +602,7 @@ describe("media routes over HTTP", { skip, timeout: 300_000 }, () => {
   test("HEIC/HEIF are refused by the upload API (ADR 0010 decision 3), though the import may store them", async () => {
     const date = await freshDate();
     for (const contentType of ["image/heic", "image/heif"]) {
-      for (const kind of ["signin_board", "social_photo"]) {
+      for (const kind of ["signin_board", "event_photo"]) {
         const res = await req("/api/admin/media/uploads", {
           cookie: admin.cookie, json: body(date, { kind, original: { contentType, size: 1000 } }) });
         assert.equal(res.status, 400, `${kind} ${contentType}`);

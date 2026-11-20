@@ -31,7 +31,7 @@ const photo = (date, over = {}) => {
   const id = randomUUID();
   const base = `events/${date}/${id}`;
   return {
-    id, event_date: date, kind: "social_photo", original_key: `${base}/original.jpg`,
+    id, event_date: date, kind: "event_photo", original_key: `${base}/original.jpg`,
     display_key: `${base}/display.jpg`, thumb_key: `${base}/thumb.jpg`,
     content_type: "image/jpeg", size_bytes: 123456, publicly_usable: false, uploaded_by: userId, ...over,
   };
@@ -82,25 +82,25 @@ describe("admin_app on events, event_reports, event_media", () => {
       const d = testDate();
       await admin.query("insert into events (event_date, location) values ($1, 'lobby')", [d]);
       await admin.query(
-        `insert into event_reports (event_date, gives_asks_count, notes, bling_given, bling_details, submitted_by)
+        `insert into event_reports (event_date, attendee_count, notes, bling_given, bling_details, submitted_by)
          values ($1, 12, 'good one', true, 'mug', $2)`, [d, userId]);
       await admin.query("update events set status = 'reported' where event_date = $1", [d]);
-      await admin.query("update event_reports set gives_asks_count = 13 where event_date = $1", [d]);
+      await admin.query("update event_reports set attendee_count = 13 where event_date = $1", [d]);
       const { rows: [m] } = await insertMedia(admin, photo(d));
       assert.equal(m.status, "pending");
       await admin.query("update event_media set status = 'ready', publicly_usable = true where id = $1", [m.id]);
       const { rows } = await admin.query(
-        `select e.status, r.gives_asks_count, r.source, count(m.*)::int as media
+        `select e.status, r.attendee_count, r.source, count(m.*)::int as media
            from events e join event_reports r using (event_date) left join event_media m using (event_date)
           where e.event_date = $1 group by 1, 2, 3`, [d]);
-      assert.deepEqual(rows, [{ status: "reported", gives_asks_count: 13, source: "admin", media: 1 }]);
+      assert.deepEqual(rows, [{ status: "reported", attendee_count: 13, source: "admin", media: 1 }]);
     }));
 
   test("can delete only event_media; no TRUNCATE anywhere", () =>
     inRollback(admin, async () => {
       const d = testDate();
       await admin.query("insert into events (event_date) values ($1)", [d]);
-      await admin.query("insert into event_reports (event_date, gives_asks_count) values ($1, 1)", [d]);
+      await admin.query("insert into event_reports (event_date, attendee_count) values ($1, 1)", [d]);
       const { rows: [m] } = await insertMedia(admin, photo(d));
       await assertRefused(admin, "delete from event_reports where event_date = $1", [d]);
       await assertRefused(admin, "delete from events where event_date = $1", [d]);
@@ -177,17 +177,17 @@ describe("shape checks", () => {
     inRollback(admin, async () => {
       const ins = (cols, vals) => `insert into event_reports (event_date, ${cols}) values ($1, ${vals})`;
       const d = () => { const x = testDate(); return admin.query("insert into events (event_date) values ($1)", [x]).then(() => x); };
-      await assertRefused(admin, ins("gives_asks_count", "-1"), [await d()], CHECK);
+      await assertRefused(admin, ins("attendee_count", "-1"), [await d()], CHECK);
       await assertRefused(admin, ins("source", "'csv'"), [await d()], CHECK);
       await assertRefused(admin, ins("bling_given, bling_details", "false, 'mug'"), [await d()], CHECK);
-      await assertRefused(admin, ins("gives_asks_count", "1"), ["2099-12-30"], /foreign key/);
+      await assertRefused(admin, ins("attendee_count", "1"), ["2099-12-30"], /foreign key/);
       await assertRefused(admin, ins("submitted_by", "'no-such-user'"), [await d()], /foreign key/);
       // Imported rows: nothing recorded but the date, no submitter.
       await assertAllowed(admin, ins("source", "'pre_form'"), [await d()]);
-      await assertAllowed(admin, ins("source, gives_asks_count, bling_details", "'google_form', 0, 'mug'"), [await d()]);
+      await assertAllowed(admin, ins("source, attendee_count, bling_details", "'google_form', 0, 'mug'"), [await d()]);
     }));
 
-  test("event_media: variants per kind, content types, publicly_usable only on social photos", () =>
+  test("event_media: variants per kind, content types, publicly_usable only on Photos from Event", () =>
     inRollback(admin, async () => {
       const d = testDate();
       await admin.query("insert into events (event_date) values ($1)", [d]);
@@ -213,9 +213,9 @@ describe("shape checks", () => {
         original_key: `events/${d}/${randomUUID()}/original.mp4` }));
       const dup = photo(d);
       await insertMedia(admin, dup);
-      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ($1, 'social_photo', $2, 'a', 'b', 'image/jpeg', 1)",
+      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ($1, 'event_photo', $2, 'a', 'b', 'image/jpeg', 1)",
         [d, dup.original_key], /duplicate key/);
-      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ('2099-12-30', 'social_photo', 'x', 'y', 'z', 'image/jpeg', 1)",
+      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ('2099-12-30', 'event_photo', 'x', 'y', 'z', 'image/jpeg', 1)",
         [], /foreign key/);
     }));
 
@@ -225,7 +225,7 @@ describe("shape checks", () => {
       const u = unique("gone-user");
       await owner.query(`insert into auth."user" (id, name, email, "emailVerified") values ($1, 'G', $2, false)`, [u, `${u}@example.com`]);
       await owner.query("insert into events (event_date) values ($1)", [d]);
-      await owner.query("insert into event_reports (event_date, gives_asks_count, submitted_by) values ($1, 3, $2)", [d, u]);
+      await owner.query("insert into event_reports (event_date, attendee_count, submitted_by) values ($1, 3, $2)", [d, u]);
       await insertMedia(owner, photo(d, { uploaded_by: u }));
       await owner.query(`delete from auth."user" where id = $1`, [u]);
       const { rows } = await owner.query(
@@ -239,9 +239,12 @@ describe("migration 20261120120000 (social photos publicly usable)", () => {
     const { readFileSync } = await import("node:fs");
     const sql = readFileSync(new URL("../../backend/db/migrations/20261120120000_social_photos_publicly_usable.sql", import.meta.url), "utf8");
     await inRollback(owner, async () => {
+      // It ran on 'social_photo' rows, before migration 20261203150000 renamed the kind:
+      // set that trigger aside (rolled back) so old-valued rows can be made.
+      await owner.query("alter table event_media disable trigger event_media_event_photo_compat");
       const d = testDate();
       await owner.query("insert into events (event_date) values ($1)", [d]);
-      const social = photo(d, { publicly_usable: false });
+      const social = photo(d, { kind: "social_photo", publicly_usable: false });
       const board = photo(d, { kind: "signin_board", publicly_usable: false });
       await insertMedia(owner, social);
       await insertMedia(owner, board);

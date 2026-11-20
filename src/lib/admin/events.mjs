@@ -62,7 +62,7 @@ export const LIMITS = Object.freeze({
   cancelReasonOther: 500,
   notes: 4000,
   blingDetails: 1000,
-  givesAsks: 10000,
+  attendeeCount: 10000,
 });
 
 export class ValidationError extends Error {
@@ -121,7 +121,7 @@ const EVENT_COLUMNS = `
 
 const REPORT_COLUMNS = `
   r.event_date is not null as "hasReport",
-  r.gives_asks_count      as "givesAsksCount",
+  r.attendee_count      as "attendeeCount",
   r.notes,
   r.bling_given           as "blingGiven",
   r.bling_details         as "blingDetails",
@@ -163,11 +163,11 @@ export async function getEvent(db, date) {
 }
 
 function shape(row) {
-  const { hasReport, givesAsksCount, notes, blingGiven, blingDetails, reportSource, reportUpdatedAt, reportBy, ...event } = row;
+  const { hasReport, attendeeCount, notes, blingGiven, blingDetails, reportSource, reportUpdatedAt, reportBy, ...event } = row;
   return {
     ...event,
     report: hasReport
-      ? { givesAsksCount, notes, blingGiven, blingDetails, source: reportSource, updatedAt: reportUpdatedAt, by: reportBy ?? null }
+      ? { attendeeCount, notes, blingGiven, blingDetails, source: reportSource, updatedAt: reportUpdatedAt, by: reportBy ?? null }
       : null,
   };
 }
@@ -274,17 +274,17 @@ function validateCancel(input, errors) {
 }
 
 /**
- * Admin report: Gives and Asks count and Bling given are required (the database allows
+ * Admin report: Attendee count and Bling given are required (the database allows
  * NULL only for old imported rows). Bling details only when Bling was given.
  */
 export function validateReportInput(input) {
   const errors = {};
-  const rawCount = str(input?.givesAsksCount).trim();
-  let givesAsksCount = null;
-  if (rawCount === "") errors.givesAsksCount = "Enter how many people were counted at Gives and Asks.";
-  else if (!/^\d{1,6}$/.test(rawCount) || Number(rawCount) > LIMITS.givesAsks) {
-    errors.givesAsksCount = "Enter a whole number (0 or more).";
-  } else givesAsksCount = Number(rawCount);
+  const rawCount = str(input?.attendeeCount).trim();
+  let attendeeCount = null;
+  if (rawCount === "") errors.attendeeCount = "Enter the Attendee count: how many people were in the room.";
+  else if (!/^\d{1,6}$/.test(rawCount) || Number(rawCount) > LIMITS.attendeeCount) {
+    errors.attendeeCount = "Enter a whole number (0 or more).";
+  } else attendeeCount = Number(rawCount);
 
   const rawBling = str(input?.blingGiven).trim().toLowerCase();
   let blingGiven = null;
@@ -304,7 +304,7 @@ export function validateReportInput(input) {
   if (blingGiven !== true) blingDetails = null;
 
   if (Object.keys(errors).length) throw new ValidationError(errors);
-  return { givesAsksCount, notes, blingGiven, blingDetails };
+  return { attendeeCount, notes, blingGiven, blingDetails };
 }
 
 /** The date in the URL must be a real ISO date; reports also refuse future dates. */
@@ -423,21 +423,21 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
       throw new ConflictError({ date: "This event is cancelled. Set its status to Reported (Event Info tab) before filing a report." });
     }
     const { rows } = await client.query(
-      `select gives_asks_count, notes, bling_given, bling_details, source, submitted_by
+      `select attendee_count, notes, bling_given, bling_details, source, submitted_by
          from public.event_reports where event_date = $1::date for update`, [date]);
     const existing = rows[0] ?? null;
     const after = {
-      gives_asks_count: v.givesAsksCount, notes: v.notes, bling_given: v.blingGiven, bling_details: v.blingDetails,
+      attendee_count: v.attendeeCount, notes: v.notes, bling_given: v.blingGiven, bling_details: v.blingDetails,
     };
     if (existing) {
       const d = diff(existing, { ...after, source: "admin" });
       if (d.changed.length === 0 && row.status === "reported") throw NOOP;
       await client.query(
         `update public.event_reports
-            set gives_asks_count = $2, notes = $3, bling_given = $4, bling_details = $5,
+            set attendee_count = $2, notes = $3, bling_given = $4, bling_details = $5,
                 source = 'admin', submitted_by = $6
           where event_date = $1::date`,
-        [date, v.givesAsksCount, v.notes, v.blingGiven, v.blingDetails, actorUserId]);
+        [date, v.attendeeCount, v.notes, v.blingGiven, v.blingDetails, actorUserId]);
       await setReported(client, date, row.status);
       return {
         action: "event_report.update",
@@ -446,9 +446,9 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
     }
     await client.query(
       `insert into public.event_reports
-         (event_date, gives_asks_count, notes, bling_given, bling_details, submitted_by, source)
+         (event_date, attendee_count, notes, bling_given, bling_details, submitted_by, source)
        values ($1::date, $2, $3, $4, $5, $6, 'admin')`,
-      [date, v.givesAsksCount, v.notes, v.blingGiven, v.blingDetails, actorUserId]);
+      [date, v.attendeeCount, v.notes, v.blingGiven, v.blingDetails, actorUserId]);
     await setReported(client, date, row.status);
     return {
       action: "event_report.submit",

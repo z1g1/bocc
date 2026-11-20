@@ -66,6 +66,8 @@ async function rebuildPreMigrationSchema(db) {
     drop function event_reports_glossary_compat();
     alter table event_reports drop column gives_asks_count;
     alter table event_reports rename column attendee_count to gives_asks_count;
+    drop trigger event_media_event_photo_compat on event_media;  -- migration 20261203150000 (#54)
+    drop function event_media_event_photo_compat();
     drop trigger event_media_glossary_compat on event_media;
     drop function event_media_glossary_compat();
     alter table event_media drop column cover_key, drop column cover_outdated;
@@ -229,12 +231,15 @@ describe("compatibility: the code live before the deploy keeps working", () => {
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
         [id, d, "social_photo", k.original, k.display, k.thumb, null, "image/jpeg", 1000, true, actor.id]);
       await admin.query("update public.event_media set status = 'ready' where id = $1 and status = 'pending'", [id]);
-      await admin.query(
-        "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, k.cover]);
+      // Since migration 20261203150000 (#54) the old kind is written as 'event_photo', so the
+      // old code's filter on 'social_photo' matches nothing until the new code deploys.
+      assert.equal((await admin.query(
+        "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, k.cover])).rowCount, 0);
+      await admin.query("update public.event_media set cover_key = $2 where id = $1 and cover_key is null", [id, k.cover]);
       await admin.query("update public.event_media set cover_outdated = true where id = $1", [id]);
       const { rows: [m] } = await admin.query(
         `select kind, cover_key, cover_outdated, image_16x9_key, image_16x9_outdated, publicly_usable from public.event_media where id = $1`, [id]);
-      assert.deepEqual(m, { kind: "social_photo", cover_key: k.cover, cover_outdated: true, image_16x9_key: k.cover, image_16x9_outdated: true, publicly_usable: true });
+      assert.deepEqual(m, { kind: "event_photo", cover_key: k.cover, cover_outdated: true, image_16x9_key: k.cover, image_16x9_outdated: true, publicly_usable: true });
       await admin.query("update public.event_media set cover_outdated = false where id = $1 and cover_key = $2 and cover_outdated", [id, k.cover]);
       assert.equal((await admin.query(`select image_16x9_outdated as o from event_media where id = $1`, [id])).rows[0].o, false);
       await admin.query("update event_media set image_16x9_key = null where id = $1", [id]);

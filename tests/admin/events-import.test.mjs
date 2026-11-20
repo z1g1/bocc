@@ -76,7 +76,7 @@ describe("CSV parser and date rules", () => {
     assert.deepEqual(Object.keys(by), ["2081-01-07", "2081-01-14", "2081-01-21", "2081-01-28", "2081-02-04", "2081-02-11", "2081-02-18"]);
     assert.deepEqual(items.map((i) => i.source), ["google_form", "google_form", "google_form", "google_form", "pre_form", "pre_form", "pre_form"]);
     assert.deepEqual(by["2081-01-14"].report, {
-      givesAsksCount: 31, blingGiven: true, blingDetails: "Cecelia, Muhammed",
+      attendeeCount: 31, blingGiven: true, blingDetails: "Cecelia, Muhammed",
       notes: 'Busy, "great" day\nSecond line\n\nCoffee ran out',
     });
     assert.equal(by["2081-01-14"].location, "food_hall");
@@ -84,7 +84,7 @@ describe("CSV parser and date rules", () => {
       ["cancelled", { reason: "weather", reasonOther: null, announced: true }, undefined]);
     assert.deepEqual([by["2081-01-28"].location, by["2081-01-28"].locationOther], ["other", "Rooftop patio"]);
     // Names in the "who" column mean Bling was given, whatever the Yes/No answer says.
-    assert.deepEqual(by["2081-02-04"].report, { givesAsksCount: 0, blingGiven: true, blingDetails: "Someone", notes: null });
+    assert.deepEqual(by["2081-02-04"].report, { attendeeCount: 0, blingGiven: true, blingDetails: "Someone", notes: null });
     assert.equal(by["2081-02-04"].fix, "Bling inferred from details (answer was No)");
     assert.deepEqual([by["2081-02-11"].report.blingGiven, by["2081-02-11"].report.blingDetails], [true, "Pat brought Sam"]);
     assert.deepEqual([by["2081-02-18"].report.blingGiven, by["2081-02-18"].location], [null, null]);
@@ -149,7 +149,7 @@ describe("import script against the database", () => {
   const snapshot = async () => {
     const e = await owner.query(`select event_date::text, status, location, location_other, cancel_reason, cancel_announced, updated_at
                                    from events where event_date = any($1::date[]) order by 1`, [DATES]);
-    const r = await owner.query(`select event_date::text, gives_asks_count, notes, bling_given, bling_details, source, submitted_by, updated_at
+    const r = await owner.query(`select event_date::text, attendee_count, notes, bling_given, bling_details, source, submitted_by, updated_at
                                    from event_reports where event_date = any($1::date[]) order by 1`, [DATES]);
     return { events: e.rows, reports: r.rows };
   };
@@ -161,7 +161,7 @@ describe("import script against the database", () => {
     dir = mkdtempSync(join(tmpdir(), "bocc-import-test-"));
     // An admin already filed 2081-02-18 by hand: the import must leave it alone.
     await owner.query(`insert into events (event_date, status, location) values ('2081-02-18', 'reported', 'lobby')`);
-    await owner.query(`insert into event_reports (event_date, gives_asks_count, bling_given, source) values ('2081-02-18', 99, false, 'admin')`);
+    await owner.query(`insert into event_reports (event_date, attendee_count, bling_given, source) values ('2081-02-18', 99, false, 'admin')`);
   });
   after(async () => {
     rmSync(dir, { recursive: true, force: true });
@@ -184,7 +184,7 @@ describe("import script against the database", () => {
     assert.match(r.out, /^row\s+date\s+source\s+count\s+bling\s+location\s+cancel reason\s+action\s+fix/m);
     assert.match(r.out, /\[dry-run\] would create 6, would update 0, unchanged 0, skipped 1/);
     assert.match(r.out, /2081-02-18\s+pre_form\s+33\s+skip \(admin report\)/);
-    assert.match(r.out, /zero at Gives and Asks \(imported as is\): 2081-02-04 \(row 6\)/);
+    assert.match(r.out, /Attendee count of zero \(imported as is\): 2081-02-04 \(row 6\)/);
     assert.match(r.out, /FIX\s+row 3: 1\/14\/0081 → 2081-01-14/);
     assert.match(r.out, /2081-01-21\s+google_form\s+CANCELLED\s+lobby\s+weather ← "Snow storm"\s+create/);
     assert.match(r.out, /FIX\s+row 6 \(2081-02-04\): Bling inferred from details/);
@@ -208,9 +208,9 @@ describe("import script against the database", () => {
     assert.deepEqual([ev["2081-01-28"].location, ev["2081-01-28"].location_other], ["other", "Rooftop patio"]);
     assert.deepEqual([rep["2081-01-14"].source, rep["2081-01-14"].submitted_by, rep["2081-01-14"].bling_details],
       ["google_form", null, "Cecelia, Muhammed"]);
-    assert.deepEqual([rep["2081-02-04"].source, rep["2081-02-04"].gives_asks_count, rep["2081-02-04"].bling_given, rep["2081-02-04"].bling_details],
+    assert.deepEqual([rep["2081-02-04"].source, rep["2081-02-04"].attendee_count, rep["2081-02-04"].bling_given, rep["2081-02-04"].bling_details],
       ["pre_form", 0, true, "Someone"]);
-    assert.deepEqual([rep["2081-02-18"].source, rep["2081-02-18"].gives_asks_count], ["admin", 99], "admin report untouched");
+    assert.deepEqual([rep["2081-02-18"].source, rep["2081-02-18"].attendee_count], ["admin", 99], "admin report untouched");
     const audits = await importAudits();
     assert.equal(audits.length, auditsBefore + 1);
     assert.equal(audits.at(-1).actor_user_id, null);
@@ -227,7 +227,7 @@ describe("import script against the database", () => {
 
   test("a changed CSV updates imported reports but never an admin's edit or un-cancel", async () => {
     // An admin edits one imported report: it becomes source admin.
-    await owner.query(`update event_reports set gives_asks_count = 41, source = 'admin' where event_date = '2081-01-07'`);
+    await owner.query(`update event_reports set attendee_count = 41, source = 'admin' where event_date = '2081-01-07'`);
     // An admin un-cancels the imported cancellation: a re-run must not cancel it again.
     await owner.query(`update events set status = 'scheduled', cancel_reason = null, cancel_reason_other = null,
                          cancel_announced = false where event_date = '2081-01-21'`);
@@ -240,7 +240,7 @@ describe("import script against the database", () => {
     const { rows: [unc] } = await owner.query(`select status, cancel_reason from events where event_date = '2081-01-21'`);
     assert.deepEqual(unc, { status: "scheduled", cancel_reason: null });
     const { rows } = await owner.query(
-      `select event_date::text as d, gives_asks_count as n, source from event_reports where event_date in ('2081-01-07', '2081-01-28') order by 1`);
+      `select event_date::text as d, attendee_count as n, source from event_reports where event_date in ('2081-01-07', '2081-01-28') order by 1`);
     assert.deepEqual(rows, [{ d: "2081-01-07", n: 41, source: "admin" }, { d: "2081-01-28", n: 13, source: "google_form" }]);
   });
 });

@@ -65,8 +65,8 @@ describe("browser helpers: target sizes", () => {
   test("the request body never claims publicly usable for a sign-in board photo", () => {
     const base = { eventDate: "2026-11-24", original: { contentType: "image/jpeg", size: 9 }, display: { size: 5 }, thumb: { size: 2 } };
     assert.equal(uploadRequestBody({ ...base, kind: "signin_board", publiclyUsable: true }).publiclyUsable, false);
-    assert.equal(uploadRequestBody({ ...base, kind: "social_photo", publiclyUsable: true }).publiclyUsable, true);
-    assert.deepEqual(uploadRequestBody({ ...base, kind: "social_photo" }).display, { contentType: "image/jpeg", size: 5 });
+    assert.equal(uploadRequestBody({ ...base, kind: "event_photo", publiclyUsable: true }).publiclyUsable, true);
+    assert.deepEqual(uploadRequestBody({ ...base, kind: "event_photo" }).display, { contentType: "image/jpeg", size: 5 });
   });
 });
 

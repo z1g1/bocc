@@ -368,8 +368,8 @@ on-device checks and production are open.
     (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Reported
     (past dates) leaves cancelled and clears the reason. The separate cancel and un-cancel
     forms are gone; the audit actions are unchanged.
-  - report form (Gives and Asks count, notes, Bling given and details)
-  - calculated check-in count shown next to the report
+  - report form (Attendee count, notes, Bling given and details)
+  - calculated Check-in count shown next to the Attendee count (labelled "not attendance")
   - Built on `dev` 2026-11-17 (`src/lib/admin/events.mjs`). Audit actions `event.update`,
     `event.cancel`, `event.uncancel`, `event_report.submit`, `event_report.update`. A date
     without a row renders as a new scheduled event; the first save creates it. Reports are
@@ -381,7 +381,8 @@ on-device checks and production are open.
   - the browser makes the 1600px JPEG and 400px thumbnail
   - uploads go straight to the bucket via presigned PUT
   - a gallery shown through short-lived GET URLs
-  - each photo tagged `signin_board` / `social_photo`, with `publicly_usable`. Since
+  - each photo tagged `signin_board` / `social_photo` (renamed `event_photo`, Photo from
+    Event, by #54, ADR 0010 amendment 2026-12-03), with `publicly_usable`. Since
     2026-11-18 that is not a choice: social photos are always publicly usable (the posted
     photo waiver), sign-in board photos never (ADR 0010 decision 2, migration `20261120120000`)
   - pending uploads over a day old are listed on the event page for deletion; no storage
