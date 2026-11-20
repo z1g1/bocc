@@ -24,6 +24,8 @@ runner script [`scripts/social/run-task.sh`](../../scripts/social/run-task.sh) d
   that list is refused rather than waiting for approval, including script evaluation, the
   network and console readers, the shell and the file tools. (Allowing the whole server by
   name, `mcp__chrome-devtools`, left `click` unapproved in the first staging run.)
+- starts the DevTools server with `--workspace=~/bocc-chrome/downloads`: the only folder
+  `upload_file` may read from (its default is the OS temp folder)
 - writes the run's report to `~/bocc-chrome/logs/<task>-<date>.log`, and after the Wednesday
   run deletes the downloaded video and cover
 

@@ -85,8 +85,11 @@ STAMP="$(date +%Y-%m-%d-%H%M)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"; [[ "$TASK" == "schedule" ]] && find "$DOWNLOADS" -mindepth 1 -maxdepth 1 -type f -delete' EXIT
 
+# --workspace: the only folder upload_file may read from (the server's default is the OS temp
+# folder, so without it the downloaded video and cover are "not within any of the configured
+# workspace roots").
 cat >"$WORK/mcp.json" <<JSON
-{"mcpServers":{"chrome-devtools":{"command":"npx","args":["-y","$MCP_PACKAGE","--browserUrl=http://127.0.0.1:$PORT","--no-usage-statistics"]}}}
+{"mcpServers":{"chrome-devtools":{"command":"npx","args":["-y","$MCP_PACKAGE","--browserUrl=http://127.0.0.1:$PORT","--workspace=$DOWNLOADS","--no-usage-statistics"]}}}
 JSON
 
 PROMPT="$(sed -e "s|{SITE}|$BOCC_SITE|g" -e "s|{DOWNLOADS}|$DOWNLOADS|g" "$HERE/prompts/$TASK.txt")"
