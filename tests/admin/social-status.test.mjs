@@ -60,6 +60,11 @@ describe("migration 20261201120000_social_post_status.sql", () => {
   test("maps ready -> 'ready' and not ready -> 'todo'; keeps the deprecated flag but drops its CHECK", () =>
     inRollback(owner, async () => {
       // Back to the table as it was before the migration, then run the migration file.
+      // Undo the glossary rename first (migration 20261203120000): the table was social_posts.
+      await owner.query(`drop view social_posts`);
+      await owner.query(`alter table social_plans rename to social_posts`);
+      await owner.query(`alter trigger social_plans_set_updated_at on social_posts rename to social_posts_set_updated_at`);
+      await owner.query(`alter table social_posts rename constraint social_plans_status_ready_ck to social_posts_status_ready_ck`);
       await owner.query(`alter table social_posts drop constraint social_posts_status_ready_ck`);
       await owner.query(`alter table social_posts drop column status`);
       await owner.query(`alter table social_posts add constraint social_posts_ready_ck

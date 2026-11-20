@@ -5,7 +5,7 @@
 //
 // Access token at rest (linkedin_connections.token_ciphertext, bytea):
 //   [1 byte version = 1][12 byte IV][16 byte GCM tag][ciphertext]
-//   AES-256-GCM, AAD "linkedin_connections:<user id>", so a row copied onto another
+//   AES-256-GCM, AAD "linkedin_connections:<user id>" (TOKEN_AAD_PREFIX), so a row copied onto another
 //   user doesn't decrypt. Rotating the key = bump the version byte and keep the old
 //   key for decrypting until everyone has reconnected.
 //
@@ -24,7 +24,12 @@ export const STATE_TTL_SECONDS = 600;
 const RETURN_TO = /^(account|\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))$/;
 
 const derive = (key, label) => Buffer.from(hkdfSync("sha256", key, Buffer.alloc(0), label, 32));
-const aad = (userId) => Buffer.from(`linkedin_connections:${userId}`);
+// The AES-GCM associated data's prefix. It is the table's OLD name (renamed to
+// linkedin_authentications by migration 20261203120000, #50) and must stay this literal:
+// every stored token was sealed with it, and changing it would make them all fail to
+// decrypt. It is a fixed label, not the table's name.
+const TOKEN_AAD_PREFIX = "linkedin_connections:";
+const aad = (userId) => Buffer.from(`${TOKEN_AAD_PREFIX}${userId}`);
 
 /**
  * @param {string} token

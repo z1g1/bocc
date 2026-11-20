@@ -103,8 +103,8 @@ describe("schema: event_image kind and cover copy", () => {
       await owner.query("insert into events (event_date) values ($1)", [d]);
       await assertAllowed(owner, insert, [d, "event_image", ...keys(d), "ready"]);
       const [o, di, t] = keys(d);
-      await assertRefused(owner, insert, [d, "event_image", o, di, t, null, "pending"], /event_media_cover_ck/);
-      await assertRefused(owner, insert, [d, "signin_board", ...keys(d), "ready"], /event_media_cover_ck/);
+      await assertRefused(owner, insert, [d, "event_image", o, di, t, null, "pending"], /event_media_image_16x9_ck/);
+      await assertRefused(owner, insert, [d, "signin_board", ...keys(d), "ready"], /event_media_image_16x9_ck/);
       await assertAllowed(owner, insert, [d, "social_photo", ...keys(d), "ready"]);
     });
   });

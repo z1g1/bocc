@@ -119,7 +119,7 @@ describe("schema: cover_outdated", () => {
     const [d] = dates(1);
     const id = await seed(d, { cover: false });
     await inRollback(owner, async () => {
-      await assertRefused(owner, "update event_media set cover_outdated = true where id = $1", [id], /event_media_cover_outdated_ck/);
+      await assertRefused(owner, "update event_media set cover_outdated = true where id = $1", [id], /event_media_image_16x9_outdated_ck/);
     });
   });
 });

@@ -129,7 +129,7 @@ describe("migration 20261122120000_social_posts.sql", () => {
         await assertAllowed(admin, `update social_post_channels set status = 'scheduled' where event_date = $1`, [d]);
         await assertRefused(admin, `delete from social_post_channels where event_date = $1`, [d]);
         await assertRefused(admin, `delete from social_posts where event_date = $1`, [d]);
-        await assertRefused(admin, `truncate social_posts, social_post_channels`);
+        await assertRefused(admin, `truncate social_plans, social_media_posts`);
       });
       for (const db of [writer, site].filter(Boolean)) {
         await db.query("begin");
