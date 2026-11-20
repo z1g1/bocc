@@ -44,7 +44,8 @@ its forms are otherwise unchanged.
    profile with downloads going to `~/bocc-chrome/downloads` without asking (check
    `chrome://settings/downloads` once). In that window, Modron signs in by hand to the admin
    (`{SITE}/login/`, with a passkey or password) and to Meta Business Suite, Threads, TikTok
-   Studio and LinkedIn. The admin session lasts 30 days and is extended on each visit, so the
+   Studio. Not LinkedIn: the tasks leave it to Zack (step 6). The admin session lasts 30 days
+   and is extended on each visit, so the
    weekly tasks keep it alive. The task never handles a password. Keep this Chrome open; don't
    use it for anything else. If it was closed, the runner starts it again with the same
    sign-ins.
@@ -70,11 +71,13 @@ its forms are otherwise unchanged.
    local time, which should be Eastern) and `EnvironmentVariables` for `BOCC_SITE` and `PATH`
    (so `claude`, `npx` and `curl` are found). launchd runs a job missed while the Mac slept
    once it wakes; cron doesn't.
-6. **Open question for the rehearsal: LinkedIn.** [README.md](README.md) notes that LinkedIn
-   won't let Modron's account be an admin of the BOCC page. If that still holds, the Wednesday
-   task can't schedule the `linkedin_page` channel: it marks it failed ("no page admin access")
-   and Zack schedules it by hand. Settle this in the rehearsal, and amend ADR 0011 if LinkedIn
-   leaves the task.
+6. **LinkedIn is not in the tasks** (2026-11-20). LinkedIn won't let Modron's account be an
+   admin of the BOCC page ([README.md](README.md)), so both prompts leave the `linkedin_page`
+   channel alone: they don't open LinkedIn or save its form. Zack schedules the LinkedIn page
+   post by hand and saves the channel himself (`scheduled` on `/admin/social/next/`, `live` on
+   `/admin/social/verify/`; the admin role can use both pages). Until he does, the post stays
+   out of **Posted** and the Thursday check reports LinkedIn as not scheduled. If Modron gets
+   page admin access later, put the LinkedIn step back in the prompts.
 7. Rehearse both against staging before pointing them at production
    ([PHASE5_RELEASE.md](../admin/PHASE5_RELEASE.md), "Chrome task rehearsal"). Watch the first
    Wednesday run in the task Chrome window: the platforms may treat a browser driven over remote
@@ -97,8 +100,8 @@ Schedule: weekly, Wednesday, 10:00 AM ET (any time Wednesday works; the Thursday
 It opens `/admin/social/next/`, downloads the video and the cover image into
 `~/bocc-chrome/downloads`, and attaches them with `upload_file` and their full paths. It
 schedules each `pending` channel for the publish time (Business Suite for Facebook and Instagram,
-Threads web, TikTok Studio, the LinkedIn page) and saves `scheduled`, or `failed` with a note,
-through each channel's form. A problem with the setup itself (a tool error, a file that won't
+Threads web, TikTok Studio; not the LinkedIn page, which Zack does) and saves `scheduled`, or
+`failed` with a note, through each channel's form. A problem with the setup itself (a tool error, a file that won't
 attach) leaves the channel `pending` instead of `failed`, because a failed channel is skipped on
 the next run.
 
@@ -121,11 +124,10 @@ prompt from it.
 | Instagram (reel) | **Confirmed on instagram.com** ("Select from computer"; about 420×654, 1:1.55; can't be changed after posting). Not documented for the Business Suite scheduler | upload it if the composer offers it, else frame + note | help.instagram.com/225190788256708, about.instagram.com/features/reels |
 | Threads (web) | **Unconfirmed.** No help-center article found | frame only (Thumbnail timecode) | none |
 | TikTok (TikTok Studio web) | **Unconfirmed for the web.** Creator Academy describes "upload local cover" (9:16, 1080×1920) without saying which app | frame only (Thumbnail timecode) | tiktok.com/creator-academy/article/video-covers-thumbnails |
-| LinkedIn page | **Confirmed** ("Video thumbnail" -> "Upload video thumbnail"). Third parties say JPG/PNG, the video's aspect ratio, up to 2 MB: not in the official doc | upload it, else note | linkedin.com/help/linkedin/answer/a527229 |
+| LinkedIn page | **Confirmed** ("Video thumbnail" -> "Upload video thumbnail"). Third parties say JPG/PNG, the video's aspect ratio, up to 2 MB: not in the official doc | not in the task (Zack posts by hand) | linkedin.com/help/linkedin/answer/a527229 |
 
 At #29, also check: whether a square cover looks right on the 9:16 reels (Instagram crops to
-its grid), and LinkedIn's thumbnail size limit against the cover's file size (the logo default
-is a 201 KB PNG; a photo's display copy is usually a few hundred KB).
+its grid).
 
 ## Monday: verify (about 7:20 AM ET)
 

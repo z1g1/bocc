@@ -100,6 +100,10 @@ accounts at risk under the platforms' terms.
        on pages, the shell and file tools are denied. Downloads go to a fixed folder the
        runner clears before and after the Wednesday run.
      - The work order, its forms, the `social` role and the Thursday check don't change.
+     - **LinkedIn leaves the tasks** (same day): LinkedIn won't make Modron's account an admin
+       of the BOCC page, so both prompts leave the `linkedin_page` channel alone. Zack
+       schedules that post by hand and saves the channel on the work-order pages himself. The
+       channel stays in the work order, so the Thursday check still flags it until he does.
      - This replaces "`claude --chrome` and `-p` are not documented for unattended use" in the
        context: `-p` is Claude Code's documented headless mode, and the DevTools server
        doesn't need `--chrome`. The new risk is that a browser driven over remote debugging
