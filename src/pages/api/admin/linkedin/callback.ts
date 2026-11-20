@@ -31,7 +31,7 @@ export const GET: APIRoute = async ({ locals, url, request }) => {
     cookie: li.readStateCookie(request.headers.get("cookie")),
   });
   if ("status" in result) {
-    return new Response("Bad Request: the LinkedIn sign-in could not be verified. Start again from Connect LinkedIn.", {
+    return new Response("Bad Request: the LinkedIn sign-in could not be verified. Start again from Authenticate with LinkedIn.", {
       status: result.status, headers: { ...headers, "content-type": "text/plain; charset=utf-8" },
     });
   }

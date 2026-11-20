@@ -500,7 +500,7 @@ work (to save deploy credits); everything is verified on staging first.
 - [ ] Event Image (`event_image` media: upload or reference a recent publicly usable photo,
       the logo as the default, a 16:9 cover copy), previews and downloads for the hand-entered
       listings, and the Social Post cover image defaulting to it
-- [ ] Migrations: `linkedin_connections` (token encrypted under `LINKEDIN_TOKEN_KEY`),
+- [ ] Migrations: `linkedin_connections`, now `linkedin_authentications` (#50; token encrypted under `LINKEDIN_TOKEN_KEY`),
       `linkedin_events` (the ledger, unique on `event_date`), the `event_media` changes and the
       social post's cover. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
       connections only), `social_checker` the connection expiry only, nothing for
@@ -519,7 +519,7 @@ work (to save deploy credits); everything is verified on staging first.
 - [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
       Image; it is made Tuesday afternoon for the next week's event, alongside the other
       online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
-      dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
+      dialog (Publish event, now "Publish the LinkedIn post" (#58), too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
       the `linkedin_event` listing filled on post, drift and cancellation notices
       (#25 done: `linkedin_events` ledger migration, the preview, the dialog with
@@ -539,13 +539,15 @@ work (to save deploy credits); everything is verified on staging first.
 - [x] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
       (#21/#27, and "LinkedIn event posted" from the review fixes: done once the ledger row is
       posted, linking the event; no line for a cancelled event, where the cancel line takes over)
-- [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
+- [x] Thursday check: ntfy alert when the LinkedIn authentication (a "LinkedIn connection"
+      until #58) has under 10 days left
       or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
       independent check in `src/lib/social-alert/run.mjs`; migration
       `20261126120000_social_checker_linkedin.sql` gives `social_checker` only
-      `linkedin_connections (user_id, expires_at, display_name)`, and nothing in `auth`: the
-      alert names the connection by its LinkedIn display name. If the connections can't be
-      read, it pushes its own "the Thursday check couldn't read the connection" alert rather than
+      `linkedin_connections (user_id, expires_at, display_name)` (now `linkedin_authentications`),
+      and nothing in `auth`: the alert names the LinkedIn authentication by its LinkedIn display
+      name. If they can't be read, it pushes its own "the Thursday check couldn't read the
+      LinkedIn authentications" alert rather than
       staying silent)
 - [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
       environments), `LINKEDIN_LIVE=1` (production only)

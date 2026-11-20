@@ -47,7 +47,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its 16:9 Event Image `image_16x9_key`, migration `20261125120000_event_image.sql`, and `image_16x9_outdated`, migration `20261202120000_event_media_cover_outdated.sql`, both renamed from `cover_*` by migration `20261203120000_glossary_rename_expand.sql`, no new grant) |
 | `event_links` | `SELECT, INSERT, UPDATE, DELETE` (migration `20261121120000_event_links_site_reader.sql`; DELETE clears a wrong listing, recorded by its audit row: ADR 0008 decision 6, amended 2026-11-18) |
 | `social_plans` (was `social_posts`), `social_media_posts` (was `social_post_channels`) | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`, tables renamed by `20261203120000_glossary_rename_expand.sql`; no DELETE: a Social plan is never removed (set its Plan status back to To do instead); covers the Thumbnail `thumbnail_media_id` (was `cover_media_id`), migration `20261127120000_social_post_cover.sql`, no new grant, and the post `status` that replaced `ready`, migration `20261201120000_social_post_status.sql`, which restates the table grants and keeps the deprecated `ready` column for now: see "Contract later" below) |
-| `linkedin_authentications` (was `linkedin_connections`) | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, renamed by `20261203120000_glossary_rename_expand.sql`, ADR 0012; one row per Admin's LinkedIn authentication, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Disconnect) |
+| `linkedin_authentications` (was `linkedin_connections`) | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, renamed by `20261203120000_glossary_rename_expand.sql`, ADR 0012; one row per Admin's LinkedIn authentication, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Remove LinkedIn authentication) |
 | `social_posts`, `social_post_channels`, `linkedin_connections` (views) | DEPRECATED compatibility views under the old table names, with the same privileges as their tables (see "Contract later: the glossary rename") |
 | `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261129120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves. `post_claimed_at`, migration `20261130120000_linkedin_events_post_claim.sql`, is the one-Publish-at-a-time claim; no new grant) |
 
@@ -470,9 +470,9 @@ Run as `social_checker` once `20261123120000_social_checker.sql` is applied, ins
 - [ ] `select 1 from attendees limit 1` / `from event_reports` → permission denied
 - [ ] `update social_post_channels set status = status` → permission denied
 - [ ] once `20261126120000_social_checker_linkedin.sql` is applied:
-      `select user_id, expires_at, display_name from linkedin_connections` → succeeds;
-      `select token_ciphertext from linkedin_connections` / `select member_urn from
-      linkedin_connections` → permission denied; `select id, name from auth."user"` →
+      `select user_id, expires_at, display_name from linkedin_authentications` → succeeds;
+      `select token_ciphertext from linkedin_authentications` / `select member_urn from
+      linkedin_authentications` → permission denied; `select id, name from auth."user"` →
       permission denied for schema auth
 
 `npm run test:db` asserts all of the above against a throwaway Postgres with the real
