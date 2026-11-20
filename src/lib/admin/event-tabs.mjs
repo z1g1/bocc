@@ -26,7 +26,7 @@ export function pickTab(requested, date, now = new Date()) {
 /** The tab each of the page's form actions lives on: its post/redirect/get returns there. */
 export const ACTION_TABS = Object.freeze({
   save: "info", link: "info", unlink: "info",
-  social_plan: "social", social_video: "social", social_cover: "social", social_media_post: "social",
+  social_plan: "social", social_video: "social", social_thumbnail: "social", social_media_post: "social",
   linkedin_create: "info", linkedin_publish: "info", linkedin_allow_retry: "info",
   linkedin_cancel_done: "info",
   report: "post",

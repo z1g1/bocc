@@ -89,7 +89,9 @@ accounts at risk under the platforms' terms.
        `social-rules.mjs`; `PLAN_STATUSES`, `PLAN_STATUS_LABELS`, `OFFERED_PLAN_STATUSES`,
        `planStatusAfterPostUpdate` for the Plan status; `POST_STATUSES`, `POST_STATUS_LABELS`,
        `DONE_POST_STATUSES` for the Post status). The component is `SocialPlan.astro`.
-     - Audit actions are `social_plan.update|video|cover|status` and
+     - Audit actions are `social_plan.update|video|thumbnail|status` (`thumbnail` was
+       `cover` until #57, which also renamed the work order's `cover` / `coverNote` to
+       `thumbnail` / `thumbnailTimecode`) and
        `social_media_post.update|result`, with target tables `social_plans` and
        `social_media_posts`. Rows written before #56 keep `social_post.*`,
        `social_post_channel.*`, `social_posts` and `social_post_channels`.

@@ -50,7 +50,7 @@ if (Astro.request.method === "POST") {
 const pick: any = await sp.loadPick("next", { origin: Astro.url.origin });
 const order = pick.order ?? null;
 const video = pick.video ?? null;
-const cover = pick.cover ?? null;
+const thumbnail = pick.thumbnail ?? null;
 const notice = posted ? null : sp.noticeText(Astro.url.searchParams);
 const STATUS_TEXT: Record<string, string> = {
   pending: "pending (to do)", scheduled: "scheduled (done)", live: "live (done)", failed: "failed (done)",
@@ -110,18 +110,19 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
               <span class="muted"> ({video.fileName}, {formatBytes(video.sizeBytes)}; the link works until {easternDateTime(video.expiresAt)} Eastern; reload the page for a new one)</span></p>
           )
           : <p id="video-download-unavailable" class="error">{video?.unavailable ?? "No video is attached."}</p>}
-        <h3>Cover image</h3>
-        {cover?.downloadUrl
+        <h3>Thumbnail</h3>
+        {thumbnail?.downloadUrl
           ? (
-            <p><a id="cover-download" href={cover.downloadUrl} download={cover.fileName}>Download the cover image</a>
-              <span class="muted"> ({cover.fileName}, {cover.source === "override" ? "chosen for this post" : cover.eventImageSource === "default" ? "the BOCC logo, the default Event Image" : "the Event Image"}{cover.expiresAt && <>; the link works until {easternDateTime(cover.expiresAt)} Eastern</>})</span></p>
+            <p><a id="thumbnail-download" href={thumbnail.downloadUrl} download={thumbnail.fileName}>Download the Thumbnail</a>
+              <span class="muted"> ({thumbnail.fileName}, {thumbnail.source === "override" ? "chosen for this post" : thumbnail.eventImageSource === "default" ? "the BOCC logo, the default Event Image" : "the Event Image"}{thumbnail.expiresAt && <>; the link works until {easternDateTime(thumbnail.expiresAt)} Eastern</>})</span></p>
           )
-          : <p id="cover-download-unavailable" class="error">{cover?.unavailable ?? "No cover image."}</p>}
-        <p class="muted">Set it as the video's cover only on the channels whose step says so (docs/social/CHROME_TASKS.md).</p>
+          : <p id="thumbnail-download-unavailable" class="error">{thumbnail?.unavailable ?? "No Thumbnail."}</p>}
+        <p class="muted">Upload it as the video's Thumbnail only on the channels whose step says so (docs/social/CHROME_TASKS.md).</p>
         <h3>Thumbnail timecode</h3>
-        {order.coverNote
-          ? <pre id="cover-note">{order.coverNote}</pre>
-          : <p id="cover-note" class="muted">No thumbnail timecode: keep the platform's default thumbnail frame.</p>}
+        <p class="muted">The frame of the video to use as the Thumbnail where a Thumbnail can't be uploaded.</p>
+        {order.thumbnailTimecode
+          ? <pre id="thumbnail-timecode">{order.thumbnailTimecode}</pre>
+          : <p id="thumbnail-timecode" class="muted">No Thumbnail timecode: keep the platform's default frame.</p>}
       </section>
 
       <section id="channels" aria-labelledby="h-channels">

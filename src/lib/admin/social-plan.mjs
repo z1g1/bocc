@@ -12,7 +12,7 @@
 //
 // Reads (take `db`, the pool or a client, first):
 //   getSocialPlan(db, date)              -> plan | null
-//       { date, videoMediaId, coverMediaId, coverNote, baseCaption, extraHashtags[], publishAt, status,
+//       { date, videoMediaId, thumbnailMediaId, thumbnailTimecode, baseCaption, extraHashtags[], publishAt, status,
 //         createdAt, updatedAt, channels: { facebook: { caption, firstComment, status,
 //         postUrl, verifiedAt, commentPostedAt, notes, updatedAt }, … } }
 //       status is the Plan status; channels.<c>.status is that social media post's Post
@@ -22,10 +22,10 @@
 //       `actionable` (Plan status Ready for Posting or Error, and no problems). For a date
 //       with no Social plan, `exists: false`
 //       and the defaults.
-//   readState(db, date)                  -> { event, post: the plan, lumaUrl, video, coverMedia, eventImage }
-//       (its inputs; the work order's `cover` is resolveSocialCover(): the override
+//   readState(db, date)                  -> { event, post: the plan, lumaUrl, video, thumbnailMedia, eventImage }
+//       (its inputs; the work order's `thumbnail` is resolveThumbnail(): the override
 //       photo, else the Event Image, event-image.mjs getEventImage)
-//   listCoverChoices(db, date)           -> the photos the cover can be set to
+//   listThumbnailChoices(db, date)       -> the photos the Thumbnail can be set to
 //
 // Writes (each change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }; target_id is the
@@ -33,7 +33,8 @@
 // (publish_at = Monday 7:00 AM ET before the event) and its five `pending` social media
 // posts, in the same transaction (details.created / details.eventCreated).
 //   savePlan(actor, date, input, { now })        social_plan.update
-//       baseCaption, extraHashtags ("#a b, c"), coverNote, publishAt (Eastern
+//       baseCaption, extraHashtags ("#a b, c"), thumbnailTimecode (a stale tab's old
+//       field name coverNote is still read; #60 drops that), publishAt (Eastern
 //       "YYYY-MM-DDTHH:MM"; blank = the default), status (the Plan status:
 //       todo|ready|posted|error, the Social plan tab's dropdown; absent = keep). Ready for Posting is refused
 //       (ValidationError .errors.status) while readyProblems() lists anything; To do,
@@ -42,12 +43,12 @@
 //       (.errors.publishAt). Status changes are in the audit row's before/after.
 //   setVideo(actor, date, mediaId)               social_plan.video
 //       a `ready` promo_video of the same event (.errors.video otherwise).
-//   setCover(actor, date, mediaId | "")       social_plan.cover
-//       the cover image override: a ready, publicly usable event_photo of any event
-//       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
+//   setThumbnail(actor, date, mediaId | "")   social_plan.thumbnail
+//       the Thumbnail override: a ready, publicly usable event_photo of any event
+//       (.errors.thumbnail otherwise); "" clears it (the Thumbnail is the Event Image again).
 //       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
 //       SET NULL, migration 20261127120000_social_post_cover). A photo that is also an
-//       Event Image (ticket #21) can't be deleted at all, so the cover stays.
+//       Event Image (ticket #21) can't be deleted at all, so the Thumbnail stays.
 //   saveSocialMediaPost(actor, date, channel, input)     social_media_post.update
 //       one Channel's caption / firstComment overrides; blank, or exactly the default,
 //       stores NULL (so the post keeps following the default). On a plan that is Ready for
@@ -113,8 +114,8 @@ export * from "./social-plan-rules.mjs";
 const PLAN_COLUMNS = `
   p.event_date::text   as date,
   p.video_media_id     as "videoMediaId",
-  p.thumbnail_media_id as "coverMediaId",
-  p.thumbnail_timecode as "coverNote",
+  p.thumbnail_media_id as "thumbnailMediaId",
+  p.thumbnail_timecode as "thumbnailTimecode",
   p.base_caption       as "baseCaption",
   p.extra_hashtags     as "extraHashtags",
   p.publish_at         as "publishAt",
@@ -152,39 +153,39 @@ export async function readState(db, date) {
     getSocialPlan(db, date),
     getEventImage(db, date),
   ]);
-  const [video, coverMedia] = await Promise.all([
+  const [video, thumbnailMedia] = await Promise.all([
     post?.videoMediaId ? getVideo(db, post.videoMediaId) : null,
-    post?.coverMediaId ? getCoverMedia(db, post.coverMediaId) : null,
+    post?.thumbnailMediaId ? getThumbnailMedia(db, post.thumbnailMediaId) : null,
   ]);
   return {
     event: event ? { status: event.status, exists: true } : { status: "scheduled", exists: false },
     post,
     lumaUrl: luma?.url ?? null,
     video,
-    coverMedia,
+    thumbnailMedia,
     eventImage,
   };
 }
 
-const COVER_COLUMNS = `
+const THUMBNAIL_COLUMNS = `
   id, event_date::text as "eventDate", kind, status, publicly_usable as "publiclyUsable",
   display_key as "displayKey", thumb_key as "thumbKey"`;
 
-async function getCoverMedia(db, id) {
-  const { rows: [m] } = await db.query(`select ${COVER_COLUMNS} from public.event_media where id = $1`, [id]);
+async function getThumbnailMedia(db, id) {
+  const { rows: [m] } = await db.query(`select ${THUMBNAIL_COLUMNS} from public.event_media where id = $1`, [id]);
   return m ?? null;
 }
 
-/** How many recent event dates' photos the cover picker offers. */
-export const COVER_CHOICE_DATES = PICK_EVENTS;
+/** How many recent event dates' photos the Thumbnail picker offers. */
+export const THUMBNAIL_CHOICE_DATES = PICK_EVENTS;
 
 /**
- * Photos the Social plan cover can be set to: ready, publicly usable Photos from Event
- * of this event and the most recent earlier dates with any (COVER_CHOICE_DATES dates
+ * Photos the Social plan's Thumbnail can be set to: ready, publicly usable Photos from Event
+ * of this event and the most recent earlier dates with any (THUMBNAIL_CHOICE_DATES dates
  * in all), newest first. { id, eventDate, thumbKey, contentType }.
  */
-export async function listCoverChoices(db, date) {
-  requireDate(date, "listCoverChoices");
+export async function listThumbnailChoices(db, date) {
+  requireDate(date, "listThumbnailChoices");
   const { rows } = await db.query(
     `with dates as (
        select distinct event_date from public.event_media
@@ -193,7 +194,7 @@ export async function listCoverChoices(db, date) {
      select m.id, m.event_date::text as "eventDate", m.thumb_key as "thumbKey", m.content_type as "contentType"
        from public.event_media m join dates using (event_date)
       where m.kind = 'event_photo' and m.status = 'ready' and m.publicly_usable
-      order by m.event_date desc, m.created_at desc, m.id`, [date, COVER_CHOICE_DATES]);
+      order by m.event_date desc, m.created_at desc, m.id`, [date, THUMBNAIL_CHOICE_DATES]);
   return rows;
 }
 
@@ -223,15 +224,19 @@ const len = (s) => [...s].length;
 
 /**
  * Form input of the Social plan form -> values; throws ValidationError.
- * @returns {{ baseCaption: string|null, coverNote: string|null, extraHashtags: string[], publishAt: Date, status: string|null }}
+ * @returns {{ baseCaption: string|null, thumbnailTimecode: string|null, extraHashtags: string[], publishAt: Date, status: string|null }}
  *   status null = keep the plan's current Plan status
  */
 export function validatePlanInput(date, input) {
   const errors = {};
   const baseCaption = text(input?.baseCaption);
   if (baseCaption !== null && len(baseCaption) > LIMITS.baseCaption) errors.baseCaption = `At most ${LIMITS.baseCaption} characters.`;
-  const coverNote = text(input?.coverNote);
-  if (coverNote !== null && len(coverNote) > LIMITS.coverNote) errors.coverNote = `At most ${LIMITS.coverNote} characters.`;
+  // DEPRECATED: `coverNote` is the field's name before #57, still posted by a tab opened
+  // before that deploy (without it the save would clear the timecode). #60 drops it.
+  const thumbnailTimecode = text(input?.thumbnailTimecode ?? input?.coverNote);
+  if (thumbnailTimecode !== null && len(thumbnailTimecode) > LIMITS.thumbnailTimecode) {
+    errors.thumbnailTimecode = `At most ${LIMITS.thumbnailTimecode} characters.`;
+  }
   let extraHashtags = [];
   try { extraHashtags = normaliseHashtags(input?.extraHashtags); } catch (e) { errors.extraHashtags = e.message; }
   let publishAt = null;
@@ -249,7 +254,7 @@ export function validatePlanInput(date, input) {
     }
   }
   if (Object.keys(errors).length) throw new ValidationError(errors);
-  return { baseCaption, coverNote, extraHashtags, publishAt, status };
+  return { baseCaption, thumbnailTimecode, extraHashtags, publishAt, status };
 }
 
 /** A social media post's override input -> { caption, firstComment } (null = default); throws ValidationError. */
@@ -310,7 +315,7 @@ async function lockPlan(client, date) {
        on conflict (event_date, channel) do nothing`, [date, CHANNEL_KEYS]);
   }
   const { rows: [row] } = await client.query(
-    `select video_media_id, thumbnail_media_id as cover_media_id, thumbnail_timecode as cover_note,
+    `select video_media_id, thumbnail_media_id, thumbnail_timecode,
             base_caption, extra_hashtags, publish_at, status
        from public.social_plans where event_date = $1::date for update`, [date]);
   return { eventCreated: ev.rowCount === 1, created, row };
@@ -342,7 +347,7 @@ async function stateIn(client, date, over = {}) {
   return buildWorkOrder({ date, ...s, post, video });
 }
 
-/** The Social plan form: caption, hashtags, cover note, publish time, Plan status. */
+/** The Social plan form: caption, hashtags, Thumbnail timecode, publish time, Plan status. */
 export async function savePlan(actorUserId, date, input, { now = new Date() } = {}) {
   checkDate(date);
   const v = validatePlanInput(date, input);
@@ -350,7 +355,7 @@ export async function savePlan(actorUserId, date, input, { now = new Date() } = 
     const { eventCreated, created, row } = await lockPlan(client, date);
     const status = v.status ?? row.status;
     const after = {
-      base_caption: v.baseCaption, cover_note: v.coverNote, extra_hashtags: v.extraHashtags,
+      base_caption: v.baseCaption, thumbnail_timecode: v.thumbnailTimecode, extra_hashtags: v.extraHashtags,
       publish_at: v.publishAt, status,
     };
     const d = diff(row, after);
@@ -361,7 +366,7 @@ export async function savePlan(actorUserId, date, input, { now = new Date() } = 
     }
     if (status === "ready") {
       const order = await stateIn(client, date, {
-        post: { baseCaption: v.baseCaption, extraHashtags: v.extraHashtags, coverNote: v.coverNote, publishAt: v.publishAt },
+        post: { baseCaption: v.baseCaption, extraHashtags: v.extraHashtags, thumbnailTimecode: v.thumbnailTimecode, publishAt: v.publishAt },
       });
       if (order.problems.length) {
         throw new ValidationError({ status: `Not ready yet: ${order.problems.map((p) => p.message).join(" ")}` });
@@ -371,7 +376,7 @@ export async function savePlan(actorUserId, date, input, { now = new Date() } = 
       `update public.social_plans
           set base_caption = $2, thumbnail_timecode = $3, extra_hashtags = $4, publish_at = $5, status = $6
         where event_date = $1::date`,
-      [date, v.baseCaption, v.coverNote, v.extraHashtags, v.publishAt, status]);
+      [date, v.baseCaption, v.thumbnailTimecode, v.extraHashtags, v.publishAt, status]);
     return { action: "social_plan.update", details: { created, eventCreated, before: d.before, after: d.after } };
   });
 }
@@ -396,29 +401,29 @@ export async function setVideo(actorUserId, date, mediaId) {
 }
 
 /**
- * Override the promo video's cover with a ready, publicly usable Photo from Event (of
- * any event), or clear it ("" / null) so the cover is the Event Image again.
+ * Override the promo video's Thumbnail with a ready, publicly usable Photo from Event (of
+ * any event), or clear it ("" / null) so the Thumbnail is the Event Image again.
  */
-export async function setCover(actorUserId, date, mediaId) {
+export async function setThumbnail(actorUserId, date, mediaId) {
   checkDate(date);
   const clearing = mediaId === "" || mediaId == null;
-  if (!clearing && !isUuid(mediaId)) throw new ValidationError({ cover: "Choose a photo." });
+  if (!clearing && !isUuid(mediaId)) throw new ValidationError({ thumbnail: "Choose a photo." });
   return audited(actorUserId, date, "social_plans", async (client) => {
     const { eventCreated, created, row } = await lockPlan(client, date);
-    const before = row.cover_media_id ?? null;
+    const before = row.thumbnail_media_id ?? null;
     const after = clearing ? null : mediaId;
     if (!clearing) {
       const { rows: [m] } = await client.query(
         `select kind, status, publicly_usable from public.event_media where id = $1 for share`, [mediaId]);
-      if (!m || m.kind !== "event_photo" || !m.publicly_usable) throw new ValidationError({ cover: "That isn't a Photo from Event." });
-      if (m.status !== "ready") throw new ValidationError({ cover: "That photo hasn't finished uploading." });
+      if (!m || m.kind !== "event_photo" || !m.publicly_usable) throw new ValidationError({ thumbnail: "That isn't a Photo from Event." });
+      if (m.status !== "ready") throw new ValidationError({ thumbnail: "That photo hasn't finished uploading." });
     }
     // Nothing to change. Clearing with no plan rolls back the plan's creation too.
     if (before === after && (clearing || !created)) throw NOOP;
     await client.query(`update public.social_plans set thumbnail_media_id = $2 where event_date = $1::date`, [date, after]);
     return {
-      action: "social_plan.cover",
-      details: { created, eventCreated, before: { cover_media_id: before }, after: { cover_media_id: after } },
+      action: "social_plan.thumbnail",
+      details: { created, eventCreated, before: { thumbnail_media_id: before }, after: { thumbnail_media_id: after } },
     };
   });
 }
