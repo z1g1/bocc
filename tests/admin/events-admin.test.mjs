@@ -622,10 +622,10 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.equal((await eventRow(d)).status, "reported");
     const [audit] = await auditRows(d);
     assert.deepEqual([audit.action, audit.actor_user_id], ["event_report.submit", admin.user.id]);
-    const page = await (await req(`/admin/events/${d}/?tab=post&notice=report`, { cookie: admin.cookie })).text();
-    assert.ok(page.includes("Report saved. The event is marked Reported."), "the notice says Reported");
-    assert.match(page, /class="badge reported"[^>]*>\s*Reported\s*</, "the badge says Reported");
-    assert.ok(!/\bHeld\b/.test(page), "no Held status on the page");
+    const saved = await (await req(`/admin/events/${d}/?tab=post&notice=report`, { cookie: admin.cookie })).text();
+    assert.ok(saved.includes("Report saved. The event is marked Reported."), "the notice says Reported");
+    assert.match(saved, /class="badge reported"[^>]*>\s*Reported\s*</, "the badge says Reported");
+    assert.ok(!/\bHeld\b/.test(saved), "no Held status on the page");
     const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
     const listRow = list.match(new RegExp(`<tr[^>]*>\\s*<td[^>]*><a href="/admin/events/${d}/"[\\s\\S]*?</tr>`))?.[0] ?? "";
     assert.match(listRow, /<td[^>]*>Reported<\/td>/, "the events list says Reported");
