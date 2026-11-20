@@ -129,12 +129,12 @@ A single Netlify site (serving both the website and the functions) auto-deploys 
 **Workflow:**
 1. Work on the `dev` branch
 2. Test locally (website: `npm run build` and `npm run dev`, backend: `npm test`)
-3. When ready, merge `dev` → `main` and push
-4. The site deploys automatically within 2-3 minutes
+3. When ready, merge `dev` → `main` and push (the `main` deploy waits for approval in GitHub)
+4. The "Migrate and deploy" GitHub workflow migrates Neon, then deploys through a Netlify build hook
 
-Database schema changes are **not** applied by deploys. Add a new file to
-`backend/db/migrations/` and run `npm run migrate` from `backend/` (operator with the owner URL)
-**before** deploying code that depends on it.
+Database schema changes: add a new file to `backend/db/migrations/`. The workflow applies it
+before the code that needs it goes live. Keep it expand-then-contract, so it works with the code
+that is live while it runs. See [docs/backend/DEPLOYS.md](backend/DEPLOYS.md).
 
 ## Key Files to Know
 

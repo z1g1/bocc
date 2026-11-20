@@ -1,0 +1,76 @@
+# Migrate the database, then deploy (issue #32, docs/backend/DEPLOYS.md).
+#
+# A push to `dev` migrates Neon `dev` and then asks Netlify to build the `dev` branch.
+# A push to `main` waits for approval (the `production` environment has a required
+# reviewer), migrates Neon production, then asks Netlify to build `main`.
+#
+# Netlify's own builds for `dev` and `main` are skipped by scripts/netlify-ignore.sh
+# unless they come from the build hook this workflow calls, so code never goes live
+# before its migrations. A failed migration fails the job and nothing is deployed.
+#
+# Secrets (GitHub environment secrets, one set per environment, never in Netlify):
+#   NEON_OWNER_URL      the direct (unpooled) neondb_owner URL of that Neon branch
+#   NETLIFY_BUILD_HOOK  the Netlify build hook URL for that git branch
+name: Migrate and deploy
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-and-deploy:
+    if: github.ref_name == 'dev' || github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.ref_name == 'main' && 'production' || 'dev' }}
+    # One run per environment at a time, in order; a newer push waits rather than
+    # cancelling a migration halfway.
+    concurrency:
+      group: migrate-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install migration dependencies
+        working-directory: backend
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Check the secrets are set
+        env:
+          NEON_OWNER_URL: ${{ secrets.NEON_OWNER_URL }}
+          NETLIFY_BUILD_HOOK: ${{ secrets.NETLIFY_BUILD_HOOK }}
+        run: |
+          missing=0
+          [ -n "$NEON_OWNER_URL" ] || { echo "::error::NEON_OWNER_URL is not set in the ${{ github.ref_name == 'main' && 'production' || 'dev' }} environment"; missing=1; }
+          [ -n "$NETLIFY_BUILD_HOOK" ] || { echo "::error::NETLIFY_BUILD_HOOK is not set in the ${{ github.ref_name == 'main' && 'production' || 'dev' }} environment"; missing=1; }
+          exit $missing
+
+      - name: Pending migrations
+        working-directory: backend
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.NEON_OWNER_URL }}
+        run: node scripts/migrate.js --status
+
+      - name: Migrate
+        working-directory: backend
+        env:
+          DATABASE_URL_UNPOOLED: ${{ secrets.NEON_OWNER_URL }}
+        run: node scripts/migrate.js
+
+      - name: Deploy (Netlify build hook)
+        env:
+          NETLIFY_BUILD_HOOK: ${{ secrets.NETLIFY_BUILD_HOOK }}
+        run: |
+          curl --fail --silent --show-error -X POST -d '{}' \
+            "${NETLIFY_BUILD_HOOK}?trigger_title=migrated+${GITHUB_SHA::7}+run+${GITHUB_RUN_ID}"
+          echo "Netlify build requested for ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}."
