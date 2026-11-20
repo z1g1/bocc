@@ -55,11 +55,11 @@ LinkedIn facts that shape this (carried over from the CLI):
    becomes **Photos from Event**. The media kind stays `social_photo` and the `event_links`
    slots don't change: no schema or data change.
 3. **One Event Image per event.** A new media kind `event_image`, at most one per event: either
-   an uploaded image (original, display, thumb and a 16:9 cover copy made in the
+   an uploaded image (original, display, thumb and its **16:9 Event Image** made in the
    browser: since ticket #40 the image at full height centred on the "Just the Beans"
    background, never cropped; it was a centre crop before) or a reference to a publicly usable `social_photo` from one of about the last 8
    events. Resolution: uploaded, then referenced, then the square BOCC logo (with a checked-in
-   16:9 version, on brand cream until ticket #40 and now on the beans background). Deleting a photo some event uses as its Event Image is refused.
+   16:9 Event Image, on brand cream until ticket #40 and now on the beans background). Deleting a photo some event uses as its Event Image is refused.
    The Social Post gains a cover image that defaults to the Event Image.
 4. **A per-Admin LinkedIn authentication** (called a "LinkedIn connection" until #58). An Admin
    authenticates with their own LinkedIn profile once with the CLI's scopes (`r_events rw_events openid profile w_member_social`). The token is encrypted
@@ -140,17 +140,18 @@ Deliberate extras beyond the spec, recorded so they aren't mistaken for drift:
 - **`site_reader` and `social_checker` see `events.event_image_media_id`** through their
   table-level `SELECT` on `events`: an opaque uuid, reviewed and kept
   ([NEON_PERMISSIONS.md](../backend/NEON_PERMISSIONS.md)).
-- **The 16:9 version is composed, not cropped (ticket #40).** The Event Image is asked for as a
-  1:1 square (a warning when it isn't). Its 16:9 version is the image at full height (or full
+- **The 16:9 Event Image is composed, not cropped (ticket #40).** The Event Image is asked for as a
+  1:1 square (a warning when it isn't). Its 16:9 Event Image is the image at full height (or full
   width, if wider than 16:9) centred on the 1920x1080 "Just the Beans" background
   (`public/assets/images/brand/just-the-beans-16x9.jpg`), made in the browser
-  (`admin-media-lib.js` `composeCover`), for an upload and for a picked Photo from Event alike.
-  Migration `20261202120000_event_media_cover_outdated.sql` marks every version made before
-  (`event_media.cover_outdated`); the event page remakes its own as it opens, and
+  (`admin-media-lib.js` `compose16x9`), for an upload and for a picked Photo from Event alike.
+  Migration `20261202120000_event_media_cover_outdated.sql` marks every one made before
+  (`event_media.cover_outdated`, now `image_16x9_outdated`, ticket #55); the event page remakes its own as it opens, and
   **`/admin/media/covers/`** remakes them all at once (a one-off for an Admin after the
   migration and deploy). A remake overwrites the same object key, so a LinkedIn event already
-  posted records no image drift and is not touched; while a version is outdated it is not sent
-  to LinkedIn.
+  posted records no image drift and is not touched; while one is outdated it is not sent
+  to LinkedIn. The object key stays `…/cover.jpg` and the route `/admin/media/covers/`: only
+  the words and the columns changed (ticket #55, GLOSSARY.md).
 
 ## Amendment: LinkedIn authentication and the LinkedIn words (2026-11-20, #58)
 

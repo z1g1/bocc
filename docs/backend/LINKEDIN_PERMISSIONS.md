@@ -26,8 +26,8 @@ One app at https://www.linkedin.com/developers/apps, associated with the LinkedI
 | Product | Access | Why |
 |---|---|---|
 | Event Management API | Self-serve, on request | `r_events`, `rw_events`: list and create the LinkedIn page's LinkedIn events |
-| Share on LinkedIn | Self-serve | `w_member_social`: (1) the Images API cover upload; (2) the public LinkedIn post from the admin's LinkedIn profile that publishes each LinkedIn event (the LinkedIn page stays organizer). **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 |
-| Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the cover-image upload owner. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
+| Share on LinkedIn | Self-serve | `w_member_social`: (1) the Images API upload of the 16:9 Event Image (LinkedIn's event cover); (2) the public LinkedIn post from the admin's LinkedIn profile that publishes each LinkedIn event (the LinkedIn page stays organizer). **Side effect:** the token can post as the authorizing admin personally. Chosen by Zack 2026-10-02 |
+| Sign In with LinkedIn using OpenID Connect | Self-serve | `openid profile`, to read the admin's member ID, which is the owner of the 16:9 Event Image upload. LinkedIn rejects `openid` alone; `profile` (name and photo) was chosen over `email` as the less sensitive scope |
 
 **Cover images:** the Events docs upload covers through the Assets API
 (`/rest/assets?action=registerUpload`), but LinkedIn restricts that endpoint to partner apps. It

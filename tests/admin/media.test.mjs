@@ -207,7 +207,7 @@ describe("Event Image upload validation (ADR 0012 decision 3)", () => {
     assert.equal(lib.EVENT_IMAGE_MAX_BYTES, media.EVENT_IMAGE.maxBytes);
     assert.equal(lib.EVENT_IMAGE_MIN_WIDTH, media.EVENT_IMAGE.minWidth);
     assert.equal(lib.EVENT_IMAGE_MIN_HEIGHT, media.EVENT_IMAGE.minHeight);
-    assert.equal(lib.MAX_COVER_BYTES, media.LIMITS.cover);
+    assert.equal(lib.MAX_16X9_BYTES, media.LIMITS.cover);
   });
 });
 
