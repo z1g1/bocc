@@ -19,8 +19,11 @@ runner script [`scripts/social/run-task.sh`](../../scripts/social/run-task.sh) d
 - starts the task Chrome if it isn't running: its own profile in `~/bocc-chrome/profile`, remote
   debugging on `127.0.0.1:9222` only, a normal visible window (never headless)
 - clears `~/bocc-chrome/downloads`, fills `{SITE}` and `{DOWNLOADS}` into the prompt, and runs
-  `claude -p` from an empty folder with only the browser tools allowed. Script evaluation,
-  the shell and file tools are denied
+  `claude -p` from an empty folder, without the user's Claude Code settings, in `dontAsk`
+  mode with each allowed browser tool named (`ALLOWED_TOOLS` in the script). Anything not on
+  that list is refused rather than waiting for approval, including script evaluation, the
+  network and console readers, the shell and the file tools. (Allowing the whole server by
+  name, `mcp__chrome-devtools`, left `click` unapproved in the first staging run.)
 - writes the run's report to `~/bocc-chrome/logs/<task>-<date>.log`, and after the Wednesday
   run deletes the downloaded video and cover
 
@@ -38,8 +41,12 @@ its forms are otherwise unchanged.
 
 1. Zack creates Modron's `social` account in the admin: `/admin/users/`, role **social** only.
    That role sees the work order and nothing else: no attendees, check-ins, reports or users.
-2. Install Node.js 20 or later, Google Chrome and Claude Code, and sign in to Claude Code once
-   (`claude`, then `/login`). Clone this repo (or copy `scripts/social/`).
+2. Install Node.js 20 or later, Google Chrome and Claude Code. Clone this repo (or copy
+   `scripts/social/`). For the scheduled runs, make a long-lived token with
+   `claude setup-token` and set it as `CLAUDE_CODE_OAUTH_TOKEN` in the crontab (step 5): a
+   `/login` sign-in expires within days, and an unattended run can't renew it. The sign-in
+   page can open in any browser (Firefox works if Chrome shows a captcha); copy the URL the
+   terminal prints.
 3. Start the task Chrome: `scripts/social/run-task.sh chrome`. On first run this creates the
    profile with downloads going to `~/bocc-chrome/downloads` without asking (check
    `chrome://settings/downloads` once). In that window, Modron signs in by hand to the admin
@@ -61,6 +68,7 @@ its forms are otherwise unchanged.
    On Linux, `crontab -e` (cron needs the desktop session's display to open Chrome):
 
    ```cron
+   CLAUDE_CODE_OAUTH_TOKEN=<token from claude setup-token>
    CRON_TZ=America/New_York
    0 10 * * 3  DISPLAY=:0 BOCC_SITE=https://716coffee.club /path/to/bocc/scripts/social/run-task.sh schedule
    20 7 * * 1  DISPLAY=:0 BOCC_SITE=https://716coffee.club /path/to/bocc/scripts/social/run-task.sh verify

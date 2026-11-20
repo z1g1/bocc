@@ -14,6 +14,8 @@
 #   BOCC_CHROME_PORT  default 9222 (remote debugging, bound to 127.0.0.1 only)
 #   CHROME_BIN        default: google-chrome on Linux, Google Chrome.app on macOS
 #   CLAUDE_MODEL      optional, passed to `claude --model`
+#   CLAUDE_CODE_OAUTH_TOKEN  recommended for cron: a long-lived token from `claude setup-token`
+#                     (a /login sign-in expires within days and a scheduled run can't renew it)
 #
 # Setup and the prompts' contract: docs/social/CHROME_TASKS.md.
 set -euo pipefail
@@ -89,9 +91,21 @@ JSON
 
 PROMPT="$(sed -e "s|{SITE}|$BOCC_SITE|g" -e "s|{DOWNLOADS}|$DOWNLOADS|g" "$HERE/prompts/$TASK.txt")"
 
-# Run from an empty directory so no project CLAUDE.md or settings join the prompt.
-# Only the browser tools are allowed; script evaluation is denied, so the agent can't
-# run JavaScript on the platforms' pages. No shell, no file access.
+# Run from an empty directory so no project CLAUDE.md or settings join the prompt, and
+# load no user settings either (--setting-sources project, and the folder has none), so a
+# personal "ask" rule, default mode or hook can't change what the task may do.
+# Permissions: dontAsk mode refuses every tool not named below, instead of asking a person
+# who isn't there. Allowing the whole server ("mcp__chrome-devtools") was not enough on
+# Modron's machine: click came back "you haven't granted it yet". So each tool is named.
+# Left out on purpose: evaluate_script (no JavaScript on the platforms' pages), the
+# network and console readers (they can show tokens), emulate, lighthouse, performance,
+# screencast, logpoints and heap snapshots. No shell, no file tools, no web tools.
+ALLOWED_TOOLS=(
+  click close_page drag fill fill_form handle_dialog hover list_pages navigate_page
+  new_page press_key resize_page select_page take_screenshot take_snapshot type_text
+  upload_file wait_for
+)
+ALLOWED_TOOLS=("${ALLOWED_TOOLS[@]/#/mcp__chrome-devtools__}")
 cd "$WORK"
 MODEL_ARGS=()
 [[ -n "${CLAUDE_MODEL:-}" ]] && MODEL_ARGS=(--model "$CLAUDE_MODEL")
@@ -99,10 +113,12 @@ set +e
 claude -p "$PROMPT" \
   ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
   --mcp-config "$WORK/mcp.json" --strict-mcp-config \
-  --allowedTools "mcp__chrome-devtools" \
+  --setting-sources project \
+  --permission-mode dontAsk \
+  --allowedTools "${ALLOWED_TOOLS[@]}" \
   --disallowedTools "mcp__chrome-devtools__evaluate_script" "Bash" "Edit" "Write" "WebFetch" "WebSearch" \
   --output-format text \
-  2>&1 | tee "$LOGS/$TASK-$STAMP.log"
+  </dev/null 2>&1 | tee "$LOGS/$TASK-$STAMP.log"
 STATUS="${PIPESTATUS[0]}"
 set -e
 exit "$STATUS"
