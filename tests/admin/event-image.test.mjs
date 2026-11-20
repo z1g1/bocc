@@ -97,7 +97,7 @@ describe("schema: event_image kind and cover copy", () => {
                   values ($1, $2, $3, $4, $5, $6, 'image/png', 10, $7)`;
   const keys = (d) => { const id = randomUUID(); return [`events/${d}/${id}/original.png`, `events/${d}/${id}/display.jpg`, `events/${d}/${id}/thumb.jpg`, `events/${d}/${id}/cover.jpg`]; };
 
-  test("an event_image row needs all four copies; the cover is only for event_image and social_photo", async () => {
+  test("an event_image row needs all four copies; the cover is only for event_image and event_photo", async () => {
     const d = await freshDate();
     await inRollback(owner, async () => {
       await owner.query("insert into events (event_date) values ($1)", [d]);
@@ -105,7 +105,7 @@ describe("schema: event_image kind and cover copy", () => {
       const [o, di, t] = keys(d);
       await assertRefused(owner, insert, [d, "event_image", o, di, t, null, "pending"], /event_media_image_16x9_ck/);
       await assertRefused(owner, insert, [d, "signin_board", ...keys(d), "ready"], /event_media_image_16x9_ck/);
-      await assertAllowed(owner, insert, [d, "social_photo", ...keys(d), "ready"]);
+      await assertAllowed(owner, insert, [d, "event_photo", ...keys(d), "ready"]);
     });
   });
 

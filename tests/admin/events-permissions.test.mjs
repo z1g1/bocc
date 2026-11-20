@@ -31,7 +31,7 @@ const photo = (date, over = {}) => {
   const id = randomUUID();
   const base = `events/${date}/${id}`;
   return {
-    id, event_date: date, kind: "social_photo", original_key: `${base}/original.jpg`,
+    id, event_date: date, kind: "event_photo", original_key: `${base}/original.jpg`,
     display_key: `${base}/display.jpg`, thumb_key: `${base}/thumb.jpg`,
     content_type: "image/jpeg", size_bytes: 123456, publicly_usable: false, uploaded_by: userId, ...over,
   };
@@ -187,7 +187,7 @@ describe("shape checks", () => {
       await assertAllowed(admin, ins("source, gives_asks_count, bling_details", "'google_form', 0, 'mug'"), [await d()]);
     }));
 
-  test("event_media: variants per kind, content types, publicly_usable only on social photos", () =>
+  test("event_media: variants per kind, content types, publicly_usable only on Photos from Event", () =>
     inRollback(admin, async () => {
       const d = testDate();
       await admin.query("insert into events (event_date) values ($1)", [d]);
@@ -213,9 +213,9 @@ describe("shape checks", () => {
         original_key: `events/${d}/${randomUUID()}/original.mp4` }));
       const dup = photo(d);
       await insertMedia(admin, dup);
-      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ($1, 'social_photo', $2, 'a', 'b', 'image/jpeg', 1)",
+      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ($1, 'event_photo', $2, 'a', 'b', 'image/jpeg', 1)",
         [d, dup.original_key], /duplicate key/);
-      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ('2099-12-30', 'social_photo', 'x', 'y', 'z', 'image/jpeg', 1)",
+      await assertRefused(admin, "insert into event_media (event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes) values ('2099-12-30', 'event_photo', 'x', 'y', 'z', 'image/jpeg', 1)",
         [], /foreign key/);
     }));
 
@@ -239,9 +239,12 @@ describe("migration 20261120120000 (social photos publicly usable)", () => {
     const { readFileSync } = await import("node:fs");
     const sql = readFileSync(new URL("../../backend/db/migrations/20261120120000_social_photos_publicly_usable.sql", import.meta.url), "utf8");
     await inRollback(owner, async () => {
+      // It ran on 'social_photo' rows, before migration 20261203150000 renamed the kind:
+      // set that trigger aside (rolled back) so old-valued rows can be made.
+      await owner.query("alter table event_media disable trigger event_media_event_photo_compat");
       const d = testDate();
       await owner.query("insert into events (event_date) values ($1)", [d]);
-      const social = photo(d, { publicly_usable: false });
+      const social = photo(d, { kind: "social_photo", publicly_usable: false });
       const board = photo(d, { kind: "signin_board", publicly_usable: false });
       await insertMedia(owner, social);
       await insertMedia(owner, board);

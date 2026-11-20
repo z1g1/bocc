@@ -40,7 +40,7 @@
 //   setVideo(actor, date, mediaId)               social_post.video
 //       a `ready` promo_video of the same event (.errors.video otherwise).
 //   setCover(actor, date, mediaId | "")       social_post.cover
-//       the cover image override: a ready, publicly usable social_photo of any event
+//       the cover image override: a ready, publicly usable event_photo of any event
 //       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
 //       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
 //       SET NULL, migration 20261127120000_social_post_cover). A photo that is also an
@@ -181,11 +181,11 @@ export async function listCoverChoices(db, date) {
   const { rows } = await db.query(
     `with dates as (
        select distinct event_date from public.event_media
-        where kind = 'social_photo' and status = 'ready' and publicly_usable and event_date <= $1::date
+        where kind = 'event_photo' and status = 'ready' and publicly_usable and event_date <= $1::date
         order by event_date desc limit $2)
      select m.id, m.event_date::text as "eventDate", m.thumb_key as "thumbKey", m.content_type as "contentType"
        from public.event_media m join dates using (event_date)
-      where m.kind = 'social_photo' and m.status = 'ready' and m.publicly_usable
+      where m.kind = 'event_photo' and m.status = 'ready' and m.publicly_usable
       order by m.event_date desc, m.created_at desc, m.id`, [date, COVER_CHOICE_DATES]);
   return rows;
 }
@@ -401,7 +401,7 @@ export async function setCover(actorUserId, date, mediaId) {
     if (!clearing) {
       const { rows: [m] } = await client.query(
         `select kind, status, publicly_usable from public.event_media where id = $1 for share`, [mediaId]);
-      if (!m || m.kind !== "social_photo" || !m.publicly_usable) throw new ValidationError({ cover: "That isn't a Photo from Event." });
+      if (!m || m.kind !== "event_photo" || !m.publicly_usable) throw new ValidationError({ cover: "That isn't a Photo from Event." });
       if (m.status !== "ready") throw new ValidationError({ cover: "That photo hasn't finished uploading." });
     }
     // Nothing to change. Clearing with no post rolls back the post's creation too.

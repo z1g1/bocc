@@ -37,6 +37,14 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
      never is (the CHECK). The "OK to use publicly" control and its route are gone; the column
      stays for Phase 5. Migration `20261120120000_social_photos_publicly_usable.sql` backfills
      the social photos uploaded before the change.
+   - *Amended 2026-12-03:* the kind `social_photo` is renamed **`event_photo`**, the
+     glossary's **Photo from Event** (GLOSSARY.md, spec #49, ticket #54): photos taken at an
+     Event and cleared by the photo waiver. The UI already said "Photo(s) from Event" (ADR
+     0012). Migration `20261203150000_event_photo_kind.sql` backfills the rows and, until the
+     contract migration (#60), rewrites a `social_photo` write to `event_photo` (the server
+     also accepts it from a tab opened before the deploy). The rules are unchanged: only an
+     `event_photo` may be publicly usable, and it always is; the **Sign-in board** stays its
+     own private kind, `signin_board`, never publicly usable.
 3. **The browser makes the resized copies before upload.** It uploads:
    - the **untouched original** (the archive)
    - a **1600px JPEG** display copy, which also drops metadata such as GPS location
@@ -81,4 +89,6 @@ binary) with a 60 s limit, and background functions take payloads of only 256 KB
 - *Amended 2026-11-17:* the one-time import of the old sign-in board photos (decision 4),
   keeping the original HEIC files as the archive.
 - *Amended 2026-11-18:* every social photo is publicly usable, under the posted photo waiver
+  (decision 2).
+- *Amended 2026-12-03:* the kind is `event_photo` (Photo from Event), not `social_photo`
   (decision 2).
