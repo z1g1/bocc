@@ -2,14 +2,14 @@
 // small interface that owns every LinkedIn database write. Routes stay thin: they
 // parse the request, call one function here and turn the result into a response.
 //
-// Interface (this ticket, #23: the per-user connection):
+// Interface (this ticket, #23: the per-Admin LinkedIn authentication; GLOSSARY.md):
 //   startConnect(userId, { returnTo })                    -> { location, cookie }
 //   finishConnect(userId, { code, state, error, cookie }) -> { ok, returnTo, notice } | { ok: false, status: 400 }
 //   disconnect(userId)                                    -> { changed }
-//   connectionStatus(db, userId)                          -> null | { name, memberUrn, expiresAt, level, daysLeft }
+//   authenticationStatus(db, userId)                      -> null | { name, memberUrn, expiresAt, level, daysLeft }
 //   accessToken(db, userId)                               -> the decrypted token (for the create flow)
 // The weekly event (#25):
-//   linkedInEventPreview(db, userId, date)                -> { mode, action, refusals, ledger, connection, image, spec, payloads }
+//   linkedInEventPreview(db, userId, date)                -> { mode, action, refusals, ledger, authentication, image, spec, payloads }
 //   createLinkedInEvent(userId, date, { confirm })        -> { ok: true, mode: "dry_run", requests, image, duplicateCheck }
 //                                                            | { ok: false, refusals, preview }
 //   The dry run sends nothing and writes no ledger row.
@@ -42,11 +42,17 @@
 // client.mjs and baseURL from BETTER_AUTH_URL (the per-context origin, never Netlify's
 // URL / DEPLOY_PRIME_URL).
 //
-// Tables (migration 20261124120000_linkedin_connections.sql; admin_app has
-// SELECT/INSERT/UPDATE/DELETE): linkedin_connections, one row per user, the token
-// AES-256-GCM encrypted (crypto.mjs). Audit actions: linkedin_connection.connect
-// (details { reconnect, expires_at }) and linkedin_connection.disconnect. Never a
-// token, code or state in an audit row, log line or span attribute.
+// The function and route names say "connect" (the OAuth redirect URI registered with
+// LinkedIn is /api/admin/linkedin/callback and can't change); the thing itself is the
+// Admin's LinkedIn authentication.
+//
+// Tables (migration 20261124120000_linkedin_connections.sql, renamed by
+// 20261203120000; admin_app has SELECT/INSERT/UPDATE/DELETE): linkedin_authentications,
+// one row per user, the token AES-256-GCM encrypted (crypto.mjs). Audit actions:
+// linkedin_connection.connect (details { reconnect, expires_at }) and
+// linkedin_connection.disconnect, target table "linkedin_connections": these audit
+// labels predate the rename and are kept, so the trail reads the same before and after
+// (AUDIT_TARGET). Never a token, code or state in an audit row, log line or span attribute.
 
 import { adminEnv } from "../auth/auth.mjs";
 import { pool, withAudit } from "../admin/db.mjs";
@@ -63,6 +69,13 @@ import { setLinkInTransaction } from "../admin/event-links.mjs";
 import { LINKEDIN_TAB } from "../admin/event-tabs.mjs";
 import { ConflictError, getEvent } from "../admin/events.mjs";
 import { getEventImage, loadCoverBytes } from "../admin/event-image.mjs";
+
+/**
+ * The audit_log target_table of a LinkedIn authentication's connect and disconnect rows.
+ * The table's name before migration 20261203120000; kept so old and new audit rows read
+ * alike (the audit trail is unchanged by the rename, #58). A label, not a table name.
+ */
+const AUDIT_TARGET = "linkedin_connections";
 
 /** The state cookie, scoped to the LinkedIn routes. */
 export const STATE_COOKIE = "bocc_linkedin_state";
@@ -171,7 +184,7 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
   const box = encryptToken(token.accessToken, { key: cfg.tokenKey, userId });
   await withAudit(userId, async (c) => {
     const { rows } = await c.query(
-      `insert into public.linkedin_connections (user_id, token_ciphertext, expires_at, member_urn, display_name, scope, connected_at)
+      `insert into public.linkedin_authentications (user_id, token_ciphertext, expires_at, member_urn, display_name, scope, connected_at)
        values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (user_id) do update
           set token_ciphertext = excluded.token_ciphertext, expires_at = excluded.expires_at,
@@ -183,7 +196,7 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
     return rows[0].reconnect;
   }, (reconnect) => ({
     action: "linkedin_connection.connect",
-    targetTable: "linkedin_connections",
+    targetTable: AUDIT_TARGET,
     targetId: userId,
     details: { reconnect, expires_at: expiresAt.toISOString() },
   }));
@@ -191,7 +204,7 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
 }
 
 /**
- * Delete the user's connection (audited). LinkedIn's own grant is revoked by the member
+ * Delete the user's LinkedIn authentication (audited). LinkedIn's own grant is revoked by the member
  * on PERMITTED_SERVICES_URL (rules.mjs); the app has no revoke endpoint.
  * @param {string} userId
  * @returns {Promise<{ changed: boolean }>}
@@ -199,9 +212,9 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
 export async function disconnect(userId) {
   try {
     await withAudit(userId, async (c) => {
-      const { rowCount } = await c.query(`delete from public.linkedin_connections where user_id = $1`, [userId]);
+      const { rowCount } = await c.query(`delete from public.linkedin_authentications where user_id = $1`, [userId]);
       if (rowCount === 0) throw NOOP;
-    }, { action: "linkedin_connection.disconnect", targetTable: "linkedin_connections", targetId: userId });
+    }, { action: "linkedin_connection.disconnect", targetTable: AUDIT_TARGET, targetId: userId });
     return { changed: true };
   } catch (err) {
     if (err === NOOP) return { changed: false };
@@ -210,14 +223,14 @@ export async function disconnect(userId) {
 }
 
 /**
- * The user's connection as the page shows it, or null when not connected.
+ * The user's LinkedIn authentication as the page shows it, or null when not authenticated.
  * @param {{ query: Function }} db
  * @param {string} userId
  * @param {{ now?: Date }} [opts]
  */
-export async function connectionStatus(db, userId, { now = new Date() } = {}) {
+export async function authenticationStatus(db, userId, { now = new Date() } = {}) {
   const { rows } = await db.query(
-    `select display_name, member_urn, expires_at from public.linkedin_connections where user_id = $1`, [userId]);
+    `select display_name, member_urn, expires_at from public.linkedin_authentications where user_id = $1`, [userId]);
   if (!rows[0]) return null;
   const { display_name: name, member_urn: memberUrn, expires_at: expiresAt } = rows[0];
   return { name, memberUrn, expiresAt, ...expiryLevel(expiresAt, now) };
@@ -229,14 +242,14 @@ export async function connectionStatus(db, userId, { now = new Date() } = {}) {
  * @param {{ query: Function }} db
  * @param {string} userId
  * @param {{ config?: any, now?: Date }} [opts]
- * @throws {LinkedInError} kind "expired" when not connected or expired
+ * @throws {LinkedInError} kind "expired" when not authenticated or expired
  */
 export async function accessToken(db, userId, { config, now = new Date() } = {}) {
   const cfg = requireConfig(config);
   const { rows } = await db.query(
-    `select token_ciphertext, expires_at from public.linkedin_connections where user_id = $1`, [userId]);
-  if (!rows[0]) throw new LinkedInError("expired", "linkedin: not connected");
-  if (expiryLevel(rows[0].expires_at, now).level === "red") throw new LinkedInError("expired", "linkedin: connection expired");
+    `select token_ciphertext, expires_at from public.linkedin_authentications where user_id = $1`, [userId]);
+  if (!rows[0]) throw new LinkedInError("expired", "linkedin: not authenticated");
+  if (expiryLevel(rows[0].expires_at, now).level === "red") throw new LinkedInError("expired", "linkedin: authentication expired");
   return decryptToken(rows[0].token_ciphertext, { key: cfg.tokenKey, userId });
 }
 
@@ -318,7 +331,7 @@ async function sendSequence(writer, token, { spec, memberUrn, cover }) {
 
 /**
  * Everything the LinkedIn section shows for one date: the mode, the action on offer and
- * why create can't run, the ledger row, the connection, the cover, and the payloads.
+ * why create can't run, the ledger row, the LinkedIn authentication, the cover, and the payloads.
  * @param {{ query: Function }} db
  * @param {string} userId  the signed-in Admin
  * @param {string} date
@@ -326,22 +339,22 @@ async function sendSequence(writer, token, { spec, memberUrn, cover }) {
  */
 export async function linkedInEventPreview(db, userId, date, { config, now = new Date() } = {}) {
   const cfg = requireConfig(config);
-  const [event, ledger, connection, image] = await Promise.all([
-    getEvent(db, date), activeLedgerRow(db, date), connectionStatus(db, userId, { now }), getEventImage(db, date),
+  const [event, ledger, authentication, image] = await Promise.all([
+    getEvent(db, date), activeLedgerRow(db, date), authenticationStatus(db, userId, { now }), getEventImage(db, date),
   ]);
-  const ctx = { date, now, event: { status: event.status, location: event.location }, ledger, connection, live: cfg.live };
+  const ctx = { date, now, event: { status: event.status, location: event.location }, ledger, authentication, live: cfg.live };
   const { action, mode, refusals } = allowedActions(ctx);
   const built = buildEventSpec({ date, location: event.location });
   const spec = built.ok ? built.spec : null;
   return {
-    date, mode, action, refusals, ctx, ledger, connection, image, spec,
-    payloads: spec ? payloadsFor(spec, connection?.memberUrn ?? PLACEHOLDERS.member) : null,
+    date, mode, action, refusals, ctx, ledger, authentication, image, spec,
+    payloads: spec ? payloadsFor(spec, authentication?.memberUrn ?? PLACEHOLDERS.member) : null,
   };
 }
 
 /**
  * The Create live event button. Refused unless the request carries confirm=live (the
- * dialog) and the allowed-actions matrix allows create. When connected, the read-only
+ * dialog) and the allowed-actions matrix allows create. When authenticated, the read-only
  * organizer listing refuses a duplicate (same name, old or new style, or the same
  * Eastern day). The cover's bytes are read and checked. Then:
  *   dry run (no LINKEDIN_LIVE): the requests that would be sent; nothing is sent to
@@ -359,12 +372,12 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
 
   const refusals = createRefusals(preview.ctx, { confirm });
   if (refusals.length) return refuse(refusals);
-  const { spec, connection } = preview;
+  const { spec, authentication } = preview;
 
   const li = client ?? linkedInClient(cfg);
   let token = null;
   let duplicateCheck = "skipped";
-  if (connection && connection.level !== "red") {
+  if (authentication && authentication.level !== "red") {
     try {
       token = await accessToken(pool, userId, { config: cfg, now });
       const duplicates = findDuplicates(await li.listOrganizerEvents(token, ORGANIZER_URN), spec);
@@ -396,11 +409,11 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
   if (!image.ok) return refuse([{ code: "image", message: `${REFUSALS.image} ${image.errors.join(" ")}` }], { image });
 
   if (cfg.live) {
-    return liveSequence({ userId, date, token, li, spec, memberUrn: connection.memberUrn, cover, image, eventImage: preview.image, cfg, now, duplicateCheck });
+    return liveSequence({ userId, date, token, li, spec, memberUrn: authentication.memberUrn, cover, image, eventImage: preview.image, cfg, now, duplicateCheck });
   }
 
   const recorder = recordingClient();
-  await sendSequence(recorder, token, { spec, memberUrn: connection?.memberUrn ?? PLACEHOLDERS.member, cover });
+  await sendSequence(recorder, token, { spec, memberUrn: authentication?.memberUrn ?? PLACEHOLDERS.member, cover });
   return { ok: true, mode: "dry_run", duplicateCheck, image, requests: recorder.requests, preview };
 }
 
@@ -497,7 +510,7 @@ async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, i
     url = eventUrl(created.id, created.vanityName);
     await withAudit(userId, async (client) => {
       const { rowCount } = await client.query(
-        // Claimed for this request's own post (claimPost), so a Publish event can't race it.
+        // Claimed for this request's own post (claimPost), so a Publish the LinkedIn post can't race it.
         `update public.linkedin_events
             set status = 'created', linkedin_event_id = $2, event_url = $3, event_created_at = $4, image_asset_urn = $5,
                 post_claimed_at = now()
@@ -532,7 +545,7 @@ async function claimPost(rowId) {
   return rowCount === 1;
 }
 
-/** Release the claim after a failed post, so the Admin can Publish event again. */
+/** Release the claim after a failed post, so the Admin can Publish the LinkedIn post again. */
 async function releasePost(rowId) {
   try {
     await pool.query(`update public.linkedin_events set post_claimed_at = null where id = $1 and status = 'created'`, [rowId]);
@@ -563,7 +576,7 @@ async function postAndMark({ userId, date, token, li, memberUrn, row, cfg, now, 
 }
 
 /**
- * Publish event: retry only the member post of a `created` row (LinkedIn hides an
+ * Publish the LinkedIn post: retry only the member post of a `created` row (LinkedIn hides an
  * unposted event and can't delete it, so the event is never created twice).
  * Refused like create for a past date or a cancelled event (rules.mjs publishRefusals).
  * Live, the row is claimed first (claimPost): of two concurrent requests one posts and
@@ -578,11 +591,11 @@ export async function publishRetry(userId, date, { confirm }, { config, client, 
   const cfg = requireConfig(config);
   const preview = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
   const refuse = (refusals) => ({ ok: false, mode: preview.mode, refusals, preview });
-  const { ledger, connection } = preview;
+  const { ledger, authentication } = preview;
   const refusals = publishRefusals(preview.ctx, { confirm });
   if (refusals.length) return refuse(refusals);
 
-  const memberUrn = connection?.memberUrn ?? PLACEHOLDERS.member;
+  const memberUrn = authentication?.memberUrn ?? PLACEHOLDERS.member;
   if (!cfg.live) {
     const recorder = recordingClient();
     await recorder.createPost(null, buildPostPayload(memberUrn, ledger.linkedinEventId, ledger.commentary));

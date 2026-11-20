@@ -150,47 +150,47 @@ describe("linkedinExpiryAlerts", () => {
   const now = new Date("2026-11-19T14:00:00Z");
   const at = (days) => new Date(now.getTime() + days * 86_400_000);
 
-  test("no connection: no alert", () => {
-    assert.deepEqual(linkedinExpiryAlerts({ connections: [], now, siteUrl: SITE }), []);
+  test("no LinkedIn authentication: no alert", () => {
+    assert.deepEqual(linkedinExpiryAlerts({ authentications: [], now, siteUrl: SITE }), []);
   });
   test("10 days or more left: no alert", () => {
-    assert.deepEqual(linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(10) }], now, siteUrl: SITE }), []);
+    assert.deepEqual(linkedinExpiryAlerts({ authentications: [{ name: "Zack Glick", expiresAt: at(10) }], now, siteUrl: SITE }), []);
   });
-  test("under 10 days: names whose connection it is and sends them to /admin/account/", () => {
-    const [a, ...rest] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(3.2) }], now, siteUrl: SITE });
+  test("under 10 days: names whose LinkedIn authentication it is and sends them to /admin/account/", () => {
+    const [a, ...rest] = linkedinExpiryAlerts({ authentications: [{ name: "Zack Glick", expiresAt: at(3.2) }], now, siteUrl: SITE });
     assert.equal(rest.length, 0);
-    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection expires in 3 days");
-    assert.match(a.message, /Zack Glick's LinkedIn connection expires on Sunday, November 22, 2026 \(in 3 days\)\./);
-    assert.match(a.message, /Reconnect at \/admin\/account\/ before Tuesday's LinkedIn event has to be created\./);
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's LinkedIn authentication expires in 3 days");
+    assert.match(a.message, /Zack Glick's LinkedIn authentication expires on Sunday, November 22, 2026 \(in 3 days\)\./);
+    assert.match(a.message, /Re-authenticate at \/admin\/account\/ before Tuesday's LinkedIn event has to be created\./);
     assert.equal(a.click, "https://716coffee.club/admin/account/");
     assert.equal(a.priority, "high");
     assert.deepEqual(a.tags, ["warning"]);
   });
   test("under a day left: \"in less than a day\"", () => {
-    const [a] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(0.5) }], now, siteUrl: SITE });
-    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection expires in less than a day");
+    const [a] = linkedinExpiryAlerts({ authentications: [{ name: "Zack Glick", expiresAt: at(0.5) }], now, siteUrl: SITE });
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's LinkedIn authentication expires in less than a day");
   });
   test("one day left: singular", () => {
-    const [a] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: at(1.2) }], now, siteUrl: SITE });
-    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection expires in 1 day");
+    const [a] = linkedinExpiryAlerts({ authentications: [{ name: "Zack Glick", expiresAt: at(1.2) }], now, siteUrl: SITE });
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's LinkedIn authentication expires in 1 day");
   });
   test("expired: says so", () => {
-    const [a] = linkedinExpiryAlerts({ connections: [{ name: "Zack Glick", expiresAt: "2026-11-01T12:00:00Z" }], now, siteUrl: SITE });
-    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's connection has expired");
+    const [a] = linkedinExpiryAlerts({ authentications: [{ name: "Zack Glick", expiresAt: "2026-11-01T12:00:00Z" }], now, siteUrl: SITE });
+    assert.equal(a.title, "BOCC LinkedIn: Zack Glick's LinkedIn authentication has expired");
     assert.match(a.message, /expired on Sunday, November 1, 2026\./);
-    assert.match(a.message, /Reconnect at \/admin\/account\//);
+    assert.match(a.message, /Re-authenticate at \/admin\/account\//);
   });
-  test("one alert per connection that is due, in the order given", () => {
-    const alerts = linkedinExpiryAlerts({ connections: [
+  test("one alert per LinkedIn authentication that is due, in the order given", () => {
+    const alerts = linkedinExpiryAlerts({ authentications: [
       { name: "Ann", expiresAt: at(2) }, { name: "Bob", expiresAt: at(40) }, { name: "Cy", expiresAt: at(-1) },
     ], now, siteUrl: SITE });
     assert.deepEqual(alerts.map((a) => a.title), [
-      "BOCC LinkedIn: Ann's connection expires in 2 days", "BOCC LinkedIn: Cy's connection has expired",
+      "BOCC LinkedIn: Ann's LinkedIn authentication expires in 2 days", "BOCC LinkedIn: Cy's LinkedIn authentication has expired",
     ]);
   });
   test("a missing name still reads; no site URL: no Click link", () => {
-    const [a] = linkedinExpiryAlerts({ connections: [{ name: null, expiresAt: at(2) }], now, siteUrl: null });
-    assert.equal(a.title, "BOCC LinkedIn: an Admin's connection expires in 2 days");
+    const [a] = linkedinExpiryAlerts({ authentications: [{ name: null, expiresAt: at(2) }], now, siteUrl: null });
+    assert.equal(a.title, "BOCC LinkedIn: an Admin's LinkedIn authentication expires in 2 days");
     assert.equal(a.click, null);
   });
 });
@@ -328,8 +328,8 @@ describe("runSocialCheck (database read replaced)", () => {
     console.log = console.info = console.error = (...a) => lines.push(a.join(" "));
     try { return { result: await fn(), lines }; } finally { Object.assign(console, { log, info, error }); }
   }
-  /** runSocialCheck with no LinkedIn connections unless a test says otherwise. */
-  const run = (opts) => runSocialCheck({ readConnections: async () => [], ...opts });
+  /** runSocialCheck with no LinkedIn authentications unless a test says otherwise. */
+  const run = (opts) => runSocialCheck({ readAuthentications: async () => [], ...opts });
 
   test("checks next Tuesday and sends nothing when all is well", async () => {
     const f = fakeFetch();
@@ -444,7 +444,7 @@ describe("runSocialCheck (database read replaced)", () => {
   });
 });
 
-describe("runSocialCheck: the LinkedIn connection expiry (#24)", () => {
+describe("runSocialCheck: the LinkedIn authentication expiry (#24)", () => {
   const THURSDAY = new Date("2026-11-19T14:00:00Z");
   const env = { SOCIAL_ALERT_NTFY_TOPIC: "bocc-secret-topic", URL: SITE };
   const prod = { deploy: { context: "production" }, site: { url: SITE } };
@@ -459,31 +459,31 @@ describe("runSocialCheck: the LinkedIn connection expiry (#24)", () => {
   }
   const run = (opts) => runSocialCheck({ env, context: prod, now: THURSDAY, readOrder: async () => order(), ...opts });
 
-  test("no connection: quiet", async () => {
+  test("no LinkedIn authentication: quiet", async () => {
     const f = fakeFetch();
-    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [] }));
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readAuthentications: async () => [] }));
     assert.equal(result.outcome, "ok");
     assert.deepEqual(result.linkedin, { outcome: "ok", alerts: [] });
     assert.equal(f.calls.length, 0);
-    assert.match(lines.join("\n"), /linkedin: no connection; no alert/);
+    assert.match(lines.join("\n"), /linkedin: no LinkedIn authentication; no alert/);
   });
 
   test("10 days or more left: quiet", async () => {
     const f = fakeFetch();
-    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [zack(10)] }));
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readAuthentications: async () => [zack(10)] }));
     assert.equal(result.outcome, "ok");
     assert.equal(f.calls.length, 0);
-    assert.match(lines.join("\n"), /linkedin: 1 connection, none expiring within 10 days; no alert/);
+    assert.match(lines.join("\n"), /linkedin: 1 LinkedIn authentication, none expiring within 10 days; no alert/);
   });
 
   test("under 10 days: alerts even when the social post is fine, and logs no name or topic", async () => {
     const f = fakeFetch();
-    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [zack(4)] }));
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readAuthentications: async () => [zack(4)] }));
     assert.equal(result.outcome, "sent");
     assert.equal(result.linkedin.outcome, "sent");
     assert.equal(f.calls.length, 1);
     const body = JSON.parse(f.calls[0].init.body);
-    assert.equal(body.title, "BOCC LinkedIn: Zack Glick's connection expires in 4 days");
+    assert.equal(body.title, "BOCC LinkedIn: Zack Glick's LinkedIn authentication expires in 4 days");
     assert.equal(body.click, "https://716coffee.club/admin/account/");
     const logs = lines.join("\n");
     assert.match(logs, /linkedin: 1 expiry alert sent/);
@@ -493,29 +493,29 @@ describe("runSocialCheck: the LinkedIn connection expiry (#24)", () => {
   test("expired, alongside a social alert: two pushes, social first", async () => {
     const f = fakeFetch();
     const { result } = await captureLogs(() => run({
-      fetch: f, readOrder: async () => null, readConnections: async () => [zack(-2)],
+      fetch: f, readOrder: async () => null, readAuthentications: async () => [zack(-2)],
     }));
     assert.equal(result.outcome, "sent");
     assert.deepEqual(f.calls.map((c) => JSON.parse(c.init.body).title),
-      ["BOCC social: no post for Tue Nov 24", "BOCC LinkedIn: Zack Glick's connection has expired"]);
+      ["BOCC social: no post for Tue Nov 24", "BOCC LinkedIn: Zack Glick's LinkedIn authentication has expired"]);
   });
 
   test("the LinkedIn read failing still runs the social check, then sends its own failure alert", async () => {
     const f = fakeFetch();
     const { result, lines } = await captureLogs(() => run({
-      fetch: f, readConnections: async () => { throw new Error("permission denied for table linkedin_connections postgresql://social_checker:pw@host/db"); },
+      fetch: f, readAuthentications: async () => { throw new Error("permission denied for table linkedin_connections postgresql://social_checker:pw@host/db"); },
     }));
     assert.equal(result.outcome, "failed");
     assert.equal(result.linkedin.outcome, "failed");
     assert.equal(f.calls.length, 1);
-    assert.match(JSON.parse(f.calls[0].init.body).title, /BOCC LinkedIn: the Thursday check couldn't read the connection/);
+    assert.match(JSON.parse(f.calls[0].init.body).title, /BOCC LinkedIn: the Thursday check couldn't read the LinkedIn authentications/);
     assert.doesNotMatch(lines.join("\n"), /pw@host/);
   });
 
   test("the social read failing doesn't stop the LinkedIn check", async () => {
     const f = fakeFetch();
     const { result } = await captureLogs(() => run({
-      fetch: f, readOrder: async () => { throw new Error("boom"); }, readConnections: async () => [zack(1)],
+      fetch: f, readOrder: async () => { throw new Error("boom"); }, readAuthentications: async () => [zack(1)],
     }));
     assert.equal(result.outcome, "failed");
     assert.equal(result.linkedin.outcome, "sent");
@@ -524,7 +524,7 @@ describe("runSocialCheck: the LinkedIn connection expiry (#24)", () => {
 
   test("an ntfy failure on the LinkedIn alert is logged, not thrown", async () => {
     const f = fakeFetch(() => new Response("", { status: 500 }));
-    const { result, lines } = await captureLogs(() => run({ fetch: f, readConnections: async () => [zack(2)] }));
+    const { result, lines } = await captureLogs(() => run({ fetch: f, readAuthentications: async () => [zack(2)] }));
     assert.equal(result.outcome, "failed");
     assert.equal(result.linkedin.outcome, "failed");
     assert.match(lines.join("\n"), /linkedin: expiry alert not sent: ntfy publish answered HTTP 500/);
