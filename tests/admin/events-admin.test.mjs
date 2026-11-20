@@ -696,7 +696,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.deepEqual(options(blank, "status").map((o) => [o.value, o.label]),
       [["scheduled", "Scheduled"], ["reported", "Reported"], ["cancelled", "Cancelled"]]);
     assert.deepEqual(options(blank, "location").map((o) => [o.value, o.label]),
-      [["", "Not set"], ["lobby", "Lobby"], ["food_hall", "Food hall"], ["other", "Other"]]);
+      [["", "Not set (Lobby assumed)"], ["lobby", "Lobby"], ["food_hall", "Food hall"], ["other", "Other (describe it)"]]);
     assert.deepEqual([chosen(blank, "status"), chosen(blank, "location")], [["scheduled"], [""]]);
     assert.ok(!/type="radio" name="(status|location)"/.test(blank), "no radio buttons for Status or Location");
     for (const name of ["status", "location"]) {
@@ -776,16 +776,16 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.equal(paged.status, 200);
   });
 
-  // Phase 4: the Listings forms and the readiness checklist.
-  test("listings: save creates the event, readiness at the top for upcoming dates, list and home at a glance", async () => {
+  // Phase 4: the Listings forms; #59: Event readiness, and its tag on the list and home.
+  test("listings: save creates the event, Event readiness at the top for upcoming dates, its tag on the list and home", async () => {
     // A few days ahead (Eastern), so it is among the soonest upcoming events.
     const d = ev.todayEastern(new Date(Date.now() + 3 * 86400_000));
     assert.equal(await eventRow(d), null, "no other test uses this date");
     const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
-    assert.ok(page.includes('id="h-ready"') && page.includes("Online Event Listings 0/5 (Default Cover Image)"), "readiness near the top");
+    assert.ok(page.includes('id="h-ready"') && page.includes("Listings 0/5") && page.includes("Event Image: Default (BOCC logo)"), "Event readiness near the top");
     assert.ok(page.indexOf('id="h-ready"') < page.indexOf('id="h-details"'));
-    assert.ok(page.includes("public page") && page.includes("404 until the event is saved") && !page.includes(`href="/events/${d}/"`));
-    assert.ok(page.includes("Social Posts: not set up yet") && !page.includes("Phase 5"));
+    assert.ok(page.includes("Public event page") && page.includes("404 until the event is saved") && !page.includes(`href="/events/${d}/"`));
+    assert.ok(page.includes("No Social plan yet") && !page.includes("Phase 5"));
     for (const p of ["luma", "eventbrite", "facebook_event", "linkedin_event"]) assert.ok(page.includes(`id="link-${p}"`), p);
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
@@ -805,7 +805,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.deepEqual([audit.target_table, audit.details.platform, audit.details.created], ["event_links", "luma", true]);
     const after = await (await req(`/admin/events/${d}/?notice=link`, { cookie: admin.cookie })).text();
     // The Luma listing and the public page (the save created the event); no embed id item.
-    assert.ok(after.includes("Listing saved.") && after.includes("Online Event Listings 2/5 (Default Cover Image)"));
+    assert.ok(after.includes("Listing saved.") && after.includes("Listings 2/5"));
     assert.ok(!after.includes("no embed id") && !after.includes("Luma embed id"));
     // The row is its label, the text box holding the saved URL and its buttons: no printed link.
     const lumaRow = after.match(/<form[^>]*id="link-luma"[\s\S]*?<\/form>/)?.[0] ?? "";
@@ -818,15 +818,15 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
 
     const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
     const item = list.match(new RegExp(`<li\\b[^>]*><a href="/admin/events/${d}/"[\\s\\S]*?</li>`))?.[0] ?? "";
-    assert.match(item, /<span class="ready-tag[^"]*"[^>]*>\s*2\/5 listings\s*<\/span>/);
+    assert.match(item, /<span class="ready-tag[^"]*"[^>]*>\s*2\/5 listings · Location not set\s*<\/span>/, "the tag is Event readiness");
     assert.ok(!list.includes("no embed id"));
     const home = await (await req("/admin/", { cookie: admin.cookie })).text();
     // Structure, not distance: astro dev adds data-astro-* attributes to every tag.
     const nextItems = [...home.matchAll(/<li\b[^>]*>Next: ([\s\S]*?)<\/li>/g)].map((m) => m[1]);
     assert.ok(nextItems.length > 0, "home lists the next events");
-    for (const li of nextItems) assert.match(li, /<span class="ready-tag[^"]*"[^>]*>\s*\d\/5 listings\s*<\/span>/, "home: listings at a glance");
+    for (const li of nextItems) assert.match(li, /<span class="ready-tag[^"]*"[^>]*>\s*(Ready|[^<]*(listings|Location not set|LinkedIn|Cancel)[^<]*)\s*<\/span>/, "home: Event readiness at a glance");
     const homeItem = nextItems.find((li) => li.includes(`/admin/events/${d}/`));
-    if (homeItem) assert.match(homeItem, /2\/5 listings/, "home: the same five-item count");
+    if (homeItem) assert.match(homeItem, /2\/5 listings · Location not set/, "home: the same tag");
 
     const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "unlink", platform: "luma" } });
     assert.equal(clear.headers.get("location"), `/admin/events/${d}/?tab=info&notice=unlink`);
@@ -840,7 +840,23 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.equal((await owner.query(`select 1 from event_links where event_date = $1`, [d])).rowCount, 0);
   });
 
-  test("a past event has the Online Event Listings section (Event Info tab) but no readiness block at the top", async () => {
+  test("the list's tag for a Cancelled Event: the cancellation, not the Listings or Location", async () => {
+    const d = ev.todayEastern(new Date(Date.now() + 5 * 86400_000));
+    assert.equal(await eventRow(d), null, "no other test uses this date");
+    const tag = async () => {
+      const list = await (await req("/admin/events/", { cookie: admin.cookie })).text();
+      const item = list.match(new RegExp(`<li\\b[^>]*><a href="/admin/events/${d}/"[\\s\\S]*?</li>`))?.[0] ?? "";
+      return item.match(/<span class="ready-tag[^"]*"[^>]*>\s*([^<]*?)\s*<\/span>/)?.[1];
+    };
+    const save = (form) => req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", status: "cancelled", cancelReason: "weather", ...form } });
+    assert.equal((await save({})).status, 303);
+    assert.equal(await tag(), "Cancellation not announced");
+    assert.equal((await save({ cancelAnnounced: "on" })).status, 303);
+    assert.equal(await tag(), "Ready");
+    await owner.query(`delete from events where event_date = $1`, [d]);
+  });
+
+  test("a past event has the Online Event Listings section (Event Info tab) but no readiness sections at the top", async () => {
     const html = await (await req(`/admin/events/${pastDate()}/?tab=info`, { cookie: admin.cookie })).text();
     assert.ok(html.includes('id="h-links"') && !html.includes('id="h-ready"'));
   });

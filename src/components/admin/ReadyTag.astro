@@ -1,14 +1,12 @@
 ---
-// Listings at a glance for an upcoming event in the admin lists (plan Phase 4, #42):
-// "3/5 listings", the same five the event page's Readiness counts (the four listings and
-// the public page). `info` comes from linkSummaries() in src/lib/admin/event-links.mjs.
-import { LISTINGS_TOTAL, listingsDone } from "../../lib/admin/event-links.mjs";
-interface Props { info?: { listings: number }; event: { status: string; exists?: boolean } }
-const { info = { listings: 0 }, event } = Astro.props;
-const done = listingsDone(event, info.listings);
-const complete = done === LISTINGS_TOTAL;
+// Event readiness at a glance for an upcoming Event in the admin lists (#59): "Ready",
+// or what is missing ("2/5 listings · Location not set", "Cancellation not announced").
+// `tag` is eventReadiness().tag (src/lib/admin/event-readiness.mjs), loaded for the list by
+// eventReadinessByDate() (src/lib/admin/event-readiness-load.mjs).
+interface Props { tag?: { label: string; ok: boolean } }
+const { tag } = Astro.props;
 ---
-<span class:list={["ready-tag", { complete }]}>{done}/{LISTINGS_TOTAL} listings</span>
+{tag && <span class:list={["ready-tag", { complete: tag.ok }]}>{tag.label}</span>}
 
 <style>
   .ready-tag { font-size: 0.85em; padding: 0 0.35rem; border: 1px solid var(--line); border-radius: 4px; margin-left: 0.25rem; }

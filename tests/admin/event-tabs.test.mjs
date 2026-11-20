@@ -1,7 +1,7 @@
 // The tabs of /admin/events/YYYY-MM-DD/ (ADR 0012 decision 1, issue #19) over HTTP
 // through a real `astro dev` server, against the throwaway database (npm run test:db):
 // - which tab renders (?tab=, the date default, unknown values) and which sections it has,
-//   with Readiness above the tabs on every tab
+//   with Event readiness and Social plan readiness above the tabs on every tab
 // - every form redirecting back to its tab (post/redirect/get), validation errors on the
 //   form's tab, and the media delete route landing on the photo's or video's tab
 // - the two renames (Online Event Listings, Photos from Event)
@@ -123,27 +123,51 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     return res.text();
   };
 
-  test("?tab picks the tab; each tab has its sections, and Readiness sits above the tabs on every one", async () => {
+  test("?tab picks the tab; each tab has its sections, and Event readiness and Social plan readiness sit above the tabs on every one", async () => {
     const d = futureDate();
     for (const tab of ["info", "social", "post"]) {
       const html = await page(`/admin/events/${d}/?tab=${tab}`);
       expectTab(html, tab, tab);
-      assert.ok(html.includes('id="h-ready"'), `${tab}: readiness`);
-      assert.ok(html.indexOf('id="h-ready"') < html.indexOf('aria-label="Event page tabs"'), `${tab}: readiness above the tabs`);
-      // #42: an H2 section with two bullets.
-      const ready = html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('aria-label="Event page tabs"'));
-      assert.match(ready, /<h2 id="h-ready"[^>]*>Readiness<\/h2>/, `${tab}: the H2`);
-      const bullets = [...ready.matchAll(/<li\b[^>]*class="[^"]*\bbullet\b[^"]*"[^>]*>/g)];
-      assert.equal(bullets.length, 2, `${tab}: two bullets`);
-      assert.match(ready, /Online Event Listings \d\/5 \(Default Cover Image\)/, `${tab}: the listings bullet`);
-      assert.match(ready, /Social Posts: not set up yet/, `${tab}: the social bullet`);
+      const tabs = html.indexOf('aria-label="Event page tabs"');
+      for (const id of ["h-ready", "h-social-ready"]) {
+        assert.ok(html.includes(`id="${id}"`), `${tab}: ${id}`);
+        assert.ok(html.indexOf(`id="${id}"`) < tabs, `${tab}: ${id} above the tabs`);
+      }
+      assert.ok(html.indexOf('id="h-ready"') < html.indexOf('id="h-social-ready"'), `${tab}: Event readiness first`);
+      // #59: two H2 sections. An unsaved date: no Location, no Social plan.
+      const ready = html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('<section aria-labelledby="h-social-ready"'));
+      assert.match(ready, /<h2 id="h-ready"[^>]*>Event readiness<\/h2>/, `${tab}: the Event readiness H2`);
+      assert.match(ready, /Listings 0\/5/, `${tab}: the Listings bullet`);
+      assert.match(ready, /Location: not set \(Lobby assumed\)/, `${tab}: the Location bullet`);
+      assert.match(ready, /Event Image: Default \(BOCC logo\)/, `${tab}: the Event Image, information only`);
+      const social = html.slice(html.indexOf('<section aria-labelledby="h-social-ready"'), tabs);
+      assert.match(social, /<h2 id="h-social-ready"[^>]*>Social plan readiness<\/h2>/, `${tab}: the Social plan readiness H2`);
+      assert.match(social, /No Social plan yet/, `${tab}: no Social plan`);
+      assert.doesNotMatch(html, /Online Event Listings \d\/5|Social Posts:|Cover Image/, `${tab}: the old wording is gone`);
       for (const [key, label] of [["info", "Event Info"], ["social", "Social plan"], ["post", "Post Event"]]) {
         assert.match(html, new RegExp(`<a\\b[^>]*href="\\?tab=${key}"[^>]*>${label}</a>`), `${tab}: a plain link to ${label}`);
       }
     }
   });
 
-  test("the title and the tabs are pinned to the top on scroll; Readiness is not (#36)", async () => {
+  test("Event readiness: a Location set and a Cancelled Event", async () => {
+    const d = futureDate();
+    const save = (form) => req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", ...form } });
+    assert.equal((await save({ status: "scheduled", location: "other", locationOther: "Room 5" })).status, 303);
+    const set = await page(`/admin/events/${d}/?tab=info`);
+    const readyOf = (html) => html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('<section aria-labelledby="h-social-ready"'));
+    assert.match(readyOf(set), /✓<\/span>\s*<strong[^>]*>Location: Other \(Room 5\)<\/strong>/);
+    assert.match(readyOf(set), /Listings 1\/5/, "saved: the Public event page counts");
+
+    assert.equal((await save({ status: "cancelled", location: "lobby", cancelReason: "weather" })).status, 303);
+    const off = readyOf(await page(`/admin/events/${d}/?tab=info`));
+    assert.match(off, /✗<\/span>\s*<strong[^>]*>Cancellation: not announced on all socials yet<\/strong>/);
+    assert.doesNotMatch(off, /Listings|Location:|Event Image:/, "no Listings, Location or Event Image for a Cancelled Event");
+    assert.equal((await save({ status: "cancelled", location: "lobby", cancelReason: "weather", cancelAnnounced: "on" })).status, 303);
+    assert.match(readyOf(await page(`/admin/events/${d}/?tab=info`)), /✓<\/span>\s*<strong[^>]*>Cancellation: announced on all socials<\/strong>/);
+  });
+
+  test("the title and the tabs are pinned to the top on scroll; the readiness sections are not (#36)", async () => {
     const d = futureDate();
     for (const tab of ["info", "social", "post"]) {
       const html = await page(`/admin/events/${d}/?tab=${tab}`);
@@ -173,7 +197,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
   test("a LinkedIn listing made outside the app: a caution line, a 'Listed' note, and the create tools folded away", async () => {
     const d = futureDate();
     const before = await page(`/admin/events/${d}/?tab=info`);
-    assert.match(before, /✗<\/span>\s*LinkedIn event posted/, "no listing: the red cross");
+    assert.match(before, /✗<\/span>\s*<a href="\?tab=info#h-linkedin"[^>]*>LinkedIn listing<\/a>[\s\S]{0,600}not posted yet/, "no listing: the red cross");
     assert.doesNotMatch(before, /<details\b[^>]*class="linkedin-tools"/, "no listing: the tools are not folded");
 
     const url = "https://www.linkedin.com/events/7000000000000000001/";
@@ -182,7 +206,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
 
     const info = await page(`/admin/events/${d}/?tab=info`);
     assert.match(info, /<li\b[^>]*class="caution"[^>]*>\s*<span class="mark"[^>]*>⚠<\/span>/, "a caution mark, not a cross");
-    assert.match(info, /LinkedIn event posted<\/a>[\s\S]{0,600}created manually outside the app/, "the readiness note");
+    assert.match(info, /LinkedIn listing<\/a>[\s\S]{0,600}created manually outside the app/, "the Event readiness note");
     assert.match(info, /Listed: <a href="https:\/\/www\.linkedin\.com\/events\/7000000000000000001\/"/);
     assert.match(info, /<details\b(?![^>]*\bopen\b)[^>]*class="linkedin-tools"[^>]*>|<details\b[^>]*class="linkedin-tools"(?![^>]*\bopen\b)[^>]*>/, "the tools start folded");
     const notice = await page(`/admin/events/${d}/?tab=info&notice=linkedin_retry`);
@@ -196,8 +220,11 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       expectTab(await page(`/admin/events/${future}/${q}`), "info", `future ${q}`);
       expectTab(await page(`/admin/events/${past}/${q}`), "post", `past ${q}`);
     }
-    // A past event has no readiness block, on any tab.
-    for (const tab of ["info", "social", "post"]) assert.ok(!(await page(`/admin/events/${past}/?tab=${tab}`)).includes('id="h-ready"'));
+    // A past event has no readiness sections, on any tab.
+    for (const tab of ["info", "social", "post"]) {
+      const html = await page(`/admin/events/${past}/?tab=${tab}`);
+      assert.ok(!html.includes('id="h-ready"') && !html.includes('id="h-social-ready"'));
+    }
   });
 
   test("the renames: Online Event Listings and Photos from Event, and the old labels are gone", async () => {

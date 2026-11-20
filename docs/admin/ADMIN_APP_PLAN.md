@@ -524,6 +524,20 @@ work (to save deploy credits); everything is verified on staging first.
       the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
       status, or "not set up yet"), its problems (not once Posted) and channels under it. The
       events list and home tag became "x/5 listings" with the same count
+- [x] Event readiness and Social plan readiness (#59) replace the Readiness section: two H2
+      sections above the tabs on every tab of today's or an Upcoming Event. **Event readiness**
+      (pure `src/lib/admin/event-readiness.mjs`): for a Scheduled Event, "Listings x/5" (the
+      LinkedIn Listing is done once its URL is saved, which the app does when its LinkedIn
+      post is out; a URL with no posted LinkedIn event in the app is a ⚠ caution line, "created
+      manually outside the app"; LinkedIn drift is a red line under it), "Location: …" (required,
+      "not set (Lobby assumed)" until chosen) and "Event Image: Default (BOCC logo) | Custom"
+      (information only); for a Cancelled Event only "Cancellation: announced on all socials"
+      (the checkbox) with "Cancel the LinkedIn event on LinkedIn" under it while due.
+      **Social plan readiness** (pure `src/lib/admin/social-plan-readiness.mjs`): "Social plan:
+      <Plan status>" or "No Social plan yet", the problems blocking Ready for Posting (hidden
+      once Posted) and each social media post with its Post status. The events list and home
+      tag use Event readiness only: "Ready", or what is missing ("2/5 listings · Location not
+      set", "Cancellation not announced"), loaded by `event-readiness-load.mjs`
 - [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, now the Social plan tab, after the Event
       Image; it is made Tuesday afternoon for the next week's event, alongside the other
       online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
