@@ -11,28 +11,28 @@ import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 const uploaded = {
   id: "11111111-1111-4111-8111-111111111111", eventDate: "2026-11-24", kind: "event_image", status: "ready",
   originalKey: "events/2026-11-24/1111/original.png", displayKey: "events/2026-11-24/1111/display.jpg",
-  thumbKey: "events/2026-11-24/1111/thumb.jpg", coverKey: "events/2026-11-24/1111/cover.jpg", contentType: "image/png",
+  thumbKey: "events/2026-11-24/1111/thumb.jpg", image16x9Key: "events/2026-11-24/1111/cover.jpg", contentType: "image/png",
 };
 const photo = {
   id: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17", kind: "event_photo", status: "ready",
   originalKey: "events/2026-11-17/2222/original.jpg", displayKey: "events/2026-11-17/2222/display.jpg",
-  thumbKey: "events/2026-11-17/2222/thumb.jpg", coverKey: "events/2026-11-17/2222/cover.jpg", contentType: "image/jpeg",
+  thumbKey: "events/2026-11-17/2222/thumb.jpg", image16x9Key: "events/2026-11-17/2222/cover.jpg", contentType: "image/jpeg",
 };
 
 describe("Event Image resolution: uploaded, then referenced, then the logo", () => {
-  test("nothing set: the square logo, with the checked-in wide logo as its 16:9 cover", () => {
+  test("nothing set: the square logo, with the checked-in wide logo as its 16:9 Event Image", () => {
     const r = resolveEventImage({});
     assert.equal(r.source, "default");
     assert.equal(r.mediaId, null);
     assert.deepEqual(r.original, { path: "/assets/images/brand/bocc-logo-square.png", contentType: "image/png", width: 2000, height: 2000 });
     assert.deepEqual(r.display, r.original);
-    assert.deepEqual(r.cover, { path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png", width: 1920, height: 1080 });
+    assert.deepEqual(r.image16x9, { path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png", width: 1920, height: 1080 });
     assert.deepEqual(resolveEventImage(), r);
     assert.deepEqual(resolveEventImage({ uploaded: null, referenced: null }), r);
   });
 
   test("the default's files are checked in", () => {
-    for (const f of [DEFAULT_EVENT_IMAGE.original, DEFAULT_EVENT_IMAGE.cover]) {
+    for (const f of [DEFAULT_EVENT_IMAGE.original, DEFAULT_EVENT_IMAGE.image16x9]) {
       assert.ok(existsSync(fileURLToPath(new URL(`../../public${f.path}`, import.meta.url))), f.path);
     }
   });
@@ -44,7 +44,7 @@ describe("Event Image resolution: uploaded, then referenced, then the logo", () 
     assert.deepEqual(r.original, { key: uploaded.originalKey, contentType: "image/png" });
     assert.deepEqual(r.display, { key: uploaded.displayKey, contentType: "image/jpeg" });
     assert.deepEqual(r.thumb, { key: uploaded.thumbKey, contentType: "image/jpeg" });
-    assert.deepEqual(r.cover, { key: uploaded.coverKey, contentType: "image/jpeg" });
+    assert.deepEqual(r.image16x9, { key: uploaded.image16x9Key, contentType: "image/jpeg" });
   });
 
   test("a referenced photo is used when nothing is uploaded", () => {
@@ -52,13 +52,13 @@ describe("Event Image resolution: uploaded, then referenced, then the logo", () 
     assert.equal(r.source, "referenced");
     assert.equal(r.mediaId, photo.id);
     assert.equal(r.eventDate, "2026-11-17", "the photo's own event");
-    assert.deepEqual(r.cover, { key: photo.coverKey, contentType: "image/jpeg" });
+    assert.deepEqual(r.image16x9, { key: photo.image16x9Key, contentType: "image/jpeg" });
   });
 
   test("a referenced photo with no cover copy yet has cover null (never the logo's)", () => {
-    const r = resolveEventImage({ referenced: { ...photo, coverKey: null } });
+    const r = resolveEventImage({ referenced: { ...photo, image16x9Key: null } });
     assert.equal(r.source, "referenced");
-    assert.equal(r.cover, null);
+    assert.equal(r.image16x9, null);
   });
 
   test("a row that isn't ready is ignored", () => {

@@ -234,7 +234,7 @@ describe("the Social Post cover image", () => {
   const uploaded = resolveEventImage({ uploaded: {
     id: "11111111-1111-4111-8111-111111111111", eventDate: "2026-11-24", kind: "event_image", status: "ready",
     originalKey: "events/2026-11-24/1111/original.png", displayKey: "events/2026-11-24/1111/display.jpg",
-    thumbKey: "events/2026-11-24/1111/thumb.jpg", coverKey: "events/2026-11-24/1111/cover.jpg", contentType: "image/png",
+    thumbKey: "events/2026-11-24/1111/thumb.jpg", image16x9Key: "events/2026-11-24/1111/cover.jpg", contentType: "image/png",
   } });
   const photo = {
     id: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17", kind: "event_photo", status: "ready",

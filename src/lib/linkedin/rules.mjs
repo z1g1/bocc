@@ -306,7 +306,7 @@ function sniffImage(bytes) {
 }
 
 /**
- * Can these bytes be LinkedIn's event cover? Errors refuse the create; a warning (not
+ * Can these bytes (the 16:9 Event Image) be LinkedIn's event image? Errors refuse the create; a warning (not
  * 16:9, so LinkedIn crops it) is shown on the page.
  * @param {Uint8Array} bytes
  * @returns {{ ok: boolean, contentType: string|null, width: number|null, height: number|null, bytes: number,
@@ -319,15 +319,15 @@ export function checkCoverImage(bytes) {
   const errors = [];
   const warnings = [];
   if (!info) {
-    errors.push("The cover must be a PNG or JPEG image.");
+    errors.push("The 16:9 Event Image must be a PNG or JPEG image.");
     return { ok: false, contentType: null, width: null, height: null, bytes: size, errors, warnings };
   }
   const { contentType, width, height } = info;
-  if (size > L.maxBytes) errors.push("The cover is larger than 8 MiB.");
-  if (width < L.minWidth || height < L.minHeight) errors.push(`The cover is ${width}×${height}: it must be at least 480×270.`);
-  else if (width * height > L.maxPixels) errors.push(`The cover is ${width}×${height}: over LinkedIn's 36,152,320-pixel limit.`);
+  if (size > L.maxBytes) errors.push("The 16:9 Event Image is larger than 8 MiB.");
+  if (width < L.minWidth || height < L.minHeight) errors.push(`The 16:9 Event Image is ${width}×${height}: it must be at least 480×270.`);
+  else if (width * height > L.maxPixels) errors.push(`The 16:9 Event Image is ${width}×${height}: over LinkedIn's 36,152,320-pixel limit.`);
   if (height > 0 && Math.abs(width / height / L.ratio - 1) > L.ratioTolerance) {
-    warnings.push(`The cover is ${width}×${height}, not 16:9: LinkedIn will crop it.`);
+    warnings.push(`The 16:9 Event Image is ${width}×${height}, not 16:9: LinkedIn will crop it.`);
   }
   return { ok: errors.length === 0, contentType, width, height, bytes: size, errors, warnings };
 }
@@ -369,9 +369,9 @@ export const CANCEL_ON_LINKEDIN = "Cancel the LinkedIn event on LinkedIn";
 
 /** The location's LinkedIn wording: not set reads as the lobby (buildEventSpec). */
 const wording = (location) => location ?? "lobby";
-/** The cover's identity: its object key or checked-in path, null when there is none. */
-const coverRef = (eventImage) => {
-  const c = eventImage?.cover;
+/** The 16:9 Event Image's identity: its object key or checked-in path, null when there is none. */
+const image16x9Ref = (eventImage) => {
+  const c = eventImage?.image16x9;
   return c ? ("path" in c ? c.path : c.key) : null;
 };
 
@@ -390,7 +390,7 @@ export const LINKEDIN_SECTION_HREF = "?tab=info#h-linkedin";
  * @param {{ ledger: null | { status: string, location: string|null, imageSource: string|null,
  *   imageRef: string|null, eventUrl: string|null, cancelledOnLinkedInAt: Date|null },
  *   event: { status: string, location: string|null },
- *   eventImage: { source: string, cover: { key: string } | { path: string } | null } }} input
+ *   eventImage: { source: string, image16x9: { key: string } | { path: string } | null } }} input
  * @returns {{ eventUrl: string|null,
  *   drift: null | { changes: ("location"|"image")[], message: string, href: string },
  *   cancel: null | { due: boolean, doneAt: Date|null, message: string, href: string } }}
@@ -405,7 +405,7 @@ export function linkedInFollowUp({ ledger, event, eventImage }) {
   }
   const changes = [];
   if (wording(ledger.location) !== wording(event.location)) changes.push("location");
-  if (ledger.imageSource != null && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== coverRef(eventImage))) {
+  if (ledger.imageSource != null && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== image16x9Ref(eventImage))) {
     changes.push("image");
   }
   if (!changes.length) return { eventUrl, drift: null, cancel: null };
