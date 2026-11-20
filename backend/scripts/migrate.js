@@ -2,9 +2,11 @@
 /**
  * Apply SQL migrations in backend/db/migrations to the Postgres check-in store.
  *
- * Runs as the database OWNER (DDL + role creation), never as checkin_writer, and
- * is an operator-only tool: the owner URL lives in a local gitignored env file and
- * is NEVER set in Netlify. Each file runs in its own transaction and is recorded in
+ * Runs as the database OWNER (DDL + role creation), never as checkin_writer. The
+ * "Migrate and deploy" GitHub workflow runs it before each dev/main deploy
+ * (.github/workflows/deploy.yml, docs/backend/DEPLOYS.md), with the owner URL from a
+ * GitHub environment secret; by hand it is the fallback. The owner URL is NEVER set
+ * in Netlify. Each file runs in its own transaction and is recorded in
  * `schema_migrations`, so re-running only applies new files.
  *
  * Usage (from backend/):

@@ -13,8 +13,8 @@
 import { sectionNavHtml } from "./nav.mjs";
 
 /** The admin layout's global CSS (Admin.astro inlines it in <head>). */
-export const ADMIN_CSS = `  :root { color-scheme: light dark; --fg: #161616; --bg: #fafaf7; --muted: #5c5c5c; --accent: #8a4b14; --line: #d9d6cf; --err: #b00020; }
-  @media (prefers-color-scheme: dark) { :root { --fg: #eeeeea; --bg: #161616; --muted: #a8a8a3; --accent: #f0a35e; --line: #3a3a37; --err: #ff6b81; } }
+export const ADMIN_CSS = `  :root { color-scheme: light dark; --fg: #161616; --bg: #fafaf7; --muted: #5c5c5c; --accent: #8a4b14; --line: #d9d6cf; --err: #b00020; --warn: #8a6100; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #eeeeea; --bg: #161616; --muted: #a8a8a3; --accent: #f0a35e; --line: #3a3a37; --err: #ff6b81; --warn: #e3b341; } }
   * { box-sizing: border-box; }
   body { margin: 0; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
   .bar { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--line); }

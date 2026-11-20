@@ -1,5 +1,5 @@
 // Event listing rules (ADR 0009 decision 3, plan Phase 4): which URLs each platform
-// accepts, the Luma embed id, and the readiness checklist. Pure functions, NO imports:
+// accepts, the Luma embed id, and the Readiness section. Pure functions, NO imports:
 // the admin pages use them through src/lib/admin/event-links.mjs, and the one-time
 // import (backend/scripts/import-event-links.js, CommonJS) loads this file with
 // `await import()`, so both apply exactly the same rules.
@@ -19,8 +19,8 @@
 //       linkedin_event  linkedin.com, www.linkedin.com; path /events/…
 //
 // Luma embed id (normaliseLumaId): `evt-` then letters, digits, _ or -, at most 100
-// characters in all (the column's CHECK). Blank = no id: allowed, but the readiness
-// checklist then flags "no embed id". Only Luma stores an external_id.
+// characters in all (the column's CHECK). Blank = no id: allowed (the public page then
+// can't show the RSVP embed; not a readiness item since #42). Only Luma stores an external_id.
 
 /** Platforms in display order, with their labels. */
 export const PLATFORMS = Object.freeze({
@@ -125,54 +125,110 @@ export const publicPageExists = (event) => event.exists !== false;
 export const hasPublicPage = (event) => publicPageExists(event) && event.status !== "cancelled";
 export const publicPath = (date) => `/events/${date}/`;
 
+/** The Online Event Listings readiness counts: the four listings and the public page. */
+export const LISTINGS_TOTAL = PLATFORM_KEYS.length + 1;
 /**
- * Readiness checklist, calculated and never stored.
+ * The listings count for the lists' tag and the Readiness section: `platformsListed`
+ * (how many of the four platforms have a listing) plus the public page when it has the RSVP.
+ * @param {{ status: string, exists?: boolean }} event
+ * @param {number} platformsListed
+ */
+export const listingsDone = (event, platformsListed) => platformsListed + (hasPublicPage(event) ? 1 : 0);
+
+// Channel statuses that count as done. The source is social-rules.mjs
+// POSTED_CHANNEL_STATUSES; this module takes no imports (see the header), so keep in step.
+const CHANNEL_DONE = ["scheduled", "live"];
+
+/**
+ * The Readiness section (#42), calculated and never stored: two bullets.
+ *
+ *   Online Event Listings x/5 (Default Cover Image | Custom Cover Image)
+ *     x counts the Luma, Eventbrite, Facebook and LinkedIn listings and the public page.
+ *     The brackets follow the Event Image's source: "default" (the BOCC logo) or custom
+ *     (uploaded, or a Photo from Event); no brackets when the caller passes no image.
+ *     Under it: the parts still missing, then the LinkedIn lines (event posted, out of
+ *     date, cancel due), each pointing at the LinkedIn section on the Event Info tab
+ *     (the posted line links the LinkedIn event itself).
+ *   Social Posts: <status>
+ *     The Social Post status label (To do, Ready for Posting, Posted, Error), or "not set
+ *     up yet". Under it: the problems that keep it from the Chrome tasks (not once
+ *     Posted), then one line per channel. Ticked only when Posted, or Ready for Posting
+ *     with no problems; Error and To do never are.
+ *
  * @param {{ date: string, status: string, exists?: boolean }} event
  * @param {Record<string, { url: string, externalId: string|null } | null | undefined>} links  by platform
- * @param {null | { exists: boolean, ready: boolean, actionable: boolean, problems: Array<{ message: string }>,
- *          channels: Array<{ channel: string, label: string, status: string|null }> }} [social]
+ * @param {null | { exists: boolean, status: string, statusLabel: string,
+ *          problems: Array<{ message: string }>, channels: Array<{ channel: string, label: string, status: string|null }> }} [social]
  *   the social work order (src/lib/admin/social.mjs getWorkOrder); null/omitted = none yet
- * @returns {{ listings: number, total: number, lumaId: boolean, publicPage: boolean, ready: boolean,
- *             social: { exists: boolean, ready: boolean, scheduled: number, total: number },
- *             items: Array<{ key: string, label: string, ok: boolean|null, note?: string, href?: string }> }}
- *   ok null = not checked; href (the public page) only when it exists. `ready` is the
- *   listings only (as the lists' "n/4 listings" tag); the social lines are extra items.
+ * @param {{ eventImage?: { source: "uploaded"|"referenced"|"default" },
+ *   linkedIn?: { eventUrl?: string|null, drift: null | { message: string, href: string },
+ *     cancel: null | { due: boolean, message: string, href: string } } }} [extra]
+ *   eventImage: the resolved Event Image (src/lib/admin/event-image-rules.mjs);
+ *   linkedIn: src/lib/linkedin/rules.mjs linkedInFollowUp (#25/#27). "LinkedIn event posted"
+ *   is not listed for a cancelled event (the cancel line covers it).
+ * @typedef {{ key: string, label: string, ok: boolean, caution?: true, note?: string, href?: string }} Item
+ *   href: a link (the public page only when it exists; the LinkedIn lines)
+ *   caution: done, with a caveat in the note (shown ⚠, not ✓): the LinkedIn event was made
+ *   outside the app (a LinkedIn listing URL but no posted ledger row)
+ * @returns {{ ready: boolean,
+ *   listings: { done: number, total: number, cover: string|null, label: string, ok: boolean, publicHref?: string, parts: Item[], items: Item[] },
+ *   social: { exists: boolean, status: string|null, label: string, ok: boolean, scheduled: number, total: number, items: Item[] } }}
+ *   parts: the five counted; items: what the page lists under the bullet.
  */
-export function readiness(event, links = {}, social = null) {
-  const items = PLATFORM_KEYS.map((p) => ({ key: p, label: `${PLATFORMS[p]} listing`, ok: Boolean(links[p]?.url) }));
-  const listings = items.filter((i) => i.ok).length;
-  const lumaId = Boolean(links.luma?.externalId);
-  items.push({
-    key: "luma_id", label: "Luma embed id", ok: lumaId,
-    note: lumaId ? undefined : links.luma?.url ? "no embed id: the public page can't show the RSVP embed" : "add the Luma listing first",
-  });
-  const publicPage = hasPublicPage(event);
-  items.push({
-    key: "public_page", label: "public page", ok: publicPage,
+export function readiness(event, links = {}, social = null, { eventImage, linkedIn } = {}) {
+  const parts = PLATFORM_KEYS.map((p) => ({ key: p, label: `${PLATFORMS[p]} listing`, ok: Boolean(links[p]?.url) }));
+  parts.push({
+    key: "public_page", label: "public page", ok: hasPublicPage(event),
     href: publicPageExists(event) ? publicPath(event.date) : undefined,
     note: !publicPageExists(event) ? "a 404 until the event is saved (any save creates it)"
       : event.status === "cancelled" ? "shows a cancelled notice, no RSVP" : undefined,
   });
-  const channels = social?.exists ? social.channels ?? [] : [];
-  const scheduled = channels.filter((c) => c.status === "scheduled" || c.status === "live").length;
-  if (!social?.exists) {
-    items.push({ key: "social", label: "social post", ok: false, note: "not set up yet (Social post, below)" });
-  } else {
-    items.push({
-      key: "social", label: "social post ready", ok: social.actionable,
-      note: !social.ready ? "not marked ready" : social.problems.length ? social.problems.map((p) => p.message).join(" ") : undefined,
-    });
-    for (const c of channels) {
-      items.push({
-        key: `social_${c.channel}`, label: `${c.label}: ${c.status}`,
-        ok: c.status === "scheduled" || c.status === "live",
-      });
-    }
+  const done = parts.filter((i) => i.ok).length;
+  const cover = !eventImage ? null : eventImage.source === "default" ? "Default Cover Image" : "Custom Cover Image";
+  const items = parts.filter((i) => !i.ok);
+  if (linkedIn && event.status !== "cancelled") {
+    const listed = links.linkedin_event?.url;
+    items.push(linkedIn.eventUrl
+      ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: linkedIn.eventUrl }
+      // Made outside the app (by hand, or the bocc-linkedin-event skill) and pasted into the
+      // listings: posted, but the app has no ledger row, so no drift or cancel follow-up.
+      : listed
+        ? { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, caution: true, href: listed,
+            note: "created manually outside the app, so location, Event Image and cancel changes aren't tracked" }
+        : { key: "linkedin_posted", label: "LinkedIn event posted", ok: false, note: "not posted yet (LinkedIn event, Event Info tab)" });
+  }
+  if (linkedIn?.drift) items.push({ key: "linkedin_drift", label: linkedIn.drift.message, ok: false, href: linkedIn.drift.href });
+  if (linkedIn?.cancel?.due) items.push({ key: "linkedin_cancel", label: linkedIn.cancel.message, ok: false, href: linkedIn.cancel.href });
+
+  const exists = Boolean(social?.exists);
+  const channels = exists ? social.channels ?? [] : [];
+  const status = exists ? social.status : null;
+  const socialItems = [];
+  if (exists && status !== "posted") {
+    for (const [n, p] of (social.problems ?? []).entries()) socialItems.push({ key: `social_problem_${n}`, label: p.message, ok: false });
+  }
+  for (const c of channels) {
+    const cs = c.status ?? "pending";
+    socialItems.push({ key: `social_${c.channel}`, label: `${c.label}: ${cs}`, ok: CHANNEL_DONE.includes(cs) });
   }
   return {
-    listings, total: PLATFORM_KEYS.length, lumaId, publicPage,
-    ready: listings === PLATFORM_KEYS.length && lumaId,
-    social: { exists: Boolean(social?.exists), ready: Boolean(social?.actionable), scheduled, total: channels.length },
-    items,
+    ready: done === LISTINGS_TOTAL,
+    listings: {
+      done, total: LISTINGS_TOTAL, cover,
+      label: `Online Event Listings ${done}/${LISTINGS_TOTAL}${cover ? ` (${cover})` : ""}`,
+      ok: done === LISTINGS_TOTAL && !items.some((i) => !i.ok),
+      // The public page, linked from the bullet once it exists (even when it is done).
+      publicHref: parts.at(-1).href,
+      parts, items,
+    },
+    social: {
+      exists, status,
+      label: `Social Posts: ${exists ? social.statusLabel : "not set up yet"}`,
+      // A tick only for Posted, or Ready for Posting with no problems (never Error or To do).
+      ok: status === "posted" || (status === "ready" && social.problems.length === 0),
+      scheduled: channels.filter((c) => CHANNEL_DONE.includes(c.status)).length,
+      total: channels.length,
+      items: socialItems,
+    },
   };
 }

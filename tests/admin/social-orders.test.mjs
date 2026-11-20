@@ -4,8 +4,8 @@
 //      allowlist (roles.mjs mayReach, guard.mjs), the nav links
 //   2. src/lib/admin/social.mjs as admin_app: setChannelResult (audited, transitions,
 //      URL checks, verified_at / comment_posted_at, no-ops), findNext's states (no
-//      post, not ready, problems, ready; never skipping a stuck week; cancelled weeks) and findVerify's, with an injected
-//      clock in far-future years (2091-2095) so other tests' posts don't interfere
+//      post, not ready, problems, ready; never skipping a stuck week; cancelled weeks; the holiday break and its override) and findVerify's, with an injected
+//      clock in far-future years (2091-2097) so other tests' posts don't interfere
 //   3. over HTTP (astro dev, the real clock): /admin/social/next/ and /verify/ and
 //      /api/admin/social/*: roles (social reaches only these), Origin, PRG, refused
 //      saves, the agent-facing markup, and no personal data on any of them
@@ -69,7 +69,7 @@ async function insertVideo(d) {
 async function readyPost(d, { caption = "Coffee Tuesday in Buffalo", coverNote = "Frame at 0:03" } = {}) {
   await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
   await so.setVideo(actor.id, d, await insertVideo(d));
-  await so.savePost(actor.id, d, { baseCaption: caption, coverNote, ready: "on" });
+  await so.savePost(actor.id, d, { baseCaption: caption, coverNote, status: "ready" });
 }
 
 /** Mid-day Eastern, `days` after `d` (YYYY-MM-DD). */
@@ -217,7 +217,7 @@ describe("setChannelResult (admin_app)", () => {
   test("scheduling needs an actionable post (409), then pending -> scheduled is audited", async () => {
     await so.savePost(actor.id, D, { baseCaption: "Coffee" });
     await assert.rejects(so.setChannelResult(actor.id, D, "facebook", { status: "scheduled" }, { now }),
-      (e) => e.status === 409 && /Can't schedule Facebook yet: The post isn't marked ready/.test(e.errors.status));
+      (e) => e.status === 409 && /Can't schedule Facebook yet: The post isn't set to Ready for Posting \(it is To do\)/.test(e.errors.status));
     assert.equal((await channelRow(D, "facebook")).status, "pending");
 
     await readyPost(D);
@@ -353,7 +353,10 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     assert.equal(r.reason, "not_ready");
     assert.equal(r.date, D);
     assert.deepEqual(r.problems.map((p) => p.key), ["video", "luma"]);
-    assert.deepEqual(r.upcoming.slice(0, 2), [{ date: D, ready: false, pendingChannels: 5 }, { date: D2, ready: true, pendingChannels: 5 }]);
+    assert.deepEqual(r.upcoming.slice(0, 2), [
+      { date: D, status: "todo", statusLabel: "To do", pendingChannels: 5 },
+      { date: D2, status: "ready", statusLabel: "Ready for Posting", pendingChannels: 5 },
+    ]);
 
     await readyPost(D);
     r = await so.findNext(pool, { now });
@@ -375,6 +378,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     r = await so.findNext(pool, { now });
     assert.equal(r.state, "ready");
     assert.equal(r.order.date, D2, "every channel of D is done, so the next week");
+    assert.equal((await so.getWorkOrder(pool, D)).status, "error", "D's failed channel made it Error");
 
     // A cancelled week is skipped.
     await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [D2]);
@@ -388,6 +392,51 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     r = await so.findNext(pool, { now: afterPublish });
     assert.equal(r.date, D3);
     assert.notEqual(r.order?.date, D2, "a post whose publish time passed is not offered for scheduling");
+  });
+
+  test("next: the holiday break (Dec 22 to Jan 4) is skipped without a row, 2026", async () => {
+    // No rows in this range (other tests' real-clock posts start at the coming Tuesday).
+    const r = await so.findNext(pool, { now: at("2026-12-16") }); // Wednesday after 12/15
+    assert.equal(r.date ?? r.order?.date, "2027-01-05", "12/22 and 12/29 don't exist");
+    assert.ok(!r.upcoming.some((u) => u.date === "2026-12-22" || u.date === "2026-12-29"));
+    // 12/15's publish time has passed: on to the first week after the break, not 12/22.
+    const r2 = await so.findNext(pool, { now: at("2026-12-16"), today: "2026-12-14" });
+    assert.equal(r2.date ?? r2.order?.date, "2027-01-05");
+  });
+
+  test("next: holiday weeks are skipped, a scheduled row on one is the override, normal weeks never skipped", async () => {
+    // 2096: Tuesdays 12/18 (normal), 12/25 and 1/1 (holiday break), 1/8 and 1/15 (normal).
+    const now = at("2096-12-12"); // a Wednesday
+    const D = "2096-12-18", H1 = "2096-12-25", H2 = "2097-01-01", N1 = "2097-01-08", N2 = "2097-01-15";
+    let r = await so.findNext(pool, { now });
+    assert.equal(r.date, D, "the normal week before the break is unchanged");
+
+    // D done: every listed week is done, so the fallback's first Tuesday after it, past the break.
+    await readyPost(D);
+    for (const c of CHANNELS) await so.setChannelResult(actor.id, D, c, { status: "scheduled" }, { now });
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "no_post");
+    assert.equal(r.date, N1, "12/25 and 1/1 skipped");
+
+    // A ready later week never jumps the first normal week after the break.
+    await readyPost(N2);
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "no_post");
+    assert.equal(r.date, N1);
+    assert.ok(!r.upcoming.some((u) => u.date === H1 || u.date === H2));
+
+    // The override: a deliberately saved (scheduled) row on a holiday date is a real event.
+    await so.savePost(actor.id, H1, { baseCaption: "Holiday coffee" });
+    assert.equal((await owner.query(`select status from events where event_date = $1`, [H1])).rows[0].status, "scheduled");
+    r = await so.findNext(pool, { now });
+    assert.equal(r.reason, "not_ready");
+    assert.equal(r.date, H1, "a scheduled holiday row counts");
+    assert.deepEqual(r.upcoming.map((u) => u.date), [D, H1, N2], "the override is listed with the other posts");
+
+    // Cancelled, it is skipped again (like any cancelled week).
+    await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [H1]);
+    r = await so.findNext(pool, { now });
+    assert.equal(r.date, N1);
   });
 
   test("verify skips a cancelled event", async () => {
@@ -451,6 +500,43 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     const j = JSON.stringify(sp.toJson(pick));
     assert.ok(!j.includes("original.mp4") && !j.includes("originalKey"), "no storage key in the JSON");
     assert.equal(JSON.parse(j).order.channels.length, 5);
+  });
+
+  test("the work order's cover: the Event Image (the logo, no signing) or the override's presigned link", async () => {
+    const D = "2095-01-11";
+    await readyPost(D);
+    const now = at("2095-01-07");
+    const origin = "https://dev--bocc-backend.netlify.app";
+    const calls = [];
+    const fake = { presignGet: (o) => { calls.push(o); return { url: `https://bucket.example/${calls.length}?sig`, expiresAt: new Date(0) }; } };
+
+    const logo = await sp.loadPick("next", { now, storage: fake, origin });
+    assert.deepEqual(logo.cover, {
+      source: "event_image", eventImageSource: "default", fileName: `bocc-${D}-cover.png`,
+      downloadUrl: `${origin}/assets/images/brand/bocc-logo-square.png`, expiresAt: null, contentType: "image/png",
+    });
+    assert.equal(calls.filter((c) => c.downloadName?.includes("cover")).length, 0, "the logo isn't signed");
+    assert.equal((await sp.loadPick("next", { now, storage: null, origin })).cover.downloadUrl,
+      `${origin}/assets/images/brand/bocc-logo-square.png`, "the logo works with storage off");
+
+    const photo = randomUUID();
+    await owner.query(
+      `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
+       values ($1, $2, 'social_photo', $3, $4, $5, 'image/jpeg', 900000, 'ready', true)`,
+      [photo, D, `events/${D}/${photo}/original.jpg`, `events/${D}/${photo}/display.jpg`, `events/${D}/${photo}/thumb.jpg`]);
+    await so.setCover(actor.id, D, photo);
+    calls.length = 0;
+    const over = await sp.loadPick("next", { now, storage: fake, origin });
+    const signed = calls.find((c) => c.downloadName === `bocc-${D}-cover.jpg`);
+    assert.deepEqual([signed.key, signed.expiresIn], [`events/${D}/${photo}/display.jpg`, sp.VIDEO_LINK_SECONDS]);
+    assert.deepEqual([over.cover.source, over.cover.fileName, over.cover.contentType], ["override", `bocc-${D}-cover.jpg`, "image/jpeg"]);
+    assert.match(over.cover.downloadUrl, /^https:\/\/bucket\.example\/\d\?sig$/);
+    assert.equal(over.order.actionable, true, "the cover never blocks the order");
+    assert.match((await sp.loadPick("next", { now, storage: null })).cover.unavailable, /can't be downloaded/);
+
+    const j = sp.toJson(over);
+    assert.deepEqual(j.cover, over.cover);
+    assert.ok(!JSON.stringify(j).includes("display.jpg"), "no storage key in the JSON");
   });
 });
 
@@ -569,6 +655,9 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.ok(html.includes(`data-date="${NEXT}"`), "this post is the next one");
     assert.ok(html.includes(order.publishAtDisplay.et) && html.includes(order.publishAtDisplay.utc), "publish time in ET and UTC");
     assert.ok(inner(html, "pre", "cover-note") === "Use the frame at 0:03");
+    assert.ok(html.includes(">Thumbnail timecode</h3>") && !html.includes("Cover note"), "the work order calls it Thumbnail timecode (#41)");
+    assert.ok(has(html, /<a id="cover-download" href="http:\/\/localhost:\d+\/assets\/images\/brand\/bocc-logo-square\.png" download="bocc-[\d-]+-cover\.png"/),
+      "the cover (the logo default) as a link on the site's origin");
     assert.ok(!/<script(?![^>]*\bsrc=)/.test(html), "no inline script (CSP script-src 'self')");
     assert.ok(!/<script[^>]*src="\/(?!@vite|src\/)/.test(html), "and no page script of its own (dev serves only Vite's client)");
     for (const c of order.channels) {
@@ -630,6 +719,8 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.equal(j.order.date, NEXT);
     assert.deepEqual(j.order.channels.map((c) => c.channel), CHANNELS);
     assert.equal(j.order.channels[0].status, "scheduled");
+    assert.equal(j.cover.source, "event_image");
+    assert.equal(j.cover.downloadUrl, `${BASE}/assets/images/brand/bocc-logo-square.png`);
 
     const ok = await req("/api/admin/social/channel", { cookie: social.cookie, method: "POST",
       json: { date: NEXT, channel: "tiktok", status: "scheduled", notes: "TikTok Studio" } });

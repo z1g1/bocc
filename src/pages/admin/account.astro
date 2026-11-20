@@ -2,8 +2,10 @@
 // /admin/account/: the signed-in user's passkeys. Adding one needs the current
 // session (Better Auth's passkey plugin requires it), so a passkey is always added
 // after a password login, as ADR 0008 intends.
+// Admins also see their LinkedIn connection here (ADR 0012, LinkedInConnection).
 import Admin from "../../layouts/Admin.astro";
-import { requireRole } from "../../lib/admin/roles.mjs";
+import LinkedInConnection from "../../components/admin/LinkedInConnection.astro";
+import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
 export const prerender = false;
 
 const denied = requireRole(Astro.locals, "admin", "social");
@@ -38,6 +40,13 @@ const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "A
     <button type="submit">Add a passkey</button>
   </form>
   <p id="error" class="error" role="alert" aria-live="polite"></p>
+
+  {hasRole(Astro.locals, "admin") && (
+    <section aria-labelledby="h-linkedin">
+      <h2 id="h-linkedin">LinkedIn</h2>
+      <LinkedInConnection returnTo="account" />
+    </section>
+  )}
 </Admin>
 
 <script>

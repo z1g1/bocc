@@ -3,7 +3,9 @@
 // scripts/test-db.sh), with "today" pinned by BOCC_TODAY:
 //   scheduled (embed, RSVP to Luma, sameAs only in JSON-LD), scheduled without a Luma
 //   link (calendar fallback), cancelled, past (held, and scheduled but past), unknown
-//   and malformed dates (404), /events/ (302), the sitemap, and every cache header.
+//   and malformed dates (404), a holiday-break Tuesday with no row (404 "No meeting this
+//   week") and with a saved row (the override: the normal page), /events/ (302), the
+//   sitemap, and every cache header.
 // All rows are in 2031 so other test files' events don't change "the next event".
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -31,6 +33,8 @@ const D = {
   noLuma: "2031-06-17",
   cancelled: "2031-06-24",
   unknown: "2031-07-01",
+  holiday: "2031-12-23",          // a Tuesday in the holiday break, no row
+  holidayOverride: "2031-12-30",  // a Tuesday in the break with a saved scheduled row
 };
 const LUMA = { url: "https://luma.com/test2031", id: "evt-Test2031abcDEF" };
 const OTHERS = {
@@ -48,8 +52,8 @@ async function seed() {
   await owner.query(
     `insert into events (event_date, status, location, cancel_reason) values
        ($1, 'held', 'lobby', null), ($2, 'scheduled', 'lobby', null), ($3, 'scheduled', 'food_hall', null),
-       ($4, 'scheduled', null, null), ($5, 'cancelled', 'lobby', 'weather')`,
-    [D.heldPast, D.scheduledPast, D.upcoming, D.noLuma, D.cancelled]);
+       ($4, 'scheduled', null, null), ($5, 'cancelled', 'lobby', 'weather'), ($6, 'scheduled', null, null)`,
+    [D.heldPast, D.scheduledPast, D.upcoming, D.noLuma, D.cancelled, D.holidayOverride]);
   await owner.query(
     `insert into event_links (event_date, platform, url, external_id) values
        ($1, 'luma', $2, $3), ($1, 'eventbrite', $4, null), ($1, 'facebook_event', $5, null), ($1, 'linkedin_event', $6, null),
@@ -168,6 +172,30 @@ describe("public event pages from the database", { timeout: 300_000 }, () => {
     assert.equal(eventLd(html), undefined);
   });
 
+  test("a holiday-break Tuesday with no row: 'No meeting this week (holiday break)', 404, cached 5 minutes under its tag", async () => {
+    const res = await get(`/events/${D.holiday}/`);
+    assert.equal(res.status, 404);
+    assert.equal(res.headers.get("netlify-cdn-cache-control"), "public, durable, max-age=300");
+    assert.equal(res.headers.get("netlify-cache-tag"), `event-${D.holiday}`);
+    const html = await res.text();
+    assert.match(html, /No meeting this week \(holiday break\)/);
+    assert.match(html, /December 22 to January 4/);
+    assert.match(html, /<meta name="robots" content="noindex">/);
+    assert.doesNotMatch(html, /out of coffee/i);
+    assert.equal(eventLd(html), undefined);
+    // Not a Tuesday: the plain 404.
+    assert.match(await (await get("/events/2031-12-24/")).text(), /This page is out of coffee\./);
+  });
+
+  test("a holiday-break Tuesday with a saved scheduled row (the override): the normal event page", async () => {
+    const res = await get(`/events/${D.holidayOverride}/`);
+    assert.equal(res.status, 200);
+    assertCached(res, D.holidayOverride);
+    const html = await res.text();
+    assert.doesNotMatch(html, /holiday break/);
+    assert.match(html, /Save your spot for Tuesday, December 30, 2031/);
+  });
+
   for (const bad of ["2031-02-30", "2031-6-10", "not-a-date", "2031-06-10x"]) {
     test(`a malformed date (${bad}): 404, never cached`, async () => {
       const res = await get(`/events/${bad}/`);
@@ -196,7 +224,7 @@ describe("public event pages from the database", { timeout: 300_000 }, () => {
     const xml = await res.text();
     assert.match(xml, new RegExp(`<loc>https://716coffee.club/events/${D.upcoming}/</loc>\\n<lastmod>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\+00:00</lastmod>`));
     assert.ok(xml.includes(`/events/${D.noLuma}/`));
-    for (const d of [D.cancelled, D.heldPast, D.scheduledPast, D.unknown]) assert.ok(!xml.includes(`/events/${d}/`), d);
+    for (const d of [D.cancelled, D.heldPast, D.scheduledPast, D.unknown, D.holiday]) assert.ok(!xml.includes(`/events/${d}/`), d);
     assert.ok(xml.indexOf(D.upcoming) < xml.indexOf(D.noLuma), "soonest first");
     assert.match(xml, /<url>\n<loc>https:\/\/716coffee.club\/<\/loc>\n<\/url>/, "content pages still listed");
     assert.match(xml, /<loc>https:\/\/716coffee.club\/code-of-conduct\/<\/loc>/);

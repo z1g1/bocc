@@ -6,7 +6,8 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ACCEPTED_TYPES, DISPLAY_EDGE, THUMB_EDGE, UNREADABLE_MESSAGE, checkFile, fitWithin, formatBytes,
-  normalizeType, uploadRequestBody, MAX_ORIGINAL_BYTES,
+  normalizeType, uploadRequestBody, MAX_ORIGINAL_BYTES, composeCover, COVER_BACKGROUND,
+  checkEventImage, eventImageRequestBody,
 } from "../../public/js/admin-media-lib.js";
 import {
   filenameDate, importId, isTuesday, matchPhotos, parseOverrides, resolvePlan, tuesdayOnOrBefore, formatTable,
@@ -66,6 +67,106 @@ describe("browser helpers: target sizes", () => {
     assert.equal(uploadRequestBody({ ...base, kind: "signin_board", publiclyUsable: true }).publiclyUsable, false);
     assert.equal(uploadRequestBody({ ...base, kind: "social_photo", publiclyUsable: true }).publiclyUsable, true);
     assert.deepEqual(uploadRequestBody({ ...base, kind: "social_photo" }).display, { contentType: "image/jpeg", size: 5 });
+  });
+});
+
+describe("browser helpers: the Event Image's 16:9 version, on the beans background (ticket #40)", () => {
+  // Where the image goes on the 1920x1080 "Just the Beans" background: full height,
+  // centred, never cropped. Draw with ctx.drawImage(src, dx, dy, dw, dh).
+  test("the background is the checked-in 1920x1080 Just the Beans image", () => {
+    assert.equal(COVER_BACKGROUND, "/assets/images/brand/just-the-beans-16x9.jpg");
+    assert.deepEqual(composeCover(2000, 2000).canvas, { width: 1920, height: 1080 });
+  });
+  test("a square image fills the height, centred", () => {
+    assert.deepEqual(composeCover(2000, 2000), { canvas: { width: 1920, height: 1080 }, dx: 420, dy: 0, dw: 1080, dh: 1080 });
+  });
+  test("a small square image is scaled up to the full height", () => {
+    assert.deepEqual(composeCover(480, 480), { canvas: { width: 1920, height: 1080 }, dx: 420, dy: 0, dw: 1080, dh: 1080 });
+  });
+  test("a portrait phone photo fills the height, narrower, centred", () => {
+    // 3024x4032 at 1080 high is 810 wide.
+    assert.deepEqual(composeCover(3024, 4032), { canvas: { width: 1920, height: 1080 }, dx: 555, dy: 0, dw: 810, dh: 1080 });
+  });
+  test("a 4:3 landscape photo still fits at full height", () => {
+    assert.deepEqual(composeCover(4032, 3024), { canvas: { width: 1920, height: 1080 }, dx: 240, dy: 0, dw: 1440, dh: 1080 });
+  });
+  test("an exact 16:9 image covers the background", () => {
+    assert.deepEqual(composeCover(1280, 720), { canvas: { width: 1920, height: 1080 }, dx: 0, dy: 0, dw: 1920, dh: 1080 });
+  });
+  test("a landscape image wider than 16:9 is scaled down to fit the width, centred vertically", () => {
+    assert.deepEqual(composeCover(3000, 1000), { canvas: { width: 1920, height: 1080 }, dx: 0, dy: 220, dw: 1920, dh: 640 });
+  });
+  test("results are whole pixels; an odd leftover pixel goes to the right or bottom", () => {
+    // 1001x1000 at 1080 high is 1081.08 wide -> 1081, leaving 839: 419 left, 420 right.
+    assert.deepEqual(composeCover(1001, 1000), { canvas: { width: 1920, height: 1080 }, dx: 419, dy: 0, dw: 1081, dh: 1080 });
+    // 3000x1001 at 1920 wide is 640.64 high -> 641, leaving 439: 219 top, 220 bottom.
+    assert.deepEqual(composeCover(3000, 1001), { canvas: { width: 1920, height: 1080 }, dx: 0, dy: 219, dw: 1920, dh: 641 });
+    for (const [w, h] of [[1234, 987], [987, 1234], [4999, 7], [7, 4999], [3333, 1111]]) {
+      const r = composeCover(w, h);
+      for (const k of ["dx", "dy", "dw", "dh"]) assert.ok(Number.isInteger(r[k]) && r[k] >= 0, `${w}x${h} ${k}=${r[k]}`);
+      assert.ok(r.dx + r.dw <= 1920 && r.dy + r.dh <= 1080, `${w}x${h} stays on the background`);
+      assert.ok(r.dw === 1920 || r.dh === 1080, `${w}x${h} touches two edges`);
+    }
+  });
+  test("refuses non-positive sizes", () => {
+    assert.throws(() => composeCover(0, 10));
+  });
+});
+
+describe("browser helpers: Event Image checks (PNG or JPEG, at least 480x270, at most 8 MiB)", () => {
+  const MiB = 1024 * 1024;
+  const img = (over = {}) => ({ name: "cover.png", type: "image/png", size: 500_000, width: 2000, height: 2000, ...over });
+
+  test("a square PNG or JPEG within the limits passes with no warning", () => {
+    assert.deepEqual(checkEventImage(img()), { ok: true, contentType: "image/png", warning: null });
+    assert.deepEqual(checkEventImage(img({ type: "image/jpg", width: 480, height: 480, size: 8 * MiB })),
+      { ok: true, contentType: "image/jpeg", warning: null });
+  });
+
+  test("another type is refused", () => {
+    for (const type of ["image/gif", "image/webp", "image/heic", ""]) {
+      const r = checkEventImage(img({ type }));
+      assert.equal(r.ok, false, type);
+      assert.match(r.message, /PNG or JPEG/);
+    }
+  });
+
+  test("over 8 MiB or empty is refused", () => {
+    const big = checkEventImage(img({ size: 8 * MiB + 1 }));
+    assert.equal(big.ok, false);
+    assert.match(big.message, /limit is 8\.0 MB/);
+    assert.equal(checkEventImage(img({ size: 0 })).ok, false);
+  });
+
+  test("smaller than 480x270 is refused, either edge", () => {
+    for (const [width, height] of [[479, 1000], [1000, 269], [400, 225]]) {
+      const r = checkEventImage(img({ width, height }));
+      assert.equal(r.ok, false, `${width}x${height}`);
+      assert.match(r.message, /at least 480×270/);
+    }
+  });
+
+  test("not square is allowed with a warning: the Event Image should be 1:1", () => {
+    for (const [width, height] of [[1920, 1080], [3024, 4032], [2002, 2000]]) {
+      const r = checkEventImage(img({ width, height }));
+      assert.equal(r.ok, true);
+      assert.match(r.warning, new RegExp(`${width}×${height}, not square`));
+      assert.match(r.warning, /1:1/);
+    }
+    // Within a pixel of square counts as square.
+    assert.equal(checkEventImage(img({ width: 2001, height: 2000 })).warning, null);
+  });
+
+  test("the request body declares the original's size and dimensions and the three copies", () => {
+    assert.deepEqual(eventImageRequestBody({
+      eventDate: "2026-11-24", original: { contentType: "image/png", size: 9, width: 2000, height: 2000 },
+      display: { size: 5 }, thumb: { size: 2 }, cover: { size: 4 },
+    }), {
+      eventDate: "2026-11-24", kind: "event_image",
+      original: { contentType: "image/png", size: 9, width: 2000, height: 2000 },
+      display: { contentType: "image/jpeg", size: 5 }, thumb: { contentType: "image/jpeg", size: 2 },
+      cover: { contentType: "image/jpeg", size: 4 },
+    });
   });
 });
 

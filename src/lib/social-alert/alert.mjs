@@ -6,8 +6,13 @@
 //   nextTuesday(today)                 the Tuesday strictly after `today` (Eastern date)
 //   socialAlert({ order, siteUrl })    the work order (social-rules.mjs buildWorkOrder,
 //                                      or null when there is no events row) -> an alert,
-//                                      or null when everything is fine or the event is
-//                                      cancelled
+//                                      or null when everything is fine, the event is
+//                                      cancelled, or `date` is a holiday-week Tuesday
+//                                      with no events row (isHolidayWeek)
+//   linkedinExpiryAlerts({ connections, now, siteUrl })
+//                                      one "reconnect LinkedIn" alert per connection with
+//                                      under 10 days left or expired (linkedin/rules.mjs
+//                                      expiryAlertDue); [] when none is due or none exists
 //   alertSiteUrl({ deployContext, siteUrl, env })   the origin the Click link opens
 //   readNtfyConfig(env)                { topic, server } | { problem } | null (unset)
 //   sendNtfy(alert, config, { fetch }) POST JSON to the server root; 5 s timeout; errors
@@ -19,12 +24,22 @@
 // the secret, so the Netlify runtime's fetch tracing (which records full outgoing URLs)
 // can't leak it.
 
-import { CHANNELS, CHANNEL_KEYS } from "../admin/social-rules.mjs";
+import { CHANNELS, CHANNEL_KEYS, OFFERED_STATUSES, POSTED_CHANNEL_STATUSES, POST_STATUS_LABELS } from "../admin/social-rules.mjs";
+import { isHolidayWeek } from "../holiday-weeks.mjs";
+import { expiryAlertDue, expiryLevel } from "../linkedin/rules.mjs";
+
+export { isHolidayWeek };
 
 const TZ = "America/New_York";
 
-/** Channel statuses that need no nudge on Thursday. */
-export const DONE_STATUSES = Object.freeze(["scheduled", "live"]);
+/**
+ * Post statuses the check treats as ready (ticket #39): offered to the Chrome tasks
+ * (Ready for Posting, Error) or Posted. Error is here because the old `ready` flag stayed
+ * on after a channel failed: such a post alerts as "N of 5 channels not scheduled",
+ * naming the failed channel, not as "post not ready". Channel statuses that need no
+ * nudge are social-rules.mjs POSTED_CHANNEL_STATUSES (scheduled, live).
+ */
+export const READY_POST_STATUSES = Object.freeze([...OFFERED_STATUSES, "posted"]);
 
 export const NTFY_DEFAULT_SERVER = "https://ntfy.sh";
 export const NTFY_TIMEOUT_MS = 5000;
@@ -38,7 +53,11 @@ const ymdFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric",
 /** Today's date in Eastern time, YYYY-MM-DD. */
 export const easternToday = (now = new Date()) => ymdFmt.format(now);
 
-/** The Tuesday strictly after `today` (YYYY-MM-DD): from a Thursday, five days on. */
+/**
+ * The Tuesday strictly after `today` (YYYY-MM-DD): from a Thursday, five days on. Holiday
+ * weeks are NOT skipped here: the check looks at that Tuesday and socialAlert() stays
+ * quiet when it is in the break and has no row.
+ */
 export function nextTuesday(today) {
   if (typeof today !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error("nextTuesday: date must be YYYY-MM-DD");
   const d = new Date(`${today}T00:00:00Z`);
@@ -95,19 +114,23 @@ export function alertSiteUrl({ deployContext, siteUrl, env = {} }) {
 export const contextAllowed = (deployContext) => deployContext !== "deploy-preview";
 
 /**
- * @param {{ order: null | { date: string, exists: boolean, eventStatus: string, ready: boolean,
+ * @param {{ order: null | { date: string, exists: boolean, eventStatus: string, status: string, statusLabel: string,
  *             problems: Array<{ message: string }>, channels: Array<{ channel: string, label?: string, status: string|null }> },
  *           date: string, siteUrl?: string|null }} s
- *   order null = no events row for `date` (treated like a scheduled event with no post)
+ *   order null = no events row for `date`: a scheduled event with no post, except in the
+ *   holiday break (Dec 22 to Jan 4), where a Tuesday without a row isn't a meeting. A row
+ *   on a holiday date (the override) is checked like any other week.
  * @returns {null | { title: string, message: string, priority: "high", tags: string[], click: string|null }}
  */
 export function socialAlert({ order, date, siteUrl = null }) {
   if (order && order.eventStatus !== "scheduled") return null; // cancelled (or already held)
+  if (!order && isHolidayWeek(date)) return null; // holiday break, no meeting
   const exists = Boolean(order?.exists);
   const problems = exists ? order.problems ?? [] : [];
-  const notReady = !exists || !order.ready || problems.length > 0;
+  const ready = exists && READY_POST_STATUSES.includes(order.status);
+  const notReady = !ready || problems.length > 0;
   const channels = exists
-    ? order.channels.filter((c) => !DONE_STATUSES.includes(c.status))
+    ? order.channels.filter((c) => !POSTED_CHANNEL_STATUSES.includes(c.status))
     : CHANNEL_KEYS.map((channel) => ({ channel, label: CHANNELS[channel], status: null }));
   if (!notReady && channels.length === 0) return null;
 
@@ -119,11 +142,15 @@ export function socialAlert({ order, date, siteUrl = null }) {
 
   const lines = [`Event: ${longDate(date)}.`];
   if (!exists) {
-    lines.push(`There is no social post yet. Upload the promo video and caption on /admin/events/${date}/ and mark it ready.`);
-  } else if (!order.ready) {
-    lines.push(`The post isn't marked ready, so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
+    lines.push(`There is no social post yet. Upload the promo video and caption on /admin/events/${date}/ and set it to ${POST_STATUS_LABELS.ready}.`);
+  } else if (order.status === "error") {
+    const failed = order.channels.filter((c) => c.status === "failed").map((c) => c.label ?? CHANNELS[c.channel] ?? c.channel);
+    const what = failed.length ? `${failed.join(", ")} failed` : "a channel failed";
+    lines.push(`The post's status is ${POST_STATUS_LABELS.error}: ${what}. Fix it on /admin/events/${date}/.`);
+  } else if (!ready) {
+    lines.push(`The post isn't set to ${POST_STATUS_LABELS.ready} (it is ${order.statusLabel}), so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
   } else if (problems.length) {
-    lines.push("The post is marked ready, but something changed since:");
+    lines.push(`The post is ${order.statusLabel}, but something changed since:`);
   }
   for (const p of problems) lines.push(`- ${p.message}`);
   if (channels.length) {
@@ -150,6 +177,51 @@ export function failureAlert({ date, siteUrl = null }) {
     tags: ["warning"],
     click: origin ? `${origin}/admin/social/next` : null,
   };
+}
+
+/** The alert for a check that couldn't read the LinkedIn connections. */
+export function linkedinFailureAlert({ siteUrl = null } = {}) {
+  const origin = originOf(siteUrl);
+  return {
+    title: "BOCC LinkedIn: the Thursday check couldn't read the connection",
+    message: "The check couldn't read the LinkedIn connection's expiry (see Netlify -> Logs -> Functions -> social-check). Check /admin/account/ by hand.",
+    priority: "high",
+    tags: ["warning"],
+    click: origin ? `${origin}/admin/account/` : null,
+  };
+}
+
+/** "Sunday, November 22, 2026" for an instant, in Eastern time. */
+const easternLongDate = (at) => new Date(at).toLocaleDateString("en-US", {
+  timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric",
+});
+
+/**
+ * The LinkedIn connection alerts (ADR 0012): one per connection that is due
+ * (expiryAlertDue: under 10 days left, or expired), so it is renewed before Tuesday's
+ * event has to be created. Only the name and the expiry come in, never token data.
+ * @param {{ connections: Array<{ name?: string|null, expiresAt: Date|string }>, now?: Date, siteUrl?: string|null }} s
+ * @returns {Array<{ title: string, message: string, priority: "high", tags: string[], click: string|null }>}
+ */
+export function linkedinExpiryAlerts({ connections, now = new Date(), siteUrl = null }) {
+  const origin = originOf(siteUrl);
+  return connections.filter((c) => expiryAlertDue(c.expiresAt, now)).map((c) => {
+    const who = `${String(c.name ?? "").trim() || "an Admin"}'s`;
+    const { level, daysLeft } = expiryLevel(c.expiresAt, now);
+    const on = easternLongDate(c.expiresAt);
+    const left = daysLeft === 0 ? "less than a day" : daysLeft === 1 ? "1 day" : `${daysLeft} days`;
+    const expired = level === "red";
+    return {
+      title: expired ? `BOCC LinkedIn: ${who} connection has expired` : `BOCC LinkedIn: ${who} connection expires in ${left}`,
+      message: [
+        expired ? `${who} LinkedIn connection expired on ${on}.` : `${who} LinkedIn connection expires on ${on} (in ${left}).`,
+        "Reconnect at /admin/account/ before Tuesday's LinkedIn event has to be created.",
+      ].join("\n"),
+      priority: "high",
+      tags: ["warning"],
+      click: origin ? `${origin}/admin/account/` : null,
+    };
+  });
 }
 
 /**

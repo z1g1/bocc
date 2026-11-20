@@ -104,6 +104,8 @@ non-production context a production value.
 
 ## Production (together with Phase 3)
 
+> **Released 2026-11-18**: steps 7, 8 and 10 to 13 done. `site_reader` logs in and can't read reports, `SITE_DB_URL` set, links import 11 events created and 28 links (re-run unchanged), merged as `b9520de`. Smoke checks passed (event pages, CDN `Netlify Durable` hit, sitemap, admin redirect, check-in page). Step 14 (purge isolation) is still open.
+
 Phase 3's production steps ([PHASE3_RELEASE.md](PHASE3_RELEASE.md), steps 6 to 10) and these run
 as one release: migrate, set roles and env vars, import, then one merge. **Phase 5 ships in the
 same merge:** its production steps ([PHASE5_RELEASE.md](PHASE5_RELEASE.md), steps 8 to 14) add

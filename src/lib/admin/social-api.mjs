@@ -8,11 +8,14 @@ import { readJson } from "./media-http.mjs";
 const NO_STORE = { "cache-control": "no-store" };
 const json = (status, body) => Response.json(body, { status, headers: NO_STORE });
 
-/** @param {"next" | "verify"} which */
-export async function socialApiGet(which) {
+/**
+ * @param {"next" | "verify"} which
+ * @param {Request} [request]  its origin is used for the logo cover's link
+ */
+export async function socialApiGet(which, request) {
   try {
     const sp = await import("./social-pages.mjs");
-    return json(200, sp.toJson(await sp.loadPick(which)));
+    return json(200, sp.toJson(await sp.loadPick(which, { origin: request ? new URL(request.url).origin : "" })));
   } catch (err) {
     return adminFailure(`api/admin/social/${which}`, err);
   }

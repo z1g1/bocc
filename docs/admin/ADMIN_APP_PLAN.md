@@ -363,7 +363,11 @@ on-device checks and production are open.
 - [x] `/admin/events/YYYY-MM-DD`:
   - status
   - location
-  - cancel flow (reason, announced on socials)
+  - cancel flow (reason, announced on socials). Since 2026-11-19 it is part of the status
+    form: Cancelled is a third status whose reason fields show only while it is selected
+    (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Held
+    (past dates) leaves cancelled and clears the reason. The separate cancel and un-cancel
+    forms are gone; the audit actions are unchanged.
   - report form (Gives and Asks count, notes, Bling given and details)
   - calculated check-in count shown next to the report
   - Built on `dev` 2026-11-17 (`src/lib/admin/events.mjs`). Audit actions `event.update`,
@@ -426,7 +430,7 @@ on-device checks and production are open.
 - [x] Readiness checklist on the admin event page: four links, the public page, and the social
       channels (once Phase 5 lands). Built 2026-11-18: the Listings forms and the checklist on
       `/admin/events/YYYY-MM-DD/` (`src/lib/admin/event-links.mjs`), "n/4 listings" on the
-      events list and home. The social lines (post ready, then each channel's status) came with
+      events list and home (x/5 since #42: the four listings plus the public page). The social lines (post ready, then each channel's status) came with
       Phase 5 part A
 
 ## Phase 5: social work order (ADR 0011)
@@ -481,6 +485,95 @@ on-device checks and production are open.
       ([PHASE5_RELEASE.md](PHASE5_RELEASE.md)). The first staging push is still to do
 - [x] Update `docs/social/README.md` and supersede `WEEKLY_SOCIAL_POSTING_PLAN.md`. The two
       Chrome task prompts are in [`docs/social/CHROME_TASKS.md`](../social/CHROME_TASKS.md)
+
+## Phase 6: LinkedIn events and the event-page prefactor (ADR 0012)
+
+Spec: GitHub issue #18. One combined production release with the prefactor and the LinkedIn
+work (to save deploy credits); everything is verified on staging first.
+
+- [ ] Event page tabs (#19): Readiness above three server-rendered tabs, `?tab=info|social|post`,
+      default Event Info for a future date and Post Event for today or earlier (Eastern time),
+      every form returning to its tab. Renames: "Listings" → **Online Event Listings**,
+      "Social photos" → **Photos from Event** (labels only; `social_photo` and the
+      `event_links` slots are unchanged)
+- [ ] Event Image (`event_image` media: upload or reference a recent publicly usable photo,
+      the logo as the default, a 16:9 cover copy), previews and downloads for the hand-entered
+      listings, and the Social Post cover image defaulting to it
+- [ ] Migrations: `linkedin_connections` (token encrypted under `LINKEDIN_TOKEN_KEY`),
+      `linkedin_events` (the ledger, unique on `event_date`), the `event_media` changes and the
+      social post's cover. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
+      connections only), `social_checker` the connection expiry only, nothing for
+      `site_reader`/`checkin_writer`
+- [x] LinkedIn OAuth connect, status ("Connected as …, expires …"), reconnect and disconnect,
+      for Admins (#23: `/api/admin/linkedin/{connect,callback,disconnect}`, the LinkedIn client
+      adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
+      production and staging callback URLs
+- [x] The Readiness section (#42): an H2 with two bullets, "Online Event Listings x/5
+      (Default Cover Image | Custom Cover Image)" counting the four listings and the public
+      page (the Luma embed id is no longer an item; the brackets follow the Event Image's
+      source), the missing parts and the LinkedIn lines under it (drift and cancel pointing at
+      the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
+      status, or "not set up yet"), its problems (not once Posted) and channels under it. The
+      events list and home tag became "x/5 listings" with the same count
+- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
+      Image; it is made Tuesday afternoon for the next week's event, alongside the other
+      online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
+      dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
+      (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
+      the `linkedin_event` listing filled on post, drift and cancellation notices
+      (#25 done: `linkedin_events` ledger migration, the preview, the dialog with
+      `confirm=live`, the allowed-actions matrix, the organizer duplicate check and the dry
+      run. #26 done: the live sequence, `pending` committed before anything is sent, each
+      transition audited `linkedin_event.{pending,created,posted,retire}`, the listing filled
+      with `posted` in one transaction, "Publish event" retrying only the post, "I checked:
+      nothing was created, allow retry" retiring a `pending` row, and LinkedIn errors in plain
+      language. A failed step leaves the last committed state, even when LinkedIn clearly
+      refused before creating anything: the page then says it is safe to allow retry.
+      #27 done: drift is flagged, not synced: once posted, a change of location (by its
+      wording: not set reads as the lobby) or of the Event Image's cover shows "LinkedIn is
+      out of date…" in Readiness and the LinkedIn section, linking the event (a CLI-imported
+      row with no image recorded compares the location only). A cancelled event with a
+      posted row shows a red "Cancel the LinkedIn event on LinkedIn" item in Cancel and
+      Readiness until "Done on LinkedIn" (audited `linkedin_event.cancel_ack`))
+- [x] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
+      (#21/#27, and "LinkedIn event posted" from the review fixes: done once the ledger row is
+      posted, linking the event; no line for a cancelled event, where the cancel line takes over)
+- [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
+      or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
+      independent check in `src/lib/social-alert/run.mjs`; migration
+      `20261126120000_social_checker_linkedin.sql` gives `social_checker` only
+      `linkedin_connections (user_id, expires_at, display_name)`, and nothing in `auth`: the
+      alert names the connection by its LinkedIn display name. If the connections can't be
+      read, it pushes its own "the Thursday check couldn't read the connection" alert rather than
+      staying silent)
+- [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
+      environments), `LINKEDIN_LIVE=1` (production only)
+- [ ] Import the CLI's local ledger into `linkedin_events` before the first webapp create.
+      Script ready (#28): `backend/scripts/import-linkedin-ledger.js` (dry run by default,
+      `--apply`, `--prefer-db`; rules in its header). It reads the CLI's
+      `~/.local/state/bocc-linkedin/ledger.json` (or `--ledger <file>`), so run it on the
+      machine that ran the CLI, **with the production owner URL, after the Phase 6
+      migrations and before the first web create** (dev first, as a rehearsal):
+      ```sh
+      cd backend
+      node --env-file=../.env.local scripts/import-linkedin-ledger.js           # dry run vs production
+      node --env-file=../.env.local scripts/import-linkedin-ledger.js --apply
+      node --env-file=../.env.local scripts/import-linkedin-ledger.js           # again: unchanged N, conflicts 0
+      ```
+      `posted` and `created` entries become ledger rows (created_by and the image null);
+      `pending` entries are SKIPPED and listed: check LinkedIn for that week, then finish it
+      with the CLI (`bocc-event post`) or `bocc-event forget` it, and re-run. A posted week
+      with no `linkedin_event` listing gets one. A stored web row that disagrees is a
+      CONFLICT and refuses `--apply` unless `--prefer-db` (keeps the stored row). One
+      `linkedin_event.import` audit row per run that changed something. Afterwards each
+      imported week's Event Info tab shows **Posted on LinkedIn** with the event and post
+      links, and Create live event is refused for it
+- [ ] Release runbook (`PHASE6_RELEASE.md`): prefactor checked on staging, then production,
+      **before** the first live create. Reminder: `LinkedIn-Version: 202609` sunsets
+      2027-09-15
+- [ ] After the first successful live create from production: delete `tools/linkedin-events/`,
+      rewrite the LinkedIn permissions doc for the web OAuth flow and repoint the
+      `bocc-linkedin-event` skill (docs-only, batched into a later deploy)
 
 ## Later, not in the MVP
 

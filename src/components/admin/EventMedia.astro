@@ -4,9 +4,10 @@
 // order, ADR 0008). Props are stable for the event page:
 //   <EventMedia date="2026-11-24" />
 //
-// - Two sections, "Sign-in board" and "Social photos", each with its own upload form
+// - Two sections, "Sign-in board" and "Photos from Event" (kind social_photo; the label
+//   was "Social photos" until ADR 0012), each with its own upload form
 //   (kind fixed by a hidden field), status line, gallery and unfinished uploads. No
-//   "OK to use publicly" control: every social photo is covered by the posted photo
+//   "OK to use publicly" control: every photo from the event is covered by the posted photo
 //   waiver, so the server marks it publicly usable (ADR 0010 decision 2).
 // - Upload forms: /js/admin-media.js makes the 1600px display copy and the 400px
 //   thumbnail in the browser and PUTs all three files straight to the private bucket
@@ -18,6 +19,7 @@
 import { hasRole } from "../../lib/admin/roles.mjs";
 import { getStorage, isIsoDate } from "../../lib/admin/storage.mjs";
 import { STORAGE_OFF_MESSAGE } from "../../lib/admin/media-http.mjs";
+import { inUseMessage } from "../../lib/admin/event-image-rules.mjs";
 
 interface Props {
   /** The event's date, YYYY-MM-DD. */
@@ -31,20 +33,24 @@ const NOTICES: Record<string, string> = {
   deleted: "Photo deleted.",
   "deleted-partial": "Photo deleted. Some of its files couldn't be removed from storage; they are logged for cleanup.",
 };
-const notice = NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
+// A refused delete names the events that use the photo as their Event Image (ticket
+// #21): ?media=in-use&used-by=<date,…>, each date checked before it is shown.
+const usedBy = (Astro.url.searchParams.get("used-by") ?? "").split(",").filter((d) => isIsoDate(d));
+const mediaParam = Astro.url.searchParams.get("media") ?? "";
+const notice = mediaParam === "in-use" && usedBy.length ? inUseMessage(usedBy) : NOTICES[mediaParam] ?? null;
 
 // One section per kind, each with its own upload form (the kind is fixed: a hidden
 // `kind` field), status line and gallery.
 const SECTIONS = [
   {
     kind: "signin_board", slug: "signin", heading: "Sign-in board", label: "Sign-in board",
-    intro: "Photos of the paper sign-in board.", empty: "No sign-in board photo yet.",
+    empty: "No sign-in board photo yet.",
     pickLabel: "Sign-in board photos (JPEG or PNG)", button: "Upload sign-in board photos",
   },
   {
-    kind: "social_photo", slug: "social", heading: "Social photos", label: "Social photo",
-    intro: "Photos from the event for social media.", empty: "No social photos yet.",
-    pickLabel: "Social photos (JPEG or PNG)", button: "Upload social photos",
+    kind: "social_photo", slug: "social", heading: "Photos from Event", label: "Photo from Event",
+    empty: "No photos from the event yet.",
+    pickLabel: "Photos from Event (JPEG or PNG)", button: "Upload photos from the event",
   },
 ] as const;
 
@@ -94,7 +100,6 @@ const fmtTime = (d: Date) =>
         {sections.map((s) => (
           <section class="media-section" id={`media-${s.slug}`} aria-labelledby={s.headingId} data-media-kind={s.kind}>
             <h2 id={s.headingId}>{s.heading}</h2>
-            <p class="muted">{s.intro}</p>
             <p class="muted" data-media-nojs>Uploading photos needs JavaScript.</p>
             <form class="media-upload" data-media-upload data-kind={s.kind} data-event-date={date} data-status={s.statusId} hidden>
               <input type="hidden" name="kind" value={s.kind}>

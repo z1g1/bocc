@@ -205,7 +205,7 @@ async function planImport(yamlText, readmeText) {
     }
     const url = norm('luma', r.url, `YAML ${date}`);
     if (url) slot(date).luma = { url, externalId };
-    if (!externalId && url) info.push(`${date}: Luma has no evt- id in the YAML (readiness will flag "no embed id")`);
+    if (!externalId && url) info.push(`${date}: Luma has no evt- id in the YAML (the public page will have no RSVP embed; not a readiness item since #42)`);
   }
   for (const [date, r] of readmeByDate) {
     const s = slot(date);

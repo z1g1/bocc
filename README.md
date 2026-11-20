@@ -62,7 +62,8 @@ npm test
 # Local dev (requires Netlify CLI and environment variables)
 netlify dev
 
-# Apply database migrations (operator only; owner URL in gitignored ../.env.local)
+# Database migrations run from CI before each dev/main deploy (docs/backend/DEPLOYS.md).
+# Manual fallback only (operator; check which Neon branch the env file points at):
 npm run migrate
 ```
 

@@ -139,7 +139,8 @@ export function storageOrigin(configOrEnv = process.env) {
 
 // ─── Keys ────────────────────────────────────────────────────────────────────
 
-export const MEDIA_VARIANTS = /** @type {const} */ (["original", "display", "thumb"]);
+// cover: the Event Image's 16:9 JPEG, the image on the beans background (ADR 0012 decision 3, ticket #40).
+export const MEDIA_VARIANTS = /** @type {const} */ (["original", "display", "thumb", "cover"]);
 // heic/heif: only the untouched originals of the one-time sign-in board photo import
 // (ADR 0010 decision 4, migration 20261119120000). Browser uploads still refuse HEIC,
 // and display copies and thumbnails are always JPEG.
@@ -168,7 +169,7 @@ export function isIsoDate(s) {
  *   events/2026-11-24/<uuid>/original.jpg
  * @param {string} eventDate  YYYY-MM-DD
  * @param {string} id         event_media.id (lowercase uuid)
- * @param {"original"|"display"|"thumb"} variant
+ * @param {"original"|"display"|"thumb"|"cover"} variant
  * @param {"jpg"|"png"|"heic"|"heif"|"mp4"|"mov"} ext  heic/heif for the original only
  */
 export function mediaKey(eventDate, id, variant, ext) {
@@ -377,6 +378,25 @@ export function createStorage(config, { now = () => new Date(), fetch: fetchImpl
         contentLength: Number(res.headers.get("content-length")),
         etag: res.headers.get("etag"),
       };
+    },
+
+    /**
+     * Server side: read one object's bytes (e.g. the Event Image's cover for the
+     * LinkedIn image upload). Header-signed like HEAD, so the traced URL is just
+     * <origin>/<bucket>/<key>. Refuses an object over `maxBytes` (default 16 MiB):
+     * the whole body is held in memory.
+     * @param {{ key: string, maxBytes?: number }} opts
+     * @returns {Promise<null | { contentType: string|null, bytes: Buffer }>}
+     */
+    async getObject({ key, maxBytes = 16 * 1024 * 1024 }) {
+      const res = await send("GET", key);
+      if (res.status === 404) { await res.body?.cancel(); return null; }
+      if (!res.ok) { await res.body?.cancel(); throw new Error(`storage: GET failed with ${res.status}`); }
+      const declared = Number(res.headers.get("content-length"));
+      if (declared > maxBytes) { await res.body?.cancel(); throw new Error("storage: object too large"); }
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.length > maxBytes) throw new Error("storage: object too large");
+      return { contentType: res.headers.get("content-type"), bytes };
     },
 
     /**

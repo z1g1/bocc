@@ -159,8 +159,8 @@ describe("migration 20261122120000_social_posts.sql", () => {
       await assertAllowed(owner, `update social_post_channels set post_url = 'https://www.threads.net/@bocc/post/1', status = 'scheduled' where event_date = $1`, [d]);
       await refused(`update social_posts set base_caption = ' ' where event_date = $1`, [d]);
       await refused(`update social_posts set extra_hashtags = $2 where event_date = $1`, [d, Array.from({ length: 11 }, (_, i) => `#t${i}`)]);
-      await refused(`update social_posts set ready = true where event_date = $1`, [d]);
-      await refused(`update social_posts set ready = true, base_caption = 'x' where event_date = $1`, [d]);
+      await refused(`update social_posts set status = 'ready' where event_date = $1`, [d]);
+      await refused(`update social_posts set status = 'ready', base_caption = 'x' where event_date = $1`, [d]);
       // An unknown event: FK.
       await assertRefused(owner, `insert into social_posts (event_date, publish_at) values ('2099-12-29', now())`, [], /foreign key/);
     }));
@@ -207,8 +207,8 @@ describe("social module (admin_app)", () => {
     assert.deepEqual(res, { changed: true, eventCreated: true });
     assert.equal((await owner.query(`select status from events where event_date = $1`, [d])).rows[0].status, "scheduled");
     const row = await postRow(d);
-    assert.deepEqual([row.base_caption, row.extra_hashtags, row.cover_note, row.ready, row.video_media_id],
-      ["Coffee!\nTuesday.", ["#founders"], null, false, null], "#Networking is a default TikTok tag: dropped");
+    assert.deepEqual([row.base_caption, row.extra_hashtags, row.cover_note, row.status, row.video_media_id],
+      ["Coffee!\nTuesday.", ["#founders"], null, "todo", null], "#Networking is a default TikTok tag: dropped");
     assert.equal(row.publish_at.toISOString(), so.defaultPublishAt(d).toISOString());
     assert.equal(new Date(row.publish_at).getUTCDay(), 1, "a Monday");
     assert.deepEqual(await channelRows(d), [...CHANNELS].sort().map((channel) => ({ channel, caption: null, first_comment: null, status: "pending" })));
@@ -241,23 +241,23 @@ describe("social module (admin_app)", () => {
 
   test("ready is refused until video, caption and Luma are all there; the refusal rolls back the whole save", async () => {
     const d = date();
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", ready: "on" }), (e) => {
+    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" }), (e) => {
       assert.ok(e instanceof ValidationError);
-      assert.match(e.errors.ready, /Upload the promo video\..*Add the Luma listing/);
-      assert.doesNotMatch(e.errors.ready, /base caption/);
+      assert.match(e.errors.status, /Upload the promo video\..*Add the Luma listing/);
+      assert.doesNotMatch(e.errors.status, /base caption/);
       return true;
     });
     assert.equal(await postRow(d), null, "nothing created");
     await lumaLink(d);
     const vid = await insertMedia(d);
     assert.deepEqual(await so.setVideo(actor.id, d, vid), { changed: true, eventCreated: false });
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "", ready: "on" }), (e) => /base caption/.test(e.errors.ready));
+    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "", status: "ready" }), (e) => /base caption/.test(e.errors.status));
     // A publish time already passed (or after the event) can't be saved, nor made ready.
     await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", publishAt: "2020-01-06T07:00" }), (e) => /already passed/.test(e.errors.publishAt));
     const dayAfter = new Date(Date.parse(`${d}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10);
     await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", publishAt: `${dayAfter}T07:00` }), (e) => /after the event/.test(e.errors.publishAt));
 
-    assert.deepEqual(await so.savePost(actor.id, d, { baseCaption: "Coffee", ready: "on", coverNote: "Frame 0:02" }), { changed: true, eventCreated: false });
+    assert.deepEqual(await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready", coverNote: "Frame 0:02" }), { changed: true, eventCreated: false });
     const w = await so.getWorkOrder(pool, d);
     assert.deepEqual([w.ready, w.actionable, w.problems, w.video.id, w.video.kind], [true, true, [], vid, "promo_video"]);
     assert.equal(w.channels.find((c) => c.channel === "facebook").caption, "Coffee\n\nRSVP: https://luma.com/bocc-test");
@@ -274,10 +274,10 @@ describe("social module (admin_app)", () => {
     await lumaLink(d);
     await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [d]);
     assert.deepEqual((await so.getWorkOrder(pool, d)).problems.map((p) => p.key), ["event"]);
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee again", ready: "on" }), (e) => /cancelled/.test(e.errors.ready));
-    // Un-readying is always allowed.
-    assert.equal((await so.savePost(actor.id, d, { baseCaption: "Coffee" })).changed, true);
-    assert.equal((await postRow(d)).ready, false);
+    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee again", status: "ready" }), (e) => /cancelled/.test(e.errors.status));
+    // Back to To do is always allowed.
+    assert.equal((await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "todo" })).changed, true);
+    assert.equal((await postRow(d)).status, "todo");
   });
 
   test("setVideo: only a ready promo video of the same event", async () => {
@@ -301,7 +301,7 @@ describe("social module (admin_app)", () => {
   test("channel overrides: stored, back to the default when blank or equal to it; over the limit refused on a ready post", async () => {
     const d = date();
     await readyable(d);
-    await so.savePost(actor.id, d, { baseCaption: "Coffee", ready: "on" });
+    await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" });
     assert.deepEqual(await so.saveChannel(actor.id, d, "instagram", { caption: " IG only text ", firstComment: "" }), { changed: true, eventCreated: false });
     let rows = await channelRows(d);
     assert.deepEqual(rows.find((r) => r.channel === "instagram"), { channel: "instagram", caption: "IG only text", first_comment: null, status: "pending" });
@@ -318,7 +318,7 @@ describe("social module (admin_app)", () => {
     await assert.rejects(so.saveChannel(actor.id, d, "facebook", { caption: "f".repeat(5001) }), (e) => /At most 5000/.test(e.errors.caption));
     assert.ok((await so.saveChannel(actor.id, d, "facebook", { caption: "f".repeat(4000) })).changed, "Facebook's limit is higher");
     // A base caption pushing Threads over its limit can't be saved while ready.
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "b".repeat(490), ready: "on" }), (e) => /Threads caption/.test(e.errors.ready));
+    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "b".repeat(490), status: "ready" }), (e) => /Threads caption/.test(e.errors.status));
 
     const acts = (await audits(d)).filter((a) => a.target_table === "social_post_channels");
     assert.deepEqual(acts.map((a) => [a.action, a.details.channel]), [
@@ -327,17 +327,17 @@ describe("social module (admin_app)", () => {
     assert.deepEqual(acts[0].details.after, { caption: "IG only text" });
   });
 
-  test("deleting the attached video clears it from the post and un-readies it, in the delete's transaction", async () => {
+  test("deleting the attached video clears it from the post and moves it back to To do, in the delete's transaction", async () => {
     const d = date();
     const vid = await readyable(d);
-    await so.savePost(actor.id, d, { baseCaption: "Coffee", ready: "on" });
+    await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" });
     const deleted = [];
     const fakeStorage = { deleteObject: async ({ key }) => { deleted.push(key); } };
     const res = await media.deleteMedia(actor.id, fakeStorage, vid);
     assert.deepEqual([res.kind, res.eventDate, res.leftovers], ["promo_video", d, []]);
     assert.deepEqual(deleted, [`events/${d}/${vid}/original.mp4`]);
     const row = await postRow(d);
-    assert.deepEqual([row.video_media_id, row.ready], [null, false]);
+    assert.deepEqual([row.video_media_id, row.status], [null, "todo"]);
     const { rows: [a] } = await owner.query(`select details from audit_log where action = 'media.delete' and target_id = $1`, [vid]);
     assert.equal(a.details.detachedFromSocialPost, true);
     assert.deepEqual((await so.getWorkOrder(pool, d)).problems.map((p) => p.key), ["video"]);
@@ -403,12 +403,12 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
 
   test("admin sees the section; the social role gets 403 and can't post; wrong Origin refused", async () => {
     const d = httpDate();
-    const page = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     assert.ok(page.includes('id="h-social"') && page.includes("Social post"));
     for (const c of CHANNELS) assert.ok(page.includes(`id="channel-${c}"`), c);
     assert.ok(page.includes('src="/js/admin-video.js"'), "the upload script is an external file (CSP script-src 'self')");
     assert.ok(page.includes(so.formatPublishAt(so.defaultPublishAt(d)).utc), "the default publish time in UTC");
-    assert.ok(page.includes("social post") && page.includes("not set up yet"));
+    assert.ok(page.includes("Social Posts: not set up yet"));
 
     assert.equal((await req(`/admin/events/${d}/`, { cookie: social.cookie })).status, 403);
     const sp = await req(`/admin/events/${d}/`, { cookie: social.cookie, method: "POST", form: { action: "social_post", baseCaption: "x" } });
@@ -423,18 +423,21 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "social_post", baseCaption: "Coffee <b>Tuesday</b>", extraHashtags: "founders", coverNote: "", publishAt: `${so.mondayBefore(d)}T08:30` } });
     assert.equal(ok.status, 303);
-    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?notice=social_post#social`);
+    assert.equal(ok.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_post#social`);
     const row = await postRow(d);
     assert.equal(so.formatPublishAt(row.publish_at).local, `${so.mondayBefore(d)}T08:30`);
 
-    const page = await (await req(`/admin/events/${d}/?notice=social_post`, { cookie: admin.cookie })).text();
+    const page = await (await req(`/admin/events/${d}/?tab=social&notice=social_post`, { cookie: admin.cookie })).text();
     assert.ok(page.includes("Social post saved."));
     assert.ok(page.includes("Coffee &lt;b&gt;Tuesday&lt;/b&gt;") && !page.includes("<b>Tuesday</b>"), "escaped");
-    assert.ok(page.includes("social post ready") && page.includes("Facebook: pending") && page.includes("0/5 channels scheduled"));
+    const ready = page.slice(page.indexOf('id="h-ready"'), page.indexOf('aria-label="Event page tabs"'));
+    assert.ok(ready.includes("Social Posts: To do") && ready.includes("Facebook: pending") && ready.includes("0/5 channels scheduled"));
+    assert.ok(ready.includes("Add the Luma listing"), "the problems under the bullet");
+    assert.ok(!ready.includes("not marked ready"));
     assert.ok(page.includes(`RSVP: [Luma link: add the Luma listing]`), "preview flags the missing Luma link");
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "social_post", baseCaption: "Coffee again", ready: "on" } });
+      form: { action: "social_post", baseCaption: "Coffee again", status: "ready" } });
     assert.equal(bad.status, 400);
     const badHtml = await bad.text();
     assert.ok(badHtml.includes("Not ready yet: Upload the promo video.") && badHtml.includes("Coffee again"));
@@ -443,16 +446,64 @@ describe("the Social post section over HTTP", { timeout: 300_000 }, () => {
     const ch = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "social_channel", channel: "threads", caption: "Threads text", firstComment: "" } });
     assert.equal(ch.status, 303);
-    const after = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    const after = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     assert.ok(after.includes("Threads text") && after.includes("override"));
 
     await owner.query(`update social_post_channels set status = 'scheduled', post_url = 'https://www.facebook.com/reel/1' where event_date = $1 and channel = 'facebook'`, [d]);
-    const sched = await (await req(`/admin/events/${d}/`, { cookie: admin.cookie })).text();
+    const sched = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     assert.ok(sched.includes("Facebook: scheduled") && sched.includes("1/5 channels scheduled") && sched.includes('href="https://www.facebook.com/reel/1"'));
     assert.ok(sched.includes("Changes here don't change posts already scheduled"));
 
     const unknown = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_channel", channel: "myspace" } });
     assert.equal(unknown.status, 400);
+  });
+
+  test("the status dropdown (ticket #39): the intro, four statuses, Ready for Posting refused next to it, the others saved and audited", async () => {
+    const d = httpDate();
+    const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
+    assert.ok(page.includes("The weekly promo video, posted on Facebook, Instagram, Threads, TikTok, and LinkedIn page is done by work order."));
+    assert.ok(page.includes("It is only posted when the status is set to &#39;Ready for Posting&#39;") || page.includes("It is only posted when the status is set to 'Ready for Posting'"));
+    assert.ok(page.includes("Automated posting requires a logged in AI Agent with the Social role and a scheduled task to look for posts"));
+    assert.ok(!page.includes('name="ready"'), "the checkbox is gone");
+    const select = page.match(/<select[^>]*name="status"[^>]*>([\s\S]*?)<\/select>/);
+    assert.ok(select, "a status dropdown");
+    const options = [...select[1].matchAll(/<option[^>]*value="([a-z]+)"([^>]*)>([^<]*)<\/option>/g)].map((m) => [m[1], m[3], /selected/.test(m[2])]);
+    assert.deepEqual(options, [["todo", "To do", true], ["ready", "Ready for Posting", false], ["posted", "Posted", false], ["error", "Error", false]]);
+
+    const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "social_post", baseCaption: "Coffee", status: "ready" } });
+    assert.equal(bad.status, 400);
+    const badHtml = await bad.text();
+    // The reasons sit right after the dropdown, which keeps what was chosen.
+    const near = badHtml.match(/<select[^>]*name="status"[\s\S]*?<\/select>\s*<p[^>]*id="status-error"[^>]*>([^<]*)</);
+    assert.ok(near, "the error follows the dropdown");
+    assert.match(near[1], /^Not ready yet: Upload the promo video\./);
+    assert.match(badHtml, /<option[^>]*value="ready"[^>]*selected/);
+    assert.equal(await postRow(d), null, "nothing saved");
+
+    const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "social_post", baseCaption: "Coffee", status: "posted" } });
+    assert.equal(ok.status, 303);
+    assert.equal((await postRow(d)).status, "posted");
+    const [audit] = (await audits(d)).filter((a) => a.action === "social_post.update");
+    assert.deepEqual([audit.actor_user_id, audit.details.before.status, audit.details.after.status], [admin.user.id, "todo", "posted"]);
+    const after = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
+    assert.match(after, /<option[^>]*value="posted"[^>]*selected[^>]*>Posted<\/option>/);
+    const unknown = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
+      form: { action: "social_post", baseCaption: "Coffee", status: "live" } });
+    assert.equal(unknown.status, 400);
+  });
+
+  test("the cover wording: cover image intro, Thumbnail timecode, and the Publish at default hint (#41)", async () => {
+    const d = "2086-11-19"; // a Tuesday; the Monday before is Nov 18
+    const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
+    const text = page.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    assert.ok(text.includes("The video's cover image on the platforms that support this feature"), "cover image intro");
+    assert.ok(!text.includes("promo video's cover on the platforms"), "the old intro is gone");
+    assert.match(page, /<label for="coverNote"[^>]*>Thumbnail timecode </);
+    assert.ok(text.includes("the frame of the video to use where a cover image can't be uploaded, for example \"0:03\""), "timecode hint");
+    assert.ok(!text.includes("Cover note"), "no Cover note label left");
+    assert.ok(text.includes("(blank = the Monday before the event, 7:00 AM Eastern (Mon, Nov 18))"), "Publish at hint");
   });
 
   test("the video upload script is served as JavaScript", async () => {

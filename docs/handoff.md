@@ -106,7 +106,7 @@ If a check fails, propose an ADR change instead.
 - Neon: project `young-queen-80162551`. The app uses `checkin_writer` only; the owner URL never
   goes in Netlify. CLI: `NEON_API_KEY="$(cat ~/.config/neon/api-key)" neon …`.
 - Never print secrets (`.env.local`, `.env.backfill`, DB URLs).
-- Migrations: new files only, and `npm run migrate` before deploying code that uses them.
+- Migrations: new files only, expand then contract. CI applies them before each `dev`/`main` deploy (docs/backend/DEPLOYS.md). `.env.local` points at production.
 - Don't automate against the real Meta, TikTok or LinkedIn accounts; no stealth/bot-evasion tools.
 - Leave the untracked `docs/website/redesign-social/` alone (it's Zack's).
 - Commit often on `dev` with the standard footer.
