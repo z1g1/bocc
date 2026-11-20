@@ -1,25 +1,25 @@
 // What the social role's pages (/admin/social/next/, /admin/social/verify/) and their
 // JSON API (/api/admin/social/*) share (ADR 0011 decisions 3, 4; plan Phase 5 part B):
 // loading the pick with the video's download link, the JSON shape, and turning a form
-// post into setChannelResult() input. Admin and social only; callers check the role
+// post into setPostResult() input. Admin and social only; callers check the role
 // (and checkOrigin on POST). Nothing here reads attendees, check-ins, reports or the
 // audit log: the work order is all these pages ever show (ADR 0008).
 //
-//   loadPick("next" | "verify", { now })   findNext / findVerify (social.mjs) plus
-//       `video` for a picked post: { fileName, downloadUrl, expiresAt, contentType,
+//   loadPick("next" | "verify", { now })   findNext / findVerify (social-plan.mjs) plus
+//       `video` for a picked Social plan: { fileName, downloadUrl, expiresAt, contentType,
 //       sizeBytes } or null, or { unavailable: message } when storage is off; and
 //       `cover` (ticket #22): { source, eventImageSource, fileName, downloadUrl,
 //       expiresAt, contentType } for the video's cover image (the Event Image or the
 //       admin's override; the logo default is a link on `origin`, never signed), or
 //       { unavailable } when it is in the bucket and storage is off.
 //   toJson(pick)                           the same, safe to send (no storage keys)
-//   resultInput(values)                    a form's fields -> setChannelResult input
+//   resultInput(values)                    a form's fields -> setPostResult input
 //   handleChannelPost(request, userId, page), noticeText(params)   the pages' forms (PRG)
 
 import { pool } from "./db.mjs";
 import { getStorage } from "./storage.mjs";
 import { ValidationError } from "./events.mjs";
-import { CHANNELS, findNext, findVerify, isChannel, setChannelResult } from "./social.mjs";
+import { CHANNELS, findNext, findVerify, isChannel, setPostResult } from "./social-plan.mjs";
 
 /** How long the video download link works (the Chrome task downloads it right away). */
 export const VIDEO_LINK_SECONDS = 3600;
@@ -105,7 +105,7 @@ export function toJson(pick) {
 }
 
 /**
- * A channel form's fields -> setChannelResult() input. Only the fields the form sent
+ * A channel form's fields -> setPostResult() input. Only the fields the form sent
  * are passed on: an absent field keeps what is stored.
  * @param {Record<string, string>} values
  */
@@ -142,7 +142,7 @@ export async function handleChannelPost(request, userId, page) {
   const { channel = "", date = "" } = values;
   if (!isChannel(channel)) return { response: plain(400, "Bad Request: unknown channel") };
   try {
-    const r = await setChannelResult(userId, date, channel, resultInput(values));
+    const r = await setPostResult(userId, date, channel, resultInput(values));
     const notice = r.changed ? (values.commentPosted !== undefined && values.status === undefined ? "comment" : "saved") : "unchanged";
     return {
       response: new Response(null, {

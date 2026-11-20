@@ -1,4 +1,4 @@
-# Claude in Chrome tasks: the weekly social posts
+# Claude in Chrome tasks: the weekly social media posts
 
 These are the two scheduled tasks Modron runs in Claude in Chrome on its own machine
 ([ADR 0011](../adr/0011-social-posting-via-chrome-work-order.md) decision 3):
@@ -121,7 +121,7 @@ Steps:
 ### Video cover image per channel
 
 The work order's **Cover image** (ticket #22) is the event's Event Image (the square BOCC logo
-by default), unless an Admin chose a Photo from Event for this post on the Social Posts tab. The
+by default), unless an Admin chose a Photo from Event for this Social plan on the Social plan tab. The
 link is `id="cover-download"` on `/admin/social/next/` and `cover` in `/api/admin/social/next`.
 It is the image's display copy (a JPEG up to 1600px on its long edge, in the image's own
 shape; the logo default is a 2000×2000 PNG): the platforms crop covers themselves.
@@ -190,31 +190,33 @@ Steps:
    otherwise list, per channel, its status, whether the first comment is posted, and any notes.
 ```
 
-## Post status
+## Plan status and Post status
 
-The Social post's **Status** (ticket #39) decides whether the tasks see the post at all. The
-prompts don't change: the tasks only save channel statuses, and the post status follows.
+The Social plan's **Plan status** (ticket #39) decides whether the tasks see the plan at all.
+The prompts don't change: the tasks only save each social media post's **Post status**
+(`pending`, `scheduled`, `live`, `failed`), and the Plan status follows. (The page's
+fields and JSON keys are still called `status`.)
 
-| Status | Meaning | Set by |
+| Plan status | Meaning | Set by |
 |---|---|---|
 | **To do** | being prepared; `/admin/social/next/` shows "Nothing ready" (reason `not_ready`) | an Admin (the default) |
 | **Ready for Posting** | the work order is offered to the Wednesday task | an Admin, only when nothing blocks it |
-| **Posted** | every channel is `scheduled` or `live`; never handed out again | automatically, when a task's channel save leaves every channel `scheduled`/`live`; an Admin can also set it |
-| **Error** | a channel failed | automatically, when a task saves a channel as `failed`; an Admin can also set it. Still offered, so the Wednesday task carries on with the other channels and a failed channel can be scheduled again (then the post becomes Posted) |
+| **Posted** | every social media post is `scheduled` or `live`; never handed out again | automatically, when a task's save leaves every post `scheduled`/`live`; an Admin can also set it |
+| **Error** | a social media post failed | automatically, when a task saves a post as `failed`; an Admin can also set it. Still offered, so the Wednesday task carries on with the other posts and a failed post can be scheduled again (then the plan becomes Posted) |
 
-Each automatic change is audited as `social_post.status`; its actor is whoever records the channel update (the `social` user, or an Admin saving a channel result).
+Each automatic change is audited as `social_plan.status` (`social_post.status` before #56); its actor is whoever records the post update (the `social` user, or an Admin saving a post result).
 
 ## When a task reports a problem
 
 - **Signed out:** Modron signs in by hand once in that Chrome profile, then re-runs the task.
-- **Nothing ready:** fix what it lists on `/admin/events/<date>/` and set the post's Status to
-  Ready for Posting.
+- **Nothing ready:** fix what it lists on `/admin/events/<date>/` (the Social plan tab) and set
+  the Plan status to Ready for Posting.
   Then run the Wednesday task again by hand (any day before Monday morning). The page is
-  always about the earliest upcoming week that still has work: a later week's post that is
+  always about the earliest upcoming week that still has work: a later week's Social plan that is
   ready waits until that week is done (or its Monday publish time passes, or it is cancelled).
-- **A channel failed:** the notes say why, and the post is **Error**. Schedule that channel by
-  hand, then set its status on `/admin/social/next/` (the post becomes Posted once no channel is
-  pending or failed).
-- **The Thursday ntfy push** fires if a channel isn't `scheduled` or `live` by Thursday morning.
+- **A social media post failed:** the notes say why, and the Social plan is **Error**. Schedule
+  that post by hand, then set its Post status on `/admin/social/next/` (the plan becomes Posted
+  once no post is pending or failed).
+- **The Thursday ntfy push** fires if a social media post isn't `scheduled` or `live` by Thursday morning.
   It is the backstop for a Wednesday run that never happened, for example because the machine
   was asleep.

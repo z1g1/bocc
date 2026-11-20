@@ -4,7 +4,7 @@
 //                                  &media=deleted, or ?media=deleted-partial when an
 //                                  object couldn't be removed (logged with its key)
 //                                  (a promo video: ?tab=social&media=video-deleted[-partial]#social; it
-//                                  is also cleared from the social post and un-readies it)
+//                                  is also cleared from the Social plan and un-readies it)
 //   JSON (upload script giving up on a failed upload) -> 200 { id, eventDate, kind, leftovers[] }
 //   a photo picked as an Event Image (ticket #21) is refused, nothing deleted:
 //     form -> 303 to /admin/events/<the photo's date>/?tab=post&media=in-use&used-by=<date,…>#event-media

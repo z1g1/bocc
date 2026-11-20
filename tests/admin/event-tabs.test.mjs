@@ -137,7 +137,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       assert.equal(bullets.length, 2, `${tab}: two bullets`);
       assert.match(ready, /Online Event Listings \d\/5 \(Default Cover Image\)/, `${tab}: the listings bullet`);
       assert.match(ready, /Social Posts: not set up yet/, `${tab}: the social bullet`);
-      for (const [key, label] of [["info", "Event Info"], ["social", "Social Posts"], ["post", "Post Event"]]) {
+      for (const [key, label] of [["info", "Event Info"], ["social", "Social plan"], ["post", "Post Event"]]) {
         assert.match(html, new RegExp(`<a\\b[^>]*href="\\?tab=${key}"[^>]*>${label}</a>`), `${tab}: a plain link to ${label}`);
       }
     }
@@ -166,7 +166,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     assert.ok(at("h-links") < at("h-linkedin"), "after the Online Event Listings");
     assert.ok(at("h-event-image") > 0 && at("h-event-image") < at("h-linkedin"), "after the Event Image");
     const social = await page(`/admin/events/${d}/?tab=social`);
-    assert.ok(!social.includes('id="h-linkedin"'), "not on Social Posts");
+    assert.ok(!social.includes('id="h-linkedin"'), "not on Social plan");
     assert.ok(!social.includes('id="linkedin-event"'), "nor its form");
   });
 
@@ -211,10 +211,10 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       assert.ok(!/[Ss]ocial photos?/.test(post), "no 'social photo' label left");
       assert.ok(post.includes('data-kind="event_photo"'), "the media kind is event_photo");
     }
-    // The social post's "no Luma link" reason names the renamed section.
-    await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_post", baseCaption: "Renames" } });
+    // The Social plan's "no Luma link" reason names the renamed section.
+    await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_plan", baseCaption: "Renames" } });
     const social = await page(`/admin/events/${d}/?tab=social`);
-    assert.ok(social.includes("Add the Luma listing (under Online Event Listings)"), "the social post's missing-Luma reason");
+    assert.ok(social.includes("Add the Luma listing (under Online Event Listings)"), "the Social plan's missing-Luma reason");
   });
 
   test("every form redirects back to its own tab", async () => {
@@ -227,9 +227,9 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "unlink", platform: "luma" }, "info", "unlink"],
       [future, { action: "save", status: "cancelled", location: "lobby", cancelReason: "weather" }, "info", "saved"],
       [future, { action: "save", status: "scheduled", location: "lobby" }, "info", "saved"],
-      [future, { action: "social_post", baseCaption: "Tabs caption" }, "social", "social_post", "#social"],
+      [future, { action: "social_plan", baseCaption: "Tabs caption" }, "social", "social_plan", "#social"],
       [future, { action: "social_video", videoMediaId: video }, "social", "social_video", "#social"],
-      [future, { action: "social_channel", channel: "threads", caption: "Threads tabs", firstComment: "" }, "social", "social_channel", "#social"],
+      [future, { action: "social_media_post", channel: "threads", caption: "Threads tabs", firstComment: "" }, "social", "social_media_post", "#social"],
       [past, { action: "report", attendeeCount: "12", blingGiven: "no", notes: "", blingDetails: "" }, "post", "report"],
     ];
     for (const [d, form, tab, notice, anchor = ""] of cases) {
@@ -251,7 +251,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "save", location: "basement" }, "info"],
       [future, { action: "link", platform: "luma", url: "https://evil.example/x" }, "info"],
       [future, { action: "save", status: "cancelled", cancelReason: "" }, "info"],
-      [future, { action: "social_post", baseCaption: "x", status: "ready" }, "social"],
+      [future, { action: "social_plan", baseCaption: "x", status: "ready" }, "social"],
       [future, { action: "social_video", videoMediaId: "nope" }, "social"],
       [past, { action: "report", attendeeCount: "-1", blingGiven: "" }, "post"],
     ];
@@ -283,7 +283,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     for (const who of [social, noRole]) {
       for (const q of ["", "?tab=info", "?tab=social", "?tab=post"]) {
         assert.equal((await req(`/admin/events/${d}/${q}`, { cookie: who.cookie })).status, 403, q);
-        const posted = await req(`/admin/events/${d}/${q}`, { cookie: who.cookie, method: "POST", form: { action: "social_post", baseCaption: "x" } });
+        const posted = await req(`/admin/events/${d}/${q}`, { cookie: who.cookie, method: "POST", form: { action: "social_plan", baseCaption: "x" } });
         assert.equal(posted.status, 403, `POST ${q}`);
       }
     }

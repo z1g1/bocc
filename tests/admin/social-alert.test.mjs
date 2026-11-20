@@ -1,6 +1,6 @@
 // The Thursday social check against the throwaway database (npm run test:db):
 //   1. migration 20261123120000_social_checker.sql: social_checker may SELECT events,
-//      event_links, social_posts, social_post_channels and four columns of event_media,
+//      event_links, social_plans, social_media_posts and four columns of event_media,
 //      and nothing else; it can't write anything
 //   2. readWorkOrder() as social_checker, on rows seeded by the owner, and
 //      runSocialCheck() end to end with SOCIAL_CHECK_DB_URL and a fake ntfy
@@ -37,10 +37,10 @@ async function seed(date, { status = "scheduled", luma = true, post = true, post
     `insert into event_media (id, event_date, kind, original_key, content_type, size_bytes, status)
      values ($1, $2, 'promo_video', $3, 'video/mp4', 4800000, 'ready')`, [vid, date, `events/${date}/${vid}/original.mp4`]);
   await owner.query(
-    `insert into social_posts (event_date, video_media_id, base_caption, publish_at, status)
+    `insert into social_plans (event_date, video_media_id, base_caption, publish_at, status)
      values ($1, $2, 'Coffee on Tuesday', ($1::date - 1) + time '12:00' at time zone 'UTC', $3)`, [date, vid, postStatus]);
   for (const c of CHANNELS) {
-    await owner.query(`insert into social_post_channels (event_date, channel, status) values ($1, $2, $3)`, [date, c, statuses[c] ?? "scheduled"]);
+    await owner.query(`insert into social_media_posts (event_date, channel, status) values ($1, $2, $3)`, [date, c, statuses[c] ?? "scheduled"]);
   }
 }
 
@@ -60,8 +60,8 @@ describe("social_checker permissions", () => {
   test("may read the work-order tables", async () => {
     await assertAllowed(checker, "select event_date, status from events limit 1");
     await assertAllowed(checker, "select event_date, platform, url from event_links limit 1");
-    await assertAllowed(checker, "select * from social_posts limit 1");
-    await assertAllowed(checker, "select * from social_post_channels limit 1");
+    await assertAllowed(checker, "select * from social_plans limit 1");
+    await assertAllowed(checker, "select * from social_media_posts limit 1");
     await assertAllowed(checker, "select id, event_date, kind, status from event_media limit 1");
   });
 
@@ -108,8 +108,8 @@ describe("social_checker permissions", () => {
 
   test("may not write anything", async () => {
     await assertRefused(checker, "insert into events (event_date) values ('2031-01-07')");
-    await assertRefused(checker, "update social_posts set status = 'todo'");
-    await assertRefused(checker, "update social_post_channels set status = 'scheduled'");
+    await assertRefused(checker, "update social_plans set status = 'todo'");
+    await assertRefused(checker, "update social_media_posts set status = 'scheduled'");
     await assertRefused(checker, "delete from event_links");
     await assertRefused(checker, "update event_media set status = 'ready'");
   });
@@ -126,16 +126,16 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(await readWorkOrder(checker, tuesday()), null);
   });
 
-  test("an event with no post", async () => {
+  test("an event with no Social plan", async () => {
     const d = tuesday();
     await seed(d, { post: false });
     const o = await readWorkOrder(checker, d);
     assert.equal(o.exists, false);
     assert.equal(o.eventStatus, "scheduled");
-    assert.equal(socialAlert({ order: o, date: d }).title.includes("no post"), true);
+    assert.equal(socialAlert({ order: o, date: d }).title.includes("no Social plan"), true);
   });
 
-  test("a ready post with every channel scheduled: actionable, no alert", async () => {
+  test("a ready Social plan with every social media post scheduled: actionable, no alert", async () => {
     const d = tuesday();
     await seed(d, { statuses: { tiktok: "live" } });
     const o = await readWorkOrder(checker, d);
@@ -146,11 +146,11 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(socialAlert({ order: o, date: d }), null);
   });
 
-  test("pending and failed channels are reported", async () => {
+  test("pending and failed social media posts are reported with their Post status", async () => {
     const d = tuesday();
     await seed(d, { statuses: { facebook: "pending", threads: "failed" } });
     const a = socialAlert({ order: await readWorkOrder(checker, d), date: d });
-    assert.match(a.message, /- Facebook: pending\n- Threads: failed/);
+    assert.match(a.message, /- Facebook: Pending\n- Threads: Failed/);
   });
 
   test("a ready post that lost its Luma listing is not ready", async () => {
@@ -158,10 +158,10 @@ describe("readWorkOrder as social_checker", () => {
     await seed(d, { luma: false });
     const o = await readWorkOrder(checker, d);
     assert.deepEqual(o.problems.map((p) => p.key), ["luma"]);
-    assert.match(socialAlert({ order: o, date: d }).title, /post not ready/);
+    assert.match(socialAlert({ order: o, date: d }).title, /Social plan not ready/);
   });
 
-  test("the post status (ticket #39): Posted counts as ready; Error alerts as channels not scheduled; To do isn't ready", async () => {
+  test("the Plan status (ticket #39): Posted counts as ready; Error alerts as social media posts not scheduled; To do isn't ready", async () => {
     const [p, e, t] = [tuesday(), tuesday(), tuesday()];
     await seed(p, { postStatus: "posted", statuses: { tiktok: "live" } });
     await seed(e, { postStatus: "error", statuses: { threads: "failed" } });
@@ -170,9 +170,9 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(posted.status, "posted");
     assert.equal(socialAlert({ order: posted, date: p }), null);
     const error = socialAlert({ order: await readWorkOrder(checker, e), date: e });
-    assert.match(error.title, /1 of 5 channels not scheduled/);
-    assert.match(error.message, /status is Error: Threads failed[\s\S]*- Threads: failed/);
-    assert.match(socialAlert({ order: await readWorkOrder(checker, t), date: t }).message, /isn't set to Ready for Posting \(it is To do\)/);
+    assert.match(error.title, /1 of 5 social media posts not scheduled/);
+    assert.match(error.message, /Plan status is Error: the Threads social media post failed[\s\S]*- Threads: Failed/);
+    assert.match(socialAlert({ order: await readWorkOrder(checker, t), date: t }).message, /The Social plan isn't set to Ready for Posting \(it is To do\)/);
   });
 
   test("a cancelled event: no alert", async () => {
@@ -211,7 +211,7 @@ describe("runSocialCheck end to end", () => {
     assert.equal(social[0].url, "https://ntfy.sh/", "the server root: the topic is never in the URL");
     const body = JSON.parse(social[0].init.body);
     assert.equal(body.topic, "bocc-test-topic");
-    assert.match(body.message, /- Instagram: pending/);
+    assert.match(body.message, /- Instagram: Pending/);
     assert.doesNotMatch(lines.join("\n"), /bocc-test-topic|social_checker:/);
   });
 });

@@ -8,7 +8,7 @@ import {
   alertSiteUrl, contextAllowed, easternToday, failureAlert, nextTuesday, NTFY_MESSAGE_MAX, NTFY_TITLE_MAX, ntfyBody, linkedinExpiryAlerts, readNtfyConfig, sendNtfy, socialAlert,
 } from "../../src/lib/social-alert/alert.mjs";
 import { runSocialCheck } from "../../src/lib/social-alert/run.mjs";
-import { buildWorkOrder, CHANNEL_KEYS } from "../../src/lib/admin/social-rules.mjs";
+import { buildWorkOrder, CHANNEL_KEYS } from "../../src/lib/admin/social-plan-rules.mjs";
 
 const DATE = "2026-11-24";
 const SITE = "https://716coffee.club";
@@ -47,31 +47,31 @@ describe("socialAlert", () => {
     assert.equal(socialAlert({ order: order({ statuses: { tiktok: "live" } }), date: DATE, siteUrl: SITE }), null);
   });
 
-  test("a cancelled event: no alert, whatever its post says", () => {
+  test("a cancelled event: no alert, whatever its Social plan says", () => {
     assert.equal(socialAlert({ order: order({ eventStatus: "cancelled", status: "todo" }), date: DATE, siteUrl: SITE }), null);
   });
 
-  test("channels not yet scheduled are listed with their status", () => {
+  test("social media posts not yet scheduled are listed with their Post status", () => {
     const a = socialAlert({ order: order({ statuses: { facebook: "pending", tiktok: "failed" } }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: 2 of 5 channels not scheduled for Tue Nov 24");
+    assert.equal(a.title, "BOCC social: 2 of 5 social media posts not scheduled for Tue Nov 24");
     assert.match(a.message, /Event: Tuesday, November 24, 2026\./);
-    assert.match(a.message, /Not scheduled yet:\n- Facebook: pending\n- TikTok: failed$/);
+    assert.match(a.message, /Social media posts not scheduled yet:\n- Facebook: Pending\n- TikTok: Failed$/);
     assert.doesNotMatch(a.message, /Instagram/);
     assert.equal(a.priority, "high");
     assert.deepEqual(a.tags, ["warning"]);
     assert.equal(a.click, "https://716coffee.club/admin/social/next");
   });
 
-  test("no post at all", () => {
+  test("no Social plan at all", () => {
     const a = socialAlert({ order: order({ exists: false }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: no post for Tue Nov 24");
-    assert.match(a.message, /no social post yet.*\/admin\/events\/2026-11-24\//);
-    for (const label of ["Facebook", "Instagram", "Threads", "TikTok", "LinkedIn page"]) assert.match(a.message, new RegExp(`- ${label}: no post`));
+    assert.equal(a.title, "BOCC social: no Social plan for Tue Nov 24");
+    assert.match(a.message, /no Social plan yet.*\/admin\/events\/2026-11-24\/ and set its Plan status to Ready for Posting\./);
+    for (const label of ["Facebook", "Instagram", "Threads", "TikTok", "LinkedIn page"]) assert.match(a.message, new RegExp(`- ${label}: no social media post`));
   });
 
-  test("no events row is treated as a scheduled event with no post", () => {
+  test("no events row is treated as a scheduled event with no Social plan", () => {
     const a = socialAlert({ order: null, date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: no post for Tue Nov 24");
+    assert.equal(a.title, "BOCC social: no Social plan for Tue Nov 24");
   });
 
   test("holiday break (Dec 22 to Jan 4): no events row, no alert", () => {
@@ -79,52 +79,52 @@ describe("socialAlert", () => {
   });
 
   test("the weeks either side of the break still alert without a row", () => {
-    assert.equal(socialAlert({ order: null, date: "2026-12-15", siteUrl: SITE }).title, "BOCC social: no post for Tue Dec 15");
-    assert.equal(socialAlert({ order: null, date: "2027-01-05", siteUrl: SITE }).title, "BOCC social: no post for Tue Jan 5");
+    assert.equal(socialAlert({ order: null, date: "2026-12-15", siteUrl: SITE }).title, "BOCC social: no Social plan for Tue Dec 15");
+    assert.equal(socialAlert({ order: null, date: "2027-01-05", siteUrl: SITE }).title, "BOCC social: no Social plan for Tue Jan 5");
   });
 
   test("a scheduled row on a holiday date is the override: checked like any week", () => {
     const d = "2026-12-22";
-    assert.equal(socialAlert({ order: order({ date: d, exists: false }), date: d, siteUrl: SITE }).title, "BOCC social: no post for Tue Dec 22");
+    assert.equal(socialAlert({ order: order({ date: d, exists: false }), date: d, siteUrl: SITE }).title, "BOCC social: no Social plan for Tue Dec 22");
     assert.equal(socialAlert({ order: order({ date: d, statuses: { tiktok: "pending" } }), date: d, siteUrl: SITE }).title,
-      "BOCC social: 1 of 5 channels not scheduled for Tue Dec 22");
+      "BOCC social: 1 of 5 social media posts not scheduled for Tue Dec 22");
     assert.equal(socialAlert({ order: order({ date: d }), date: d, siteUrl: SITE }), null, "all scheduled");
     assert.equal(socialAlert({ order: order({ date: d, eventStatus: "cancelled" }), date: d, siteUrl: SITE }), null, "cancelled");
   });
 
-  test("a post To do lists its problems and every pending channel", () => {
+  test("a Social plan To do lists its problems and every pending social media post", () => {
     const pending = Object.fromEntries(CHANNEL_KEYS.map((c) => [c, "pending"]));
     const a = socialAlert({ order: order({ status: "todo", video: false, luma: null, statuses: pending }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
-    assert.match(a.message, /isn't set to Ready for Posting \(it is To do\)/);
+    assert.equal(a.title, "BOCC social: Tue Nov 24 Social plan not ready");
+    assert.match(a.message, /The Social plan isn't set to Ready for Posting \(it is To do\)/);
     assert.match(a.message, /- Upload the promo video\./);
     assert.match(a.message, /- Add the Luma listing/);
-    assert.equal((a.message.match(/: pending/g) ?? []).length, 5);
+    assert.equal((a.message.match(/: Pending/g) ?? []).length, 5);
   });
 
-  test("a ready post that has since lost its Luma link is reported, even with every channel scheduled", () => {
+  test("a ready Social plan that has since lost its Luma link is reported, even with every post scheduled", () => {
     const a = socialAlert({ order: order({ luma: null }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
-    assert.match(a.message, /is Ready for Posting, but something changed since:\n- Add the Luma listing/);
-    assert.doesNotMatch(a.message, /Not scheduled yet/);
+    assert.equal(a.title, "BOCC social: Tue Nov 24 Social plan not ready");
+    assert.match(a.message, /The Social plan is Ready for Posting, but something changed since:\n- Add the Luma listing/);
+    assert.doesNotMatch(a.message, /not scheduled yet/);
   });
 
-  test("Ready for Posting and Posted count as ready (ticket #39): no alert once every channel is scheduled or live", () => {
+  test("Ready for Posting and Posted count as ready (ticket #39): no alert once every social media post is scheduled or live", () => {
     assert.equal(socialAlert({ order: order({ status: "posted", statuses: { tiktok: "live" } }), date: DATE, siteUrl: SITE }), null);
     const a = socialAlert({ order: order({ status: "posted", statuses: { threads: "pending" } }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: 1 of 5 channels not scheduled for Tue Nov 24");
+    assert.equal(a.title, "BOCC social: 1 of 5 social media posts not scheduled for Tue Nov 24");
   });
 
-  test("Error alerts like an offered post (as before #39): channels not scheduled, naming the failed one", () => {
+  test("Error alerts like an offered plan (as before #39): posts not scheduled, naming the failed one", () => {
     const a = socialAlert({ order: order({ status: "error", statuses: { tiktok: "failed" } }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: 1 of 5 channels not scheduled for Tue Nov 24");
-    assert.match(a.message, /The post's status is Error: TikTok failed\. Fix it on \/admin\/events\/2026-11-24\/\./);
-    assert.match(a.message, /Not scheduled yet:\n- TikTok: failed$/);
+    assert.equal(a.title, "BOCC social: 1 of 5 social media posts not scheduled for Tue Nov 24");
+    assert.match(a.message, /The Social plan's Plan status is Error: the TikTok social media post failed\. Fix it on \/admin\/events\/2026-11-24\/\./);
+    assert.match(a.message, /Social media posts not scheduled yet:\n- TikTok: Failed$/);
   });
 
   test("Error with problems is still not ready", () => {
     const a = socialAlert({ order: order({ status: "error", luma: null, statuses: { tiktok: "failed" } }), date: DATE, siteUrl: SITE });
-    assert.equal(a.title, "BOCC social: Tue Nov 24 post not ready");
+    assert.equal(a.title, "BOCC social: Tue Nov 24 Social plan not ready");
     assert.match(a.message, /- Add the Luma listing/);
   });
 
@@ -340,7 +340,7 @@ describe("runSocialCheck (database read replaced)", () => {
     assert.deepEqual(seen, ["2026-11-24"]);
     assert.equal(result.outcome, "ok");
     assert.equal(f.calls.length, 0);
-    assert.match(lines.join("\n"), /2026-11-24: every channel is scheduled or live; no alert/);
+    assert.match(lines.join("\n"), /2026-11-24: every social media post is scheduled or live; no alert/);
   });
 
   test("sends the alert, with the production Click link, and never logs the topic", async () => {
@@ -351,7 +351,7 @@ describe("runSocialCheck (database read replaced)", () => {
     assert.equal(result.outcome, "sent");
     assert.equal(JSON.parse(f.calls[0].init.body).click, "https://716coffee.club/admin/social/next");
     assert.equal(f.calls[0].url, "https://ntfy.sh/");
-    assert.match(lines.join("\n"), /alert sent \(BOCC social: 1 of 5 channels/);
+    assert.match(lines.join("\n"), /alert sent \(BOCC social: 1 of 5 social media posts/);
     assert.doesNotMatch(lines.join("\n"), /bocc-secret-topic/);
   });
 
@@ -385,7 +385,7 @@ describe("runSocialCheck (database read replaced)", () => {
       readOrder: async (d) => order({ date: d, exists: false }),
     }));
     assert.equal(result.outcome, "sent");
-    assert.equal(JSON.parse(f.calls[0].init.body).title, "BOCC social: no post for Tue Dec 22");
+    assert.equal(JSON.parse(f.calls[0].init.body).title, "BOCC social: no Social plan for Tue Dec 22");
   });
 
   test("the first week after the break alerts without a row", async () => {
@@ -476,7 +476,7 @@ describe("runSocialCheck: the LinkedIn authentication expiry (#24)", () => {
     assert.match(lines.join("\n"), /linkedin: 1 LinkedIn authentication, none expiring within 10 days; no alert/);
   });
 
-  test("under 10 days: alerts even when the social post is fine, and logs no name or topic", async () => {
+  test("under 10 days: alerts even when the Social plan is fine, and logs no name or topic", async () => {
     const f = fakeFetch();
     const { result, lines } = await captureLogs(() => run({ fetch: f, readAuthentications: async () => [zack(4)] }));
     assert.equal(result.outcome, "sent");
@@ -497,7 +497,7 @@ describe("runSocialCheck: the LinkedIn authentication expiry (#24)", () => {
     }));
     assert.equal(result.outcome, "sent");
     assert.deepEqual(f.calls.map((c) => JSON.parse(c.init.body).title),
-      ["BOCC social: no post for Tue Nov 24", "BOCC LinkedIn: Zack Glick's LinkedIn authentication has expired"]);
+      ["BOCC social: no Social plan for Tue Nov 24", "BOCC LinkedIn: Zack Glick's LinkedIn authentication has expired"]);
   });
 
   test("the LinkedIn read failing still runs the social check, then sends its own failure alert", async () => {

@@ -204,7 +204,7 @@ describe("drift notice, cancel item and Done on LinkedIn over HTTP", { timeout: 
     const section = info.slice(info.indexOf('id="h-linkedin"'));
     assert.match(section, /LinkedIn is out of date: the location changed/);
     const social = await page(date, "social");
-    assert.ok(!social.includes('id="h-linkedin"'), "the LinkedIn section is not on Social Posts");
+    assert.ok(!social.includes('id="h-linkedin"'), "the LinkedIn section is not on the Social plan tab");
     assert.doesNotMatch(social, /class="linkedin-drift"/, "nor its notice");
     assert.ok(section.includes(`href="${EVENT_URL}"`), "the notice links the event");
   });

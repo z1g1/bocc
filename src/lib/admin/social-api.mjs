@@ -31,9 +31,9 @@ export async function socialApiChannel(userId, request) {
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) return json(400, { error: "invalid", errors: { body: "Send a JSON object." } });
   try {
-    const so = await import("./social.mjs");
+    const so = await import("./social-plan.mjs");
     const { date, channel, ...input } = body;
-    const r = await so.setChannelResult(userId, typeof date === "string" ? date : "", typeof channel === "string" ? channel : "", input);
+    const r = await so.setPostResult(userId, typeof date === "string" ? date : "", typeof channel === "string" ? channel : "", input);
     const order = await so.getWorkOrder((await import("./db.mjs")).pool, date);
     const { toJson } = await import("./social-pages.mjs");
     const c = toJson({ order, video: null }).order.channels.find((x) => x.channel === channel);

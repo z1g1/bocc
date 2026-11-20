@@ -134,9 +134,9 @@ export const LISTINGS_TOTAL = PLATFORM_KEYS.length + 1;
  * @param {number} platformsListed
  */
 export const listingsDone = (event, platformsListed) => platformsListed + (hasPublicPage(event) ? 1 : 0);
-
-// Channel statuses that count as done. The source is social-rules.mjs
-// POSTED_CHANNEL_STATUSES; this module takes no imports (see the header), so keep in step.
+// Post statuses that count as done. The source is social-plan-rules.mjs
+// Channel statuses that count as done. The source is social-plan-rules.mjs
+// DONE_POST_STATUSES; this module takes no imports (see the header), so keep in step.
 const CHANNEL_DONE = ["scheduled", "live"];
 
 /**
@@ -159,7 +159,7 @@ const CHANNEL_DONE = ["scheduled", "live"];
  * @param {Record<string, { url: string, externalId: string|null } | null | undefined>} links  by platform
  * @param {null | { exists: boolean, status: string, statusLabel: string,
  *          problems: Array<{ message: string }>, channels: Array<{ channel: string, label: string, status: string|null }> }} [social]
- *   the social work order (src/lib/admin/social.mjs getWorkOrder); null/omitted = none yet
+ *   the social work order (src/lib/admin/social-plan.mjs getWorkOrder); null/omitted = none yet
  * @param {{ eventImage?: { source: "uploaded"|"referenced"|"default" },
  *   linkedIn?: { eventUrl?: string|null, drift: null | { message: string, href: string },
  *     cancel: null | { due: boolean, message: string, href: string } } }} [extra]

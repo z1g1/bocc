@@ -1,8 +1,8 @@
-// POST /api/admin/social/channel: record one channel's result (setChannelResult,
-// src/lib/admin/social.mjs; the rules are in its header). Admin and social,
+// POST /api/admin/social/channel: record one social media post's result (setPostResult,
+// src/lib/admin/social-plan.mjs; the rules are in its header). Admin and social,
 // Origin-checked, JSON in and out.
 //   request  { date: "2026-11-24", channel: "facebook" | "instagram" | "threads" | "tiktok" | "linkedin_page",
-//              status?: "pending" | "scheduled" | "live" | "failed", postUrl?: string, notes?: string,
+//              status?: (the Post status) "pending" | "scheduled" | "live" | "failed", postUrl?: string, notes?: string,
 //              verified?: boolean, commentPosted?: boolean }
 //            an absent field keeps what is stored; "" or null clears postUrl / notes;
 //            any other non-string status / postUrl / notes (123, {}, []) is a 400 on that

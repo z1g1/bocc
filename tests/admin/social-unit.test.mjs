@@ -1,10 +1,10 @@
-// Phase 5 social work order rules (ADR 0011 decision 2), src/lib/admin/social-rules.mjs:
+// Phase 5 social work order rules (ADR 0011 decision 2), src/lib/admin/social-plan-rules.mjs:
 // pure functions, no database. Channel texts and overrides, TikTok hashtags, the
 // Monday 7:00 AM Eastern default (DST), Eastern <-> UTC, what blocks `ready`, the
 // work order, and the readiness checklist's social lines (event-links-rules.mjs).
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import * as r from "../../src/lib/admin/social-rules.mjs";
+import * as r from "../../src/lib/admin/social-plan-rules.mjs";
 import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 import * as lib from "../../public/js/admin-media-lib.js";
 import { DEFAULT_EVENT_IMAGE, resolveEventImage } from "../../src/lib/admin/event-image-rules.mjs";
@@ -229,7 +229,7 @@ describe("ready and the work order", () => {
   });
 });
 
-describe("the Social Post cover image", () => {
+describe("the Social plan cover image", () => {
   const video = { id: "v1", kind: "promo_video", status: "ready", contentType: "video/mp4", sizeBytes: 5_000_000 };
   const uploaded = resolveEventImage({ uploaded: {
     id: "11111111-1111-4111-8111-111111111111", eventDate: "2026-11-24", kind: "event_image", status: "ready",
@@ -297,16 +297,23 @@ describe("the post status (ticket #39)", () => {
   const order = (status, over = {}) =>
     r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored(status), lumaUrl: LUMA, video, ...over });
 
-  test("four statuses, in dropdown order, with their labels", () => {
-    assert.deepEqual(r.POST_STATUSES, ["todo", "ready", "posted", "error"]);
-    assert.deepEqual(r.POST_STATUSES.map((s) => r.POST_STATUS_LABELS[s]), ["To do", "Ready for Posting", "Posted", "Error"]);
-    assert.equal(r.isPostStatus("posted"), true);
-    assert.equal(r.isPostStatus("on"), false);
-    assert.equal(r.isPostStatus(undefined), false);
+  test("four Plan statuses, in dropdown order, with their labels", () => {
+    assert.deepEqual(r.PLAN_STATUSES, ["todo", "ready", "posted", "error"]);
+    assert.deepEqual(r.PLAN_STATUSES.map((s) => r.PLAN_STATUS_LABELS[s]), ["To do", "Ready for Posting", "Posted", "Error"]);
+    assert.equal(r.isPlanStatus("posted"), true);
+    assert.equal(r.isPlanStatus("on"), false);
+    assert.equal(r.isPlanStatus(undefined), false);
+  });
+
+  test("four Post statuses, with their labels", () => {
+    assert.deepEqual(r.POST_STATUSES, ["pending", "scheduled", "live", "failed"]);
+    assert.deepEqual(r.POST_STATUSES.map((s) => r.POST_STATUS_LABELS[s]), ["Pending", "Scheduled", "Live", "Failed"]);
+    assert.equal(r.isPostStatus("live"), true);
+    assert.equal(r.isPostStatus("posted"), false);
   });
 
   test("the work order: Ready for Posting (and Error, to finish or retry its channels) is offered; To do and Posted aren't", () => {
-    assert.deepEqual(r.POST_STATUSES.map((s) => [s, order(s).status, order(s).statusLabel, order(s).actionable]), [
+    assert.deepEqual(r.PLAN_STATUSES.map((s) => [s, order(s).status, order(s).statusLabel, order(s).actionable]), [
       ["todo", "todo", "To do", false],
       ["ready", "ready", "Ready for Posting", true],
       ["posted", "posted", "Posted", false],
@@ -317,9 +324,9 @@ describe("the post status (ticket #39)", () => {
     assert.deepEqual([none.status, none.statusLabel, none.actionable], ["todo", "To do", false]);
   });
 
-  test("a channel update: Error when it records failed, Posted when every channel is scheduled or live", () => {
+  test("a social media post update: Error when it records failed, Posted when every channel is scheduled or live", () => {
     const all = (st, over = {}) => Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, over[c] ?? st]));
-    const auto = (status, changedTo, channels) => r.postStatusAfterChannelUpdate({ status, changedTo, channels });
+    const auto = (status, changedTo, channels) => r.planStatusAfterPostUpdate({ status, changedTo, channels });
     // Still pending somewhere: no change.
     assert.equal(auto("ready", "scheduled", all("pending", { facebook: "scheduled" })), null);
     // The last one scheduled (live counts too).

@@ -2,11 +2,12 @@
 // the Netlify scheduled function backend/netlify/functions/social-check.mjs. The rules
 // and the ntfy call are in ./alert.mjs.
 //
-// Reads the next Tuesday's work order as `social_checker` (SELECT on events,
-// event_links, social_posts, social_post_channels and four columns of event_media;
-// migration 20261123120000_social_checker.sql), never as admin_app. One short-lived
+// Reads the next Tuesday's Social plan (its work order) as `social_checker` (SELECT on
+// events, event_links, social_plans, social_media_posts and four columns of event_media;
+// migrations 20261123120000_social_checker.sql and 20261203120000_glossary_rename_expand.sql),
+// never as admin_app. One short-lived
 // connection per run, parameterized SQL only. The work order is built with the same
-// buildWorkOrder() the admin pages use (src/lib/admin/social-rules.mjs).
+// buildWorkOrder() the admin pages use (src/lib/admin/social-plan-rules.mjs).
 //
 // A second, independent check (ADR 0012, issue #24) reads each LinkedIn authentication's
 // expiry and LinkedIn display name (SELECT (user_id, expires_at, display_name) on
@@ -32,7 +33,7 @@
 
 import pg from "pg";
 import { toAdminPgConfig } from "../auth/pg-config.mjs";
-import { buildWorkOrder, CHANNEL_KEYS } from "../admin/social-rules.mjs";
+import { buildWorkOrder, CHANNEL_KEYS } from "../admin/social-plan-rules.mjs";
 import {
   alertSiteUrl, contextAllowed, easternToday, failureAlert, isHolidayWeek, linkedinExpiryAlerts, linkedinFailureAlert, nextTuesday,
   readNtfyConfig, sendNtfy, socialAlert,
@@ -53,31 +54,31 @@ const push = (alert, ntfy, doFetch) => span("ntfy.send", () => sendNtfy(alert, n
  * @param {string} date  YYYY-MM-DD
  */
 export async function readWorkOrder(db, date) {
-  const [{ rows: [event] }, { rows: [luma] }, { rows: [post] }, { rows: channels }] = await Promise.all([
+  const [{ rows: [event] }, { rows: [luma] }, { rows: [plan] }, { rows: posts }] = await Promise.all([
     db.query(`select status from public.events where event_date = $1::date`, [date]),
     db.query(`select url from public.event_links where event_date = $1::date and platform = 'luma'`, [date]),
     db.query(
-      `select video_media_id as "videoMediaId", cover_note as "coverNote", base_caption as "baseCaption",
+      `select video_media_id as "videoMediaId", thumbnail_timecode as "coverNote", base_caption as "baseCaption",
               extra_hashtags as "extraHashtags", publish_at as "publishAt", status, updated_at as "updatedAt"
-         from public.social_posts where event_date = $1::date`, [date]),
+         from public.social_plans where event_date = $1::date`, [date]),
     db.query(
       `select channel, caption, first_comment as "firstComment", status, post_url as "postUrl",
               verified_at as "verifiedAt", comment_posted_at as "commentPostedAt", notes
-         from public.social_post_channels where event_date = $1::date`, [date]),
+         from public.social_media_posts where event_date = $1::date`, [date]),
   ]);
   if (!event) return null;
   let video = null;
-  if (post?.videoMediaId) {
+  if (plan?.videoMediaId) {
     const { rows: [v] } = await db.query(
-      `select id, kind, status from public.event_media where id = $1 and event_date = $2::date`, [post.videoMediaId, date]);
+      `select id, kind, status from public.event_media where id = $1 and event_date = $2::date`, [plan.videoMediaId, date]);
     video = v ?? null;
   }
   const byChannel = Object.fromEntries(CHANNEL_KEYS.map((c) => [c, null]));
-  for (const { channel, ...rest } of channels) byChannel[channel] = rest;
+  for (const { channel, ...rest } of posts) byChannel[channel] = rest;
   return buildWorkOrder({
     date,
     event: { status: event.status, exists: true },
-    post: post ? { ...post, channels: byChannel } : null,
+    post: plan ? { ...plan, channels: byChannel } : null,
     lumaUrl: luma?.url ?? null,
     video,
   });
@@ -184,7 +185,7 @@ async function check({
 }
 
 /**
- * The next Tuesday's social post.
+ * The next Tuesday's Social plan.
  * @returns {Promise<{ outcome: "ok"|"sent"|"failed", alert?: object, failedOn?: unknown }>}
  *   failedOn: the read error behind a failure alert
  */
@@ -205,7 +206,7 @@ async function socialCheck({ date, siteUrl, ntfy, doFetch, read }) {
     // checked like any other week.
     const why = !order && isHolidayWeek(date) ? `skipped as a holiday week (no meeting ${HOLIDAY_BREAK_LABEL})`
       : order && order.eventStatus !== "scheduled" ? `event is ${order.eventStatus}`
-      : "every channel is scheduled or live";
+      : "every social media post is scheduled or live";
     log(`${date}: ${why}; no alert`);
     return { outcome: "ok" };
   }

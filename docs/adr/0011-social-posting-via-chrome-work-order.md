@@ -70,6 +70,32 @@ accounts at risk under the platforms' terms.
      channels not scheduled", naming the failed channel, unless it also has problems. The rules are in
      `src/lib/admin/social-rules.mjs` (`POST_STATUSES`, `POST_STATUS_LABELS`,
      `OFFERED_STATUSES`, `postStatusAfterChannelUpdate`).
+   - *Amended 2026-12-03 (#56, the glossary rename, spec #49):* **the words follow
+     `GLOSSARY.md`.** Nothing about the decision or the behaviour changes; the text above keeps
+     the names it was written with. Since #56:
+     - One Event's work order is its **Social plan**, the table `social_plans` (was
+       `social_posts`; migration `20261203120000_glossary_rename_expand.sql`). Each Channel's row
+       is a **social media post**, the table `social_media_posts` (was `social_post_channels`).
+     - The plan's status is the **Plan status** (To do, Ready for Posting, Posted, Error). A
+       social media post's status is its **Post status** (Pending, Scheduled, Live, Failed;
+       values `pending`, `scheduled`, `live`, `failed` as before).
+     - The admin event page's tab is **Social plan** (still `?tab=social`), with the **Plan
+       status** dropdown and one row per social media post showing its Post status. The social
+       role's URLs (`/admin/social/next`, `/admin/social/verify`, `/api/admin/social/*`), their
+       element ids and their JSON keys (`status`, `statusLabel`, `reason: "no_post"`) are
+       unchanged, so the scheduled Chrome tasks keep working.
+     - Code: `src/lib/admin/social-plan.mjs` (was `social.mjs`; `getSocialPlan`, `savePlan`,
+       `saveSocialMediaPost`, `setPostResult`) and `src/lib/admin/social-plan-rules.mjs` (was
+       `social-rules.mjs`; `PLAN_STATUSES`, `PLAN_STATUS_LABELS`, `OFFERED_PLAN_STATUSES`,
+       `planStatusAfterPostUpdate` for the Plan status; `POST_STATUSES`, `POST_STATUS_LABELS`,
+       `DONE_POST_STATUSES` for the Post status). The component is `SocialPlan.astro`.
+     - Audit actions are `social_plan.update|video|cover|status` and
+       `social_media_post.update|result`, with target tables `social_plans` and
+       `social_media_posts`. Rows written before #56 keep `social_post.*`,
+       `social_post_channel.*`, `social_posts` and `social_post_channels`.
+     - The Thursday check reads `social_plans` and `social_media_posts` as `social_checker`,
+       and its alerts say "no Social plan", "Social plan not ready" and "N of 5 social media
+       posts not scheduled".
 2. **Caption rules are code defaults**, not settings.
    - FB and LinkedIn: the caption plus the Luma link.
    - IG and TikTok: the caption plus "Link in bio", with the Luma link as the first comment.

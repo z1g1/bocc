@@ -1,12 +1,12 @@
-// The Social Post cover image (ticket #22) against the throwaway database
+// The Social plan cover image (ticket #22) against the throwaway database
 // (npm run test:db):
 //   1. migration 20261127120000_social_post_cover.sql: the nullable cover reference,
 //      which may only point at event_media and is cleared when that media is deleted
-//   2. src/lib/admin/social.mjs as admin_app: the cover resolves to the Event Image (the
+//   2. src/lib/admin/social-plan.mjs as admin_app: the cover resolves to the Event Image (the
 //      logo default or an uploaded one); setCover sets and clears an override, each
 //      audited; only a ready, publicly usable Photo from Event can be chosen; the video
 //      is still what blocks ready
-//   3. the Cover image block of the Social post section over HTTP (astro dev)
+//   3. the Cover image block of the Social plan section over HTTP (astro dev)
 // The pure resolution is in social-unit.test.mjs; the work order's cover link in
 // social-orders.test.mjs.
 import { after, before, describe, test } from "node:test";
@@ -29,7 +29,7 @@ const { pool } = await import("../../src/lib/auth/auth.mjs");
 const { handleAuthRequest } = await import("../../src/lib/auth/handler.mjs");
 const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
-const so = await import("../../src/lib/admin/social.mjs");
+const so = await import("../../src/lib/admin/social-plan.mjs");
 const media = await import("../../src/lib/admin/media.mjs");
 const el = await import("../../src/lib/admin/event-links.mjs");
 
@@ -45,10 +45,10 @@ const date = () => new Date(Date.UTC(2086, 0, 1 + 7 * n++)).toISOString().slice(
 let h = 100 + randomInt(0, 60);
 const httpDate = () => new Date(Date.UTC(2086, 0, 1 + 7 * h++)).toISOString().slice(0, 10);
 
-const postRow = (d) => owner.query(`select * from social_posts where event_date = $1`, [d]).then((r) => r.rows[0] ?? null);
+const planRow = (d) => owner.query(`select * from social_plans where event_date = $1`, [d]).then((r) => r.rows[0] ?? null);
 const coverAudits = (d) => owner.query(
   `select actor_user_id, action, details from audit_log
-    where target_id = $1 and action = 'social_post.cover' order by id`, [d]).then((r) => r.rows);
+    where target_id = $1 and action = 'social_plan.cover' order by id`, [d]).then((r) => r.rows);
 
 /** A media row inserted as the owner (no bucket needed). */
 async function insertMedia(d, { kind = "event_photo", status = "ready" } = {}) {
@@ -87,19 +87,19 @@ after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
 describe("migration 20261127120000_social_post_cover.sql", () => {
-  test("cover_media_id is nullable, must be event_media, and is cleared when that media is deleted", async () => {
+  test("thumbnail_media_id is nullable, must be event_media, and is cleared when that media is deleted", async () => {
     const { rows: [col] } = await owner.query(
       `select is_nullable, data_type from information_schema.columns
-        where table_schema = 'public' and table_name = 'social_posts' and column_name = 'cover_media_id'`);
+        where table_schema = 'public' and table_name = 'social_plans' and column_name = 'thumbnail_media_id'`);
     assert.deepEqual(col, { is_nullable: "YES", data_type: "uuid" });
     const d = date();
     const photo = await insertMedia(d);
     await inRollback(owner, async () => {
-      await owner.query(`insert into social_posts (event_date, publish_at) values ($1, now())`, [d]);
-      await assertRefused(owner, `update social_posts set cover_media_id = $2 where event_date = $1`, [d, randomUUID()], /foreign key/);
-      await owner.query(`update social_posts set cover_media_id = $2 where event_date = $1`, [d, photo]);
+      await owner.query(`insert into social_plans (event_date, publish_at) values ($1, now())`, [d]);
+      await assertRefused(owner, `update social_plans set thumbnail_media_id = $2 where event_date = $1`, [d, randomUUID()], /foreign key/);
+      await owner.query(`update social_plans set thumbnail_media_id = $2 where event_date = $1`, [d, photo]);
       await owner.query(`delete from event_media where id = $1`, [photo]);
-      assert.equal((await postRow(d)).cover_media_id, null);
+      assert.equal((await planRow(d)).thumbnail_media_id, null);
     });
   });
 });
@@ -123,7 +123,7 @@ describe("social cover (admin_app)", () => {
     const old = await insertMedia(earlier);
     const r1 = await so.setCover(actor.id, d, mine);
     assert.deepEqual(r1, { changed: true, eventCreated: false });
-    assert.equal((await postRow(d)).cover_media_id, mine);
+    assert.equal((await planRow(d)).thumbnail_media_id, mine);
     let w = await so.getWorkOrder(pool, d);
     assert.deepEqual([w.cover.source, w.cover.mediaId, w.cover.file.key], ["override", mine, `events/${d}/${mine}/display.jpg`]);
     assert.deepEqual(await so.setCover(actor.id, d, mine), { changed: false, eventCreated: false });
@@ -146,7 +146,7 @@ describe("social cover (admin_app)", () => {
   test("clearing with no post creates nothing", async () => {
     const d = date();
     assert.deepEqual(await so.setCover(actor.id, d, ""), { changed: false, eventCreated: false });
-    assert.equal(await postRow(d), null);
+    assert.equal(await planRow(d), null);
     assert.deepEqual(await coverAudits(d), []);
   });
 
@@ -161,17 +161,17 @@ describe("social cover (admin_app)", () => {
     }
     await assert.rejects(so.setCover(actor.id, d, pending), (e) => /finished uploading/.test(e.errors.cover));
     await assert.rejects(so.setCover(actor.id, d, "nope"), (e) => /Choose a photo/.test(e.errors.cover));
-    assert.equal(await postRow(d), null, "nothing created");
+    assert.equal(await planRow(d), null, "nothing created");
   });
 
   test("the video is still required for ready; the cover doesn't change that", async () => {
     const d = date();
     await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-cover", externalId: "" });
     await so.setCover(actor.id, d, await insertMedia(d));
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" }),
+    await assert.rejects(so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready" }),
       (e) => e.errors.status === "Not ready yet: Upload the promo video.");
     await so.setVideo(actor.id, d, await insertMedia(d, { kind: "promo_video" }));
-    assert.deepEqual((await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" })).changed, true);
+    assert.deepEqual((await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready" })).changed, true);
   });
 
   test("deleting the override photo returns the cover to the Event Image", async () => {
@@ -233,7 +233,7 @@ describe("the Cover image block over HTTP", { timeout: 300_000, skip }, () => {
     const set = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_cover", mediaId: photo } });
     assert.equal(set.status, 303);
     assert.equal(set.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_cover#social-cover`);
-    assert.equal((await postRow(d)).cover_media_id, photo);
+    assert.equal((await planRow(d)).thumbnail_media_id, photo);
     const after = await (await req(`/admin/events/${d}/?tab=social&notice=social_cover`, { cookie: admin.cookie })).text();
     assert.ok(after.includes("Cover image saved."));
     assert.ok(after.includes(`Photo from Event (${d})`));
@@ -241,7 +241,7 @@ describe("the Cover image block over HTTP", { timeout: 300_000, skip }, () => {
 
     const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_cover", mediaId: "" } });
     assert.equal(clear.status, 303);
-    assert.equal((await postRow(d)).cover_media_id, null);
+    assert.equal((await planRow(d)).thumbnail_media_id, null);
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "social_cover", mediaId: await insertMedia(d, { kind: "signin_board" }) } });
@@ -253,6 +253,6 @@ describe("the Cover image block over HTTP", { timeout: 300_000, skip }, () => {
     const wrong = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", origin: "https://evil.example",
       form: { action: "social_cover", mediaId: photo } });
     assert.equal(wrong.status, 403);
-    assert.equal((await postRow(d)).cover_media_id, null, "neither wrote anything");
+    assert.equal((await planRow(d)).thumbnail_media_id, null, "neither wrote anything");
   });
 });
