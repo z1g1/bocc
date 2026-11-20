@@ -54,8 +54,8 @@ describe("migration", () => {
   test("the Phase 5 tables come from their own migration (social.test.mjs)", async () => {
     const { rows } = await owner.query(
       `select table_name from information_schema.tables where table_schema = 'public'
-        and table_name in ('social_posts', 'social_post_channels') order by 1`);
-    assert.deepEqual(rows.map((r) => r.table_name), ["social_post_channels", "social_posts"]);
+        and table_name in ('social_plans', 'social_media_posts') order by 1`);
+    assert.deepEqual(rows.map((r) => r.table_name), ["social_media_posts", "social_plans"]);
   });
 
   test("grants are exactly ADR 0008's, and nobody else gains anything", async () => {

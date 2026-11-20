@@ -27,9 +27,9 @@
 // Promo videos (kind promo_video, plan Phase 5) use the same flow with ONE file: the
 // browser declares only `original` (video/mp4 or video/quicktime, up to LIMITS.video),
 // gets one presigned PUT, and completeUpload checks only that object. Nothing is made
-// in the browser (no copies, no thumbnail). The social post picks one ready video
-// (src/lib/admin/social.mjs setVideo); deleteMedia of that video clears it from the
-// post and un-readies the post, in the same transaction as the delete.
+// in the browser (no copies, no thumbnail). The Social plan picks one ready video
+// (src/lib/admin/social-plan.mjs setVideo); deleteMedia of that video clears it from the
+// plan and un-readies the plan, in the same transaction as the delete.
 //
 // What was signed for the display copy and thumbnail (their sizes) is not in
 // event_media, which only describes the original; completeUpload reads it back from
@@ -339,11 +339,11 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
          from public.events e join public.event_media m on m.id = e.event_image_media_id
         where e.event_image_media_id = $1 order by e.event_date for share of e`, [id]);
     if (users.length) throw new InUseError(users.map((u) => u.d), users[0].photoDate);
-    // A promo video may be a social post's video: clear it there first (the FK would
-    // refuse the delete), and move a Ready for Posting post back to To do: it needs a
+    // A promo video may be a Social plan's video: clear it there first (the FK would
+    // refuse the delete), and move a Ready for Posting plan back to To do: it needs a
     // video (its CHECK). Posted and Error stay (ticket #39).
     const { rows: detached } = await client.query(
-      `update public.social_posts
+      `update public.social_plans
           set video_media_id = null, status = case when status = 'ready' then 'todo' else status end
         where video_media_id = $1
         returning event_date::text as "eventDate"`, [id]);
@@ -351,12 +351,12 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
       `delete from public.event_media where id = $1
        returning event_date::text as "eventDate", kind, status, original_key, display_key, thumb_key, cover_key`, [id]);
     if (!rows.length) throw new NotFoundError("media not found");
-    return { ...rows[0], detachedFromSocialPost: detached.length > 0 };
+    return { ...rows[0], detachedFromSocialPlan: detached.length > 0 };
   }, (r) => ({
     action: "media.delete", targetTable: "event_media", targetId: id,
     details: {
       eventDate: r.eventDate, kind: r.kind, status: r.status, keys: rowKeys(r),
-      ...(r.detachedFromSocialPost ? { detachedFromSocialPost: true } : {}),
+      ...(r.detachedFromSocialPlan ? { detachedFromSocialPlan: true } : {}),
     },
   }));
 
@@ -536,7 +536,7 @@ export async function listEventMedia(db, date) {
 }
 
 /**
- * The promo videos for one date (the social post section): ready ones, newest first,
+ * The promo videos for one date (the Social plan section): ready ones, newest first,
  * and pending ones (in progress or abandoned; `stale` past STALE_PENDING_HOURS).
  * @param {{ query: Function }} db
  * @param {string} date

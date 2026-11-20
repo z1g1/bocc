@@ -20,7 +20,8 @@
 //                LinkedIn listing URL is saved, a "Listed:" link (noting when it was
 //                created manually outside the app) and the connection and create
 //                tools folded in a <details>
-//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
+//   ?tab=social  Social plan: the Event's Social plan and its social media posts
+//                (SocialPlan, Phase 5, ADR 0011)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -33,17 +34,17 @@
 // fixed ?notice= on the tab the form lives on (ACTION_TABS; post/redirect/get). Invalid
 // input re-renders that tab with 400 (409 for a refused state change) and the messages
 // next to the fields. All logic and the audit
-// rows are in src/lib/admin/events.mjs, event-links.mjs and social.mjs. The social
-// post's video upload is the one part that needs JavaScript (/js/admin-video.js).
+// rows are in src/lib/admin/events.mjs, event-links.mjs and social-plan.mjs. The Social
+// plan's video upload is the one part that needs JavaScript (/js/admin-video.js).
 //
 // Every save that changed something purges the public /events/<date>/ page from the
-// CDN (social post saves only when they created the events row: the public page
+// CDN (Social plan saves only when they created the events row: the public page
 // doesn't show them) (src/lib/site/purge.mjs). It is awaited so it runs before the function ends, but
 // it never throws, and a failure is caught here: the save is already committed.
 import Admin from "../../../layouts/Admin.astro";
 import EventImage from "../../../components/admin/EventImage.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
-import SocialPost from "../../../components/admin/SocialPost.astro";
+import SocialPlan from "../../../components/admin/SocialPlan.astro";
 import LinkedInConnection from "../../../components/admin/LinkedInConnection.astro";
 import LinkedInEvent from "../../../components/admin/LinkedInEvent.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
@@ -60,7 +61,7 @@ if (denied) return denied;
 const { user, roles = [] } = Astro.locals;
 const ev = await import("../../../lib/admin/events.mjs");
 const el = await import("../../../lib/admin/event-links.mjs");
-const so = await import("../../../lib/admin/social.mjs");
+const so = await import("../../../lib/admin/social-plan.mjs");
 const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
 const STATUS_LABELS: Record<string, string> = ev.STATUS_LABELS;
@@ -74,10 +75,10 @@ const NOTICES: Record<string, string> = {
   report: "Report saved. The event is marked held.",
   link: "Listing saved.",
   unlink: "Listing cleared.",
-  social_post: "Social post saved.",
-  social_video: "Promo video attached to the social post.",
+  social_plan: "Social plan saved.",
+  social_video: "Promo video attached to the Social plan.",
   social_cover: "Cover image saved.",
-  social_channel: "Channel text saved.",
+  social_media_post: "Social media post text saved.",
   linkedin_posted: "LinkedIn event created and posted.",
   linkedin_retry: "The pending LinkedIn create was cleared: you can create the event again.",
   linkedin_cancel_done: "Marked as cancelled on LinkedIn.",
@@ -89,20 +90,20 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   report: ev.submitReport,
   link: (actor, d, input) => el.setLink(actor, d, input.platform, input),
   unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
-  social_post: (actor, d, input) => so.savePost(actor, d, input),
+  social_plan: (actor, d, input) => so.savePlan(actor, d, input),
   social_video: (actor, d, input) => so.setVideo(actor, d, input.videoMediaId),
   social_cover: (actor, d, input) => so.setCover(actor, d, input.mediaId ?? ""),
-  social_channel: (actor, d, input) => so.saveChannel(actor, d, input.channel, input),
+  social_media_post: (actor, d, input) => so.saveSocialMediaPost(actor, d, input.channel, input),
   linkedin_cancel_done: async (actor, d) => (await import("../../../lib/linkedin/linkedin.mjs")).markCancelledOnLinkedIn(actor, d),
 };
 // Saves the public page doesn't show: no purge.
 const NO_PURGE = new Set(["linkedin_cancel_done"]);
-const SOCIAL = new Set(["social_post", "social_video", "social_cover", "social_channel"]);
+const SOCIAL = new Set(["social_plan", "social_video", "social_cover", "social_media_post"]);
 // Where a social form's redirect lands: its own block, else the section.
 const ANCHORS: Record<string, string> = { social_cover: "#social-cover", linkedin_cancel_done: "#linkedin-cancel" };
 const DONE: Record<string, string> = {
   save: "saved", report: "report", link: "link", unlink: "unlink",
-  social_post: "social_post", social_video: "social_video", social_cover: "social_cover", social_channel: "social_channel",
+  social_plan: "social_plan", social_video: "social_video", social_cover: "social_cover", social_media_post: "social_media_post",
   linkedin_cancel_done: "linkedin_cancel_done",
 };
 
@@ -403,7 +404,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   </>)}
 
   {tab === "social" && (<>
-    <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
+    <SocialPlan date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
   </>)}
 
   {tab === "post" && (<>

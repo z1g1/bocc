@@ -4,7 +4,7 @@
 // (tests/admin/social-alert-unit.test.mjs).
 //
 //   nextTuesday(today)                 the Tuesday strictly after `today` (Eastern date)
-//   socialAlert({ order, siteUrl })    the work order (social-rules.mjs buildWorkOrder,
+//   socialAlert({ order, siteUrl })    the work order (social-plan-rules.mjs buildWorkOrder,
 //                                      or null when there is no events row) -> an alert,
 //                                      or null when everything is fine, the event is
 //                                      cancelled, or `date` is a holiday-week Tuesday
@@ -24,7 +24,9 @@
 // the secret, so the Netlify runtime's fetch tracing (which records full outgoing URLs)
 // can't leak it.
 
-import { CHANNELS, CHANNEL_KEYS, OFFERED_STATUSES, POSTED_CHANNEL_STATUSES, POST_STATUS_LABELS } from "../admin/social-rules.mjs";
+import {
+  CHANNELS, CHANNEL_KEYS, DONE_POST_STATUSES, OFFERED_PLAN_STATUSES, PLAN_STATUS_LABELS, POST_STATUS_LABELS,
+} from "../admin/social-plan-rules.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
 import { expiryAlertDue, expiryLevel } from "../linkedin/rules.mjs";
 
@@ -33,13 +35,13 @@ export { isHolidayWeek };
 const TZ = "America/New_York";
 
 /**
- * Post statuses the check treats as ready (ticket #39): offered to the Chrome tasks
+ * Plan statuses the check treats as ready (ticket #39): offered to the Chrome tasks
  * (Ready for Posting, Error) or Posted. Error is here because the old `ready` flag stayed
- * on after a channel failed: such a post alerts as "N of 5 channels not scheduled",
- * naming the failed channel, not as "post not ready". Channel statuses that need no
- * nudge are social-rules.mjs POSTED_CHANNEL_STATUSES (scheduled, live).
+ * on after a social media post failed: such a plan alerts as "N of 5 social media posts
+ * not scheduled", naming the failed Channel, not as "Social plan not ready". Post
+ * statuses that need no nudge are social-plan-rules.mjs DONE_POST_STATUSES (scheduled, live).
  */
-export const READY_POST_STATUSES = Object.freeze([...OFFERED_STATUSES, "posted"]);
+export const READY_PLAN_STATUSES = Object.freeze([...OFFERED_PLAN_STATUSES, "posted"]);
 
 export const NTFY_DEFAULT_SERVER = "https://ntfy.sh";
 export const NTFY_TIMEOUT_MS = 5000;
@@ -117,7 +119,7 @@ export const contextAllowed = (deployContext) => deployContext !== "deploy-previ
  * @param {{ order: null | { date: string, exists: boolean, eventStatus: string, status: string, statusLabel: string,
  *             problems: Array<{ message: string }>, channels: Array<{ channel: string, label?: string, status: string|null }> },
  *           date: string, siteUrl?: string|null }} s
- *   order null = no events row for `date`: a scheduled event with no post, except in the
+ *   order null = no events row for `date`: a scheduled event with no Social plan, except in the
  *   holiday break (Dec 22 to Jan 4), where a Tuesday without a row isn't a meeting. A row
  *   on a holiday date (the override) is checked like any other week.
  * @returns {null | { title: string, message: string, priority: "high", tags: string[], click: string|null }}
@@ -127,35 +129,37 @@ export function socialAlert({ order, date, siteUrl = null }) {
   if (!order && isHolidayWeek(date)) return null; // holiday break, no meeting
   const exists = Boolean(order?.exists);
   const problems = exists ? order.problems ?? [] : [];
-  const ready = exists && READY_POST_STATUSES.includes(order.status);
+  const ready = exists && READY_PLAN_STATUSES.includes(order.status);
   const notReady = !ready || problems.length > 0;
   const channels = exists
-    ? order.channels.filter((c) => !POSTED_CHANNEL_STATUSES.includes(c.status))
+    ? order.channels.filter((c) => !DONE_POST_STATUSES.includes(c.status))
     : CHANNEL_KEYS.map((channel) => ({ channel, label: CHANNELS[channel], status: null }));
   if (!notReady && channels.length === 0) return null;
 
   const when = shortDate(date);
   let title;
-  if (!exists) title = `BOCC social: no post for ${when}`;
-  else if (notReady) title = `BOCC social: ${when} post not ready`;
-  else title = `BOCC social: ${channels.length} of ${CHANNEL_KEYS.length} channels not scheduled for ${when}`;
+  if (!exists) title = `BOCC social: no Social plan for ${when}`;
+  else if (notReady) title = `BOCC social: ${when} Social plan not ready`;
+  else title = `BOCC social: ${channels.length} of ${CHANNEL_KEYS.length} social media posts not scheduled for ${when}`;
 
   const lines = [`Event: ${longDate(date)}.`];
   if (!exists) {
-    lines.push(`There is no social post yet. Upload the promo video and caption on /admin/events/${date}/ and set it to ${POST_STATUS_LABELS.ready}.`);
+    lines.push(`There is no Social plan yet. Upload the promo video and caption on /admin/events/${date}/ and set its Plan status to ${PLAN_STATUS_LABELS.ready}.`);
   } else if (order.status === "error") {
     const failed = order.channels.filter((c) => c.status === "failed").map((c) => c.label ?? CHANNELS[c.channel] ?? c.channel);
-    const what = failed.length ? `${failed.join(", ")} failed` : "a channel failed";
-    lines.push(`The post's status is ${POST_STATUS_LABELS.error}: ${what}. Fix it on /admin/events/${date}/.`);
+    const what = failed.length ? `the ${failed.join(", ")} social media post failed` : "a social media post failed";
+    lines.push(`The Social plan's Plan status is ${PLAN_STATUS_LABELS.error}: ${what}. Fix it on /admin/events/${date}/.`);
   } else if (!ready) {
-    lines.push(`The post isn't set to ${POST_STATUS_LABELS.ready} (it is ${order.statusLabel}), so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
+    lines.push(`The Social plan isn't set to ${PLAN_STATUS_LABELS.ready} (it is ${order.statusLabel}), so the Wednesday task skipped it. Finish it on /admin/events/${date}/.`);
   } else if (problems.length) {
-    lines.push(`The post is ${order.statusLabel}, but something changed since:`);
+    lines.push(`The Social plan is ${order.statusLabel}, but something changed since:`);
   }
   for (const p of problems) lines.push(`- ${p.message}`);
   if (channels.length) {
-    lines.push("", "Not scheduled yet:");
-    for (const c of channels) lines.push(`- ${c.label ?? CHANNELS[c.channel] ?? c.channel}: ${c.status ?? "no post"}`);
+    lines.push("", "Social media posts not scheduled yet:");
+    for (const c of channels) {
+      lines.push(`- ${c.label ?? CHANNELS[c.channel] ?? c.channel}: ${POST_STATUS_LABELS[c.status] ?? "no social media post"}`);
+    }
   }
   const origin = originOf(siteUrl);
   return {

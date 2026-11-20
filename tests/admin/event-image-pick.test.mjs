@@ -80,7 +80,7 @@ after(async () => {
   const ds = [...used];
   try {
     await owner?.query("update events set event_image_media_id = null where event_date = any($1::date[])", [ds]);
-    await owner?.query("delete from social_posts where event_date = any($1::date[])", [ds]);
+    await owner?.query("delete from social_plans where event_date = any($1::date[])", [ds]);
     await owner?.query("delete from event_media where event_date = any($1::date[])", [ds]);
     await owner?.query("delete from events where event_date = any($1::date[])", [ds]);
   } finally {
@@ -259,13 +259,13 @@ describe("deleting a photo that is an Event Image", () => {
     await media.deleteMedia(actor.id, { deleteObject: async () => {} }, a);
     assert.equal(await row(a), undefined);
   });
-  test("a photo that is both an Event Image and a Social Post cover: refused, the cover kept; once un-picked, the delete resets the cover", async () => {
+  test("a photo that is both an Event Image and a Social plan cover: refused, the cover kept; once un-picked, the delete resets the cover", async () => {
     const [p, d] = dates(2);
     const photo = await seedPhoto(p);
     const other = await seedPhoto(p);
     await ei.pickEventImage(actor.id, null, d, photo);
-    await owner.query("insert into social_posts (event_date, publish_at, cover_media_id) values ($1, now(), $2)", [d, photo]);
-    const cover = () => owner.query("select cover_media_id from social_posts where event_date = $1", [d]).then((r) => r.rows[0].cover_media_id);
+    await owner.query("insert into social_plans (event_date, publish_at, thumbnail_media_id) values ($1, now(), $2)", [d, photo]);
+    const cover = () => owner.query("select thumbnail_media_id from social_plans where event_date = $1", [d]).then((r) => r.rows[0].thumbnail_media_id);
 
     await assert.rejects(media.deleteMedia(actor.id, { deleteObject: async () => {} }, photo), (err) => err.status === 409);
     assert.ok(await row(photo));

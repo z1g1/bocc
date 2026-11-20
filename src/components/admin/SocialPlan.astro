@@ -1,29 +1,31 @@
 ---
-// The "Social post" section of /admin/events/YYYY-MM-DD (ADR 0011; plan Phase 5).
-// Admin only: anyone else gets nothing rendered (the social role reads the work
-// order on its own pages). The page handles the POSTs (actions social_post,
-// social_video, social_channel; src/lib/admin/social.mjs) and passes back what was
-// posted and the errors on a refused save:
-//   <SocialPost date="2026-11-24" order={workOrder} posted={posted} errors={errors} />
+// The "Social plan" section of /admin/events/YYYY-MM-DD (the Social plan tab; ADR 0011;
+// plan Phase 5; words: GLOSSARY.md). Admin only: anyone else gets nothing rendered (the
+// social role reads the work order on its own pages). The page handles the POSTs
+// (actions social_plan, social_video, social_cover, social_media_post;
+// src/lib/admin/social-plan.mjs) and passes back what was posted and the errors on a
+// refused save:
+//   <SocialPlan date="2026-11-24" order={workOrder} posted={posted} errors={errors} />
 //
 // - Promo video: the attached one (player through a presigned GET, and a download
 //   link), the event's other ready videos with "Use this video", unfinished uploads,
 //   and the upload form. /js/admin-video.js PUTs the file to the private bucket and
 //   then submits the hidden "attach" form. Delete buttons POST to
-//   /api/admin/media/{id}/delete (it also clears the video from the post).
+//   /api/admin/media/{id}/delete (it also clears the video from the plan).
 // - Cover image (#social-cover, ticket #22): the promo video's cover, the Event Image
-//   unless overridden with a publicly usable Photo from Event (social.mjs
+//   unless overridden with a publicly usable Photo from Event (social-plan.mjs
 //   listCoverChoices; action social_cover, mediaId "" = back to the Event Image).
-// - The post form: base caption, TikTok's extra hashtags, thumbnail timecode (stored as cover_note), publish time
-//   (an Eastern datetime-local; shown in Eastern and UTC), and the status dropdown
-//   (ticket #39: To do / Ready for Posting / Posted / Error, rules.POST_STATUSES;
-//   Posted and Error are also set by the social role's channel updates).
-// - One form per channel: its status (set by the social role's pages), the caption and
-//   first-comment overrides with the code default shown, and the final text.
+// - The plan form: base caption, TikTok's extra hashtags, thumbnail timecode, publish time
+//   (an Eastern datetime-local; shown in Eastern and UTC), and the Plan status dropdown
+//   (ticket #39: To do / Ready for Posting / Posted / Error, rules.PLAN_STATUSES;
+//   Posted and Error are also set by the social role's social media post updates).
+// - One form per social media post (one per Channel): its Post status (set by the social
+//   role's pages), the caption and first-comment overrides with the code default shown,
+//   and the final text.
 import { hasRole } from "../../lib/admin/roles.mjs";
 import { getStorage } from "../../lib/admin/storage.mjs";
 import { STORAGE_OFF_MESSAGE } from "../../lib/admin/media-http.mjs";
-import * as rules from "../../lib/admin/social-rules.mjs";
+import * as rules from "../../lib/admin/social-plan-rules.mjs";
 
 interface Props {
   date: string;
@@ -51,7 +53,7 @@ if (allowed && storage) {
 }
 const others = videos.ready.filter((m: any) => m.id !== current?.id);
 
-// Cover image (ticket #22): order.cover is resolveSocialCover() (social-rules.mjs).
+// Cover image (ticket #22): order.cover is resolveSocialCover() (social-plan-rules.mjs).
 const cover = order.cover;
 const signThumb = (f: any) => ("path" in f ? f.path : storage ? storage.presignGet({ key: f.key }).url : null);
 const coverPreview = allowed && cover ? signThumb(cover.thumb) : null;
@@ -65,7 +67,7 @@ const coverLabel = !cover ? "" : cover.source === "override"
   : EVENT_IMAGE_LABEL[cover.eventImageSource] ?? "Event Image";
 let coverChoices: any[] = [];
 if (allowed && storage) {
-  const { listCoverChoices } = await import("../../lib/admin/social.mjs");
+  const { listCoverChoices } = await import("../../lib/admin/social-plan.mjs");
   const { pool } = await import("../../lib/admin/db.mjs");
   coverChoices = (await listCoverChoices(pool, date)).map((p: any) => ({ ...p, thumbUrl: storage.presignGet({ key: p.thumbKey }).url }));
 }
@@ -74,58 +76,58 @@ const stale = videos.pending.filter((m: any) => m.stale);
 
 const from = (action: string) => (posted?.action === action ? posted.values : null);
 const errFor = (action: string) => (posted?.action === action ? errors : {});
-const pv = from("social_post") ?? {
+const pv = from("social_plan") ?? {
   baseCaption: order.baseCaption ?? "",
   extraHashtags: order.extraHashtags.join(" "),
   coverNote: order.coverNote ?? "",
   publishAt: order.publishAtDisplay.local,
   status: order.status,
 };
-const pe = errFor("social_post");
+const pe = errFor("social_plan");
 const videoErr = errFor("social_video");
-const chPosted = (c: string) => (posted?.action === "social_channel" && posted.values.channel === c ? posted : null);
+const chPosted = (c: string) => (posted?.action === "social_media_post" && posted.values.channel === c ? posted : null);
 const chVal = (c: any) => chPosted(c.channel)?.values ?? {
   caption: c.captionOverridden ? c.caption : "",
   firstComment: c.firstCommentOverridden ? c.firstComment : "",
 };
 const chErr = (c: string) => (chPosted(c) ? errors : {});
 const started = order.channels.filter((c: any) => c.status && c.status !== "pending");
-const STATUS_LABEL: Record<string, string> = { pending: "pending", scheduled: "scheduled", live: "live", failed: "failed" };
 const formatBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 const MEDIA_NOTICES: Record<string, string> = {
   "video-deleted": "Video deleted.",
   "video-deleted-partial": "Video deleted. Its file couldn't be removed from storage; it is logged for cleanup.",
 };
 const mediaNotice = MEDIA_NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
-// The intro's facts come from the rules: the channels and the Ready for Posting label.
+// The intro's facts come from the rules: the Channels and the Ready for Posting label.
+const postStatusLabel = (s: string | null) => (s ? (rules.POST_STATUS_LABELS as Record<string, string>)[s] ?? s : "not created");
 const channelList = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(Object.values(rules.CHANNELS));
 const fmtTime = (d: Date) =>
   new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
 ---
 {allowed && (
   <section aria-labelledby="h-social" id="social" class="social">
-    <h2 id="h-social">Social post</h2>
+    <h2 id="h-social">Social plan</h2>
     <p class="muted" id="social-intro">
       The weekly promo video, posted on {channelList} is done by work order.<br>
-      It is only posted when the status is set to '{rules.POST_STATUS_LABELS.ready}'<br>
+      It is only posted when the Plan status is set to '{rules.PLAN_STATUS_LABELS.ready}'<br>
       Automated posting requires a logged in AI Agent with the Social role and a scheduled task to look for posts
     </p>
     <p class="social-state">
       {!order.exists
-        ? <span class="muted">Not set up yet: the first save below creates it.</span>
+        ? <span class="muted">No Social plan yet: the first save below creates it.</span>
         : order.actionable
-          ? <strong class="ok">{order.statusLabel}: in the work order.</strong>
+          ? <strong class="ok">Plan status: {order.statusLabel}, in the work order.</strong>
           : order.ready
-            ? <strong class="todo">{order.statusLabel}, but not in the work order until this is fixed:</strong>
-            : <span>Status: {order.statusLabel}.</span>}
+            ? <strong class="todo">Plan status: {order.statusLabel}, but not in the work order until this is fixed:</strong>
+            : <span>Plan status: {order.statusLabel}.</span>}
     </p>
     {order.problems.length > 0 && (order.ready || order.exists) && (
       <ul class="problems">{order.problems.map((p: any) => <li>{p.message}</li>)}</ul>
     )}
     {started.length > 0 && (
       <p class="notice">
-        {started.length} channel{started.length === 1 ? " is" : "s are"} past pending
-        ({started.map((c: any) => `${c.label}: ${c.status}`).join(", ")}). Changes here don't change posts already scheduled on the platforms.
+        {started.length} social media post{started.length === 1 ? " is" : "s are"} past {rules.POST_STATUS_LABELS.pending}
+        ({started.map((c: any) => `${c.label}: ${postStatusLabel(c.status)}`).join(", ")}). Changes here don't change posts already scheduled on the platforms.
       </p>
     )}
 
@@ -141,7 +143,7 @@ const fmtTime = (d: Date) =>
               Attached: {current.contentType === "video/quicktime" ? "MOV" : "MP4"}, {formatBytes(current.sizeBytes)},
               uploaded {fmtTime(current.createdAt)} · <a href={current.downloadUrl} download>Download</a>
             </p>
-            <form method="post" action={`/api/admin/media/${current.id}/delete`} class="inline" data-confirm="Delete the attached promo video? The post is un-readied. This can't be undone.">
+            <form method="post" action={`/api/admin/media/${current.id}/delete`} class="inline" data-confirm="Delete the attached promo video? The Social plan is un-readied. This can't be undone.">
               <button type="submit" class="small secondary">Delete video</button>
             </form>
           </div>
@@ -242,9 +244,9 @@ const fmtTime = (d: Date) =>
       )}
     </div>
 
-    <h3 id="h-social-post">Post</h3>
-    <form method="post" class="narrow" id="social-post-form">
-      <input type="hidden" name="action" value="social_post">
+    <h3 id="h-social-plan">Plan</h3>
+    <form method="post" class="narrow" id="social-plan-form">
+      <input type="hidden" name="action" value="social_plan">
       <label for="baseCaption">Base caption <span class="muted">(every channel starts from this; the link lines are added per channel)</span></label>
       <textarea id="baseCaption" name="baseCaption" rows="5" maxlength={rules.LIMITS.baseCaption}
         aria-invalid={pe.baseCaption ? "true" : undefined}>{pv.baseCaption}</textarea>
@@ -268,25 +270,26 @@ const fmtTime = (d: Date) =>
       </p>
       {pe.publishAt && <p class="error" role="alert">{pe.publishAt}</p>}
 
-      <label for="social-status">Status <span class="muted">(Posted and Error are also set from the channel updates)</span></label>
+      <label for="social-status">Plan status <span class="muted">(Posted and Error are also set from the social media post updates)</span></label>
       <select id="social-status" name="status" aria-invalid={pe.status ? "true" : undefined}
         aria-describedby={pe.status ? "status-error" : undefined}>
-        {rules.POST_STATUSES.map((s) => <option value={s} selected={pv.status === s}>{rules.POST_STATUS_LABELS[s]}</option>)}
+        {rules.PLAN_STATUSES.map((s) => <option value={s} selected={pv.status === s}>{rules.PLAN_STATUS_LABELS[s]}</option>)}
       </select>
       {pe.status && <p class="error" role="alert" id="status-error">{pe.status}</p>}
-      <button type="submit">Save social post</button>
+      <button type="submit">Save Social plan</button>
     </form>
 
-    <h3 id="h-social-channels">Channels</h3>
-    <p class="muted">Leave an override blank to use the default. An override replaces the whole text for that channel.</p>
+    <h3 id="h-social-posts">Social media posts</h3>
+    <p class="muted">One per Channel. Leave an override blank to use the default. An override replaces the whole text of that post.</p>
     {order.channels.map((c: any) => {
       const v = chVal(c);
       const e = chErr(c.channel);
       return (
-        <form method="post" class="channel-row" id={`channel-${c.channel}`}>
-          <input type="hidden" name="action" value="social_channel">
+        <form method="post" class="channel-row" id={`post-${c.channel}`}>
+          <input type="hidden" name="action" value="social_media_post">
           <input type="hidden" name="channel" value={c.channel}>
-          <h4>{c.label} <span class={`badge ${c.status ?? "none"}`}>{c.status ? STATUS_LABEL[c.status] : "not created"}</span></h4>
+          <h4>{c.label} social media post</h4>
+          <p class="post-status">Post status: <span class={`badge ${c.status ?? "none"}`}>{postStatusLabel(c.status)}</span></p>
           {c.postUrl && <p class="current">Post: <a href={c.postUrl} target="_blank" rel="noopener">{c.postUrl}</a></p>}
           {c.verifiedAt && <p class="muted">Verified {fmtTime(c.verifiedAt)}{c.commentPostedAt && <>, first comment posted {fmtTime(c.commentPostedAt)}</>}</p>}
           {c.notes && <p class="muted">Notes: {c.notes}</p>}
@@ -332,6 +335,7 @@ const fmtTime = (d: Date) =>
 <style>
   .social h3 { margin-top: 1.5rem; }
   .social h4 { margin: 0 0 0.25rem; }
+  .social .post-status { margin: 0 0 0.25rem; }
   .social .ok { color: var(--accent); }
   .social .todo { color: var(--err); }
   .problems { margin: 0.25rem 0 0.5rem; color: var(--err); }

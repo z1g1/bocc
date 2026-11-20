@@ -1,6 +1,6 @@
-// Social work order rules (ADR 0011 decision 2; plan Phase 5). Pure functions, NO
+// Social plan rules (ADR 0011 decision 2; plan Phase 5; words: GLOSSARY.md). Pure functions, NO
 // imports, so the admin event page, the social role's pages and any scheduled check
-// all apply exactly the same rules. The database side is ./social.mjs.
+// all apply exactly the same rules. The database side is ./social-plan.mjs.
 //
 // Channel texts (defaultTexts, channelTexts). Luma is the only link ever used:
 //   facebook, threads, linkedin_page   caption = base caption + "\n\nRSVP: <Luma URL>"
@@ -22,18 +22,18 @@
 // channel's limit, an event that isn't cancelled, and a publish time that is in the
 // future and not after the event day. buildWorkOrder() puts it all together.
 //
-// Post status (ticket #39; POST_STATUSES, postStatusAfterChannelUpdate): the summary of
-// the whole post, one of
+// Plan status (ticket #39; PLAN_STATUSES, planStatusAfterPostUpdate): the summary of
+// the whole Social plan, one of
 //   todo    To do              being prepared; the Chrome tasks ignore it (the default)
 //   ready   Ready for Posting  the work order is offered to the Chrome tasks; only
 //                              with no readyProblems() (what the old `ready` flag needed)
-//   posted  Posted             every channel scheduled or live (set automatically)
-//   error   Error              a channel failed (set automatically)
+//   posted  Posted             every social media post scheduled or live (set automatically)
+//   error   Error              a social media post failed (set automatically)
 // An Admin sets any of them; only Ready for Posting is checked. Error stays offered
-// (OFFERED_STATUSES) so the Wednesday task can carry on after one channel fails and a
-// failed channel can be scheduled again. Posted is never offered: an Admin who sets it by
-// hand ends the Chrome tasks' work on the post even with channels still pending
-// (social.mjs findNext skips it). Intended: it is the Admin's "done, stop".
+// (OFFERED_PLAN_STATUSES) so the Wednesday task can carry on after one post fails and a
+// failed post can be scheduled again. Posted is never offered: an Admin who sets it by
+// hand ends the Chrome tasks' work on the plan even with posts still pending
+// (social-plan.mjs findNext skips it). Intended: it is the Admin's "done, stop".
 
 /** Channels in work-order order (the Wednesday task's order), with their labels. */
 export const CHANNELS = Object.freeze({
@@ -46,22 +46,32 @@ export const CHANNELS = Object.freeze({
 export const CHANNEL_KEYS = Object.freeze(Object.keys(CHANNELS));
 export const isChannel = (c) => typeof c === "string" && Object.hasOwn(CHANNELS, c);
 
-/** Channel statuses (the column's CHECK): pending -> scheduled -> live | failed. */
-export const STATUSES = Object.freeze(["pending", "scheduled", "live", "failed"]);
-
-/** Post statuses (social_posts.status CHECK), in dropdown order. See the header. */
-export const POST_STATUSES = Object.freeze(["todo", "ready", "posted", "error"]);
+/**
+ * Post statuses, the status of one social media post (social_media_posts.status CHECK):
+ * pending -> scheduled -> live | failed (TRANSITIONS).
+ */
+export const POST_STATUSES = Object.freeze(["pending", "scheduled", "live", "failed"]);
 export const POST_STATUS_LABELS = Object.freeze({
+  pending: "Pending",
+  scheduled: "Scheduled",
+  live: "Live",
+  failed: "Failed",
+});
+export const isPostStatus = (s) => typeof s === "string" && POST_STATUSES.includes(s);
+
+/** Plan statuses (social_plans.status CHECK), in dropdown order. See the header. */
+export const PLAN_STATUSES = Object.freeze(["todo", "ready", "posted", "error"]);
+export const PLAN_STATUS_LABELS = Object.freeze({
   todo: "To do",
   ready: "Ready for Posting",
   posted: "Posted",
   error: "Error",
 });
-export const isPostStatus = (s) => typeof s === "string" && POST_STATUSES.includes(s);
-/** Post statuses whose work order the Chrome tasks act on (schedule channels). */
-export const OFFERED_STATUSES = Object.freeze(["ready", "error"]);
-/** Channel statuses that count as done for Posted. */
-export const POSTED_CHANNEL_STATUSES = Object.freeze(["scheduled", "live"]);
+export const isPlanStatus = (s) => typeof s === "string" && PLAN_STATUSES.includes(s);
+/** Plan statuses whose work order the Chrome tasks act on (schedule social media posts). */
+export const OFFERED_PLAN_STATUSES = Object.freeze(["ready", "error"]);
+/** Post statuses that count as done for Posted. */
+export const DONE_POST_STATUSES = Object.freeze(["scheduled", "live"]);
 
 /** Channels whose caption carries the Luma link; the others say "Link in bio". */
 export const LINK_CHANNELS = Object.freeze(["facebook", "threads", "linkedin_page"]);
@@ -299,7 +309,7 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
 /**
  * The promo video's cover image. With no override it is the event's Event Image
  * (event-image-rules.mjs resolveEventImage: uploaded, referenced, or the BOCC logo);
- * an override is a publicly usable, ready `social_photo` (social_posts.cover_media_id).
+ * an override is a publicly usable, ready `social_photo` (social_plans.thumbnail_media_id).
  * An override that can't be used falls back to the Event Image. The cover is the
  * display copy (a JPEG at most 1600px on its long edge, the image's own shape; the
  * original can be up to 25 MB, too big for some uploaders; video platforms crop
@@ -355,15 +365,15 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, coverMedia =
   });
   const publishAt = post?.publishAt ? new Date(post.publishAt) : defaultPublishAt(date);
   const problems = readyProblems({ event, post, video, lumaUrl, channels });
-  const status = isPostStatus(post?.status) ? post.status : "todo";
+  const status = isPlanStatus(post?.status) ? post.status : "todo";
   /** Offered to the Chrome tasks (Ready for Posting or Error): what the old `ready` flag meant. */
-  const ready = OFFERED_STATUSES.includes(status);
+  const ready = OFFERED_PLAN_STATUSES.includes(status);
   return {
     date,
     exists: Boolean(post),
     eventStatus: event?.status ?? "scheduled",
     status,
-    statusLabel: POST_STATUS_LABELS[status],
+    statusLabel: PLAN_STATUS_LABELS[status],
     ready,
     problems,
     /** Offered and nothing wrong: the Chrome tasks may act on it. */
@@ -387,24 +397,24 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, coverMedia =
 // ── Channel results (the social role's pages, Phase 5 part B) ────────────────
 
 /**
- * The post status a channel update leads to, or null for no change (ticket #39):
- * Error when the update recorded `failed`; Posted when it leaves every channel
- * scheduled or live. Only an update that changed the channel's status counts.
+ * The Plan status a social media post update leads to, or null for no change (ticket
+ * #39): Error when the update recorded `failed`; Posted when it leaves every post
+ * scheduled or live. Only an update that changed the post's Post status counts.
  * @param {{ status: string, changedTo: string|null, channels: Record<string, string> }} s
- *   status: the post's status now; changedTo: the channel's new status, null when it
- *   didn't change; channels: every channel's status after the update.
+ *   status: the Plan status now; changedTo: the post's new Post status, null when it
+ *   didn't change; channels: every Channel's Post status after the update.
  * @returns {string|null}
  */
-export function postStatusAfterChannelUpdate({ status, changedTo, channels }) {
+export function planStatusAfterPostUpdate({ status, changedTo, channels }) {
   if (!changedTo) return null;
   let next = null;
   if (changedTo === "failed") next = "error";
-  else if (CHANNEL_KEYS.every((c) => POSTED_CHANNEL_STATUSES.includes(channels[c]))) next = "posted";
+  else if (CHANNEL_KEYS.every((c) => DONE_POST_STATUSES.includes(channels[c]))) next = "posted";
   return next === status ? null : next;
 }
 
 /**
- * Status changes setChannelResult() (./social.mjs) accepts. The happy path is
+ * Status changes setPostResult() (./social-plan.mjs) accepts. The happy path is
  * pending -> scheduled (Wednesday) -> live | failed (Monday). Every other change is
  * there to fix a mistake: back to pending (not scheduled after all), failed -> any
  * (retried), live -> scheduled (marked live too early), and pending -> live (it went

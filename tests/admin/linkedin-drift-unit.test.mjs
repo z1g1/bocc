@@ -137,7 +137,7 @@ describe("readiness: the LinkedIn event posted line", () => {
       assert.equal(l.ok, false, String(ledger?.status));
       assert.equal(l.href, undefined);
       assert.match(l.note, /Event Info tab/);
-      assert.doesNotMatch(l.note, /Social Posts/);
+      assert.doesNotMatch(l.note, /Social plan|Social Posts/);
     }
   });
   it("made outside the app (a LinkedIn listing URL, no posted ledger row): a caution line, noting it", () => {
