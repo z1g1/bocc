@@ -25,7 +25,8 @@
  *   - Dates are M/D/YYYY or M/D/YY (YY = 20YY). A year below 2000 (`7/14/0026`) takes
  *     the Timestamp's year, and is refused without a Timestamp. Every fix is reported.
  *     The date may not be after the Timestamp's date. Duplicate dates are errors.
- *   - Gives and Asks: an integer, blank = NULL. Bling: Yes/No, blank = NULL. Bling
+ *   - Attendee count (the Form asks "how many people counted at Gives and Asks"): an
+ *     integer, blank = NULL. Bling: Yes/No, blank = NULL. Bling
  *     details (the "who" column) mean Bling was given: a No or blank answer with
  *     details is imported as bling_given = true and listed as a fix (Zack, 2026-11-17).
  *   - A date that isn't a Tuesday is listed for information only and imported as is.
@@ -92,7 +93,7 @@ function parseCsv(text) {
 const COLUMNS = {
   timestamp: 'Timestamp',
   date: 'Date of Event',
-  count: 'How many people counted at Gives and Asks?',
+  count: 'How many people counted at Gives and Asks?', // the Attendee count; the Form's own wording
   bling: 'Did you give out the Bring a Friend Bling?',
   blingDetails: 'Who did you give it to? Who did they bring?',
   notes: 'Any notes/feedback from today?',
@@ -168,7 +169,7 @@ function parseFormDate(raw, tsDate) {
 function parseCount(raw) {
   const t = raw.trim();
   if (t === '') return null;
-  if (!/^\d{1,6}$/.test(t)) throw new Error(`Gives and Asks count "${t}" is not a whole number`);
+  if (!/^\d{1,6}$/.test(t)) throw new Error(`Attendee count "${t}" is not a whole number`);
   return Number(t);
 }
 
@@ -259,7 +260,7 @@ function planImport(rows) {
         const leftover = [get('count'), get('bling'), get('blingDetails')].some((v) => v.trim() !== '') || notes;
         if (leftover) warnings.push(`row ${row} (${date}): cancelled, so its report fields and notes are not imported`);
       } else {
-        const givesAsksCount = parseCount(get('count'));
+        const attendeeCount = parseCount(get('count'));
         let blingGiven = parseYesNo(get('bling'), 'Bling answer');
         const blingDetails = text(get('blingDetails'));
         if (blingDetails !== null && blingGiven !== true) {
@@ -274,7 +275,7 @@ function planImport(rows) {
         if (blingDetails && blingDetails.length > 1000) throw new Error('Bling details longer than 1000 characters');
         if (notes && notes.length > 4000) throw new Error('notes longer than 4000 characters');
         item.status = 'held';
-        item.report = { givesAsksCount, notes, blingGiven, blingDetails };
+        item.report = { attendeeCount, notes, blingGiven, blingDetails };
       }
       if (seen.has(date)) {
         errors.push(`row ${row}: duplicate date ${date} (also row ${seen.get(date)})${fix ? ' after fixing' : ''}`);
@@ -293,7 +294,7 @@ function planImport(rows) {
 // ── Database ─────────────────────────────────────────────────────────────────
 
 const REPORT_FIELDS = [
-  ['givesAsksCount', 'gives_asks_count'],
+  ['attendeeCount', 'attendee_count'],
   ['notes', 'notes'],
   ['blingGiven', 'bling_given'],
   ['blingDetails', 'bling_details'],
@@ -337,7 +338,7 @@ async function loadStored(db, dates) {
     `select event_date::text as date, status, location, location_other, cancel_reason, cancel_reason_other, cancel_announced
        from public.events where event_date = any($1::date[])`, [dates]);
   const reps = await db.query(
-    `select event_date::text as date, gives_asks_count, notes, bling_given, bling_details, source
+    `select event_date::text as date, attendee_count, notes, bling_given, bling_details, source
        from public.event_reports where event_date = any($1::date[])`, [dates]);
   return {
     events: new Map(evs.rows.map((r) => [r.date, r])),
@@ -372,14 +373,14 @@ async function write(db, item, ev, rep) {
     [item.date, item.location, item.locationOther]);
   const r = item.report;
   await db.query(
-    `insert into public.event_reports (event_date, gives_asks_count, notes, bling_given, bling_details, submitted_by, source)
+    `insert into public.event_reports (event_date, attendee_count, notes, bling_given, bling_details, submitted_by, source)
      values ($1::date, $2, $3, $4, $5, null, $6)
      on conflict (event_date) do update
-       set gives_asks_count = excluded.gives_asks_count, notes = excluded.notes,
+       set attendee_count = excluded.attendee_count, notes = excluded.notes,
            bling_given = excluded.bling_given, bling_details = excluded.bling_details,
            submitted_by = null, source = excluded.source
      where public.event_reports.source <> 'admin'`,
-    [item.date, r.givesAsksCount, r.notes, r.blingGiven, r.blingDetails, item.source]);
+    [item.date, r.attendeeCount, r.notes, r.blingGiven, r.blingDetails, item.source]);
 }
 
 // ── Output ───────────────────────────────────────────────────────────────────
@@ -388,7 +389,7 @@ function table(items) {
   const head = ['row', 'date', 'source', 'count', 'bling', 'location', 'cancel reason', 'action', 'fix'];
   const body = items.map((it) => [
     String(it.row), it.date, it.source,
-    it.status === 'cancelled' ? 'CANCELLED' : it.report.givesAsksCount == null ? '' : String(it.report.givesAsksCount),
+    it.status === 'cancelled' ? 'CANCELLED' : it.report.attendeeCount == null ? '' : String(it.report.attendeeCount),
     it.report ? (it.report.blingGiven == null ? '' : it.report.blingGiven ? 'yes' : 'no') : '',
     it.location === 'other' ? 'other' : it.location ?? '',
     it.cancel ? `${it.cancel.reason} ← "${it.cancelText}"` : '',
@@ -498,8 +499,8 @@ async function main(argv, env, out = console) {
   } else {
     out.log(`${mode} no DATABASE_URL: not compared with the database`);
   }
-  const zero = items.filter((i) => i.report?.givesAsksCount === 0);
-  out.log(`${mode} zero at Gives and Asks (imported as is): ${zero.length ? zero.map((i) => `${i.date} (row ${i.row})`).join(', ') : 'none'}`);
+  const zero = items.filter((i) => i.report?.attendeeCount === 0);
+  out.log(`${mode} Attendee count of zero (imported as is): ${zero.length ? zero.map((i) => `${i.date} (row ${i.row})`).join(', ') : 'none'}`);
   out.log(`${mode} fixes: ${fixes.length}`);
   fixes.forEach((f) => out.log(`  FIX   ${f}`));
   out.log(`${mode} warnings: ${warnings.length}`);

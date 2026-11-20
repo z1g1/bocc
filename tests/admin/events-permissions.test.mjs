@@ -82,25 +82,25 @@ describe("admin_app on events, event_reports, event_media", () => {
       const d = testDate();
       await admin.query("insert into events (event_date, location) values ($1, 'lobby')", [d]);
       await admin.query(
-        `insert into event_reports (event_date, gives_asks_count, notes, bling_given, bling_details, submitted_by)
+        `insert into event_reports (event_date, attendee_count, notes, bling_given, bling_details, submitted_by)
          values ($1, 12, 'good one', true, 'mug', $2)`, [d, userId]);
       await admin.query("update events set status = 'held' where event_date = $1", [d]);
-      await admin.query("update event_reports set gives_asks_count = 13 where event_date = $1", [d]);
+      await admin.query("update event_reports set attendee_count = 13 where event_date = $1", [d]);
       const { rows: [m] } = await insertMedia(admin, photo(d));
       assert.equal(m.status, "pending");
       await admin.query("update event_media set status = 'ready', publicly_usable = true where id = $1", [m.id]);
       const { rows } = await admin.query(
-        `select e.status, r.gives_asks_count, r.source, count(m.*)::int as media
+        `select e.status, r.attendee_count, r.source, count(m.*)::int as media
            from events e join event_reports r using (event_date) left join event_media m using (event_date)
           where e.event_date = $1 group by 1, 2, 3`, [d]);
-      assert.deepEqual(rows, [{ status: "held", gives_asks_count: 13, source: "admin", media: 1 }]);
+      assert.deepEqual(rows, [{ status: "held", attendee_count: 13, source: "admin", media: 1 }]);
     }));
 
   test("can delete only event_media; no TRUNCATE anywhere", () =>
     inRollback(admin, async () => {
       const d = testDate();
       await admin.query("insert into events (event_date) values ($1)", [d]);
-      await admin.query("insert into event_reports (event_date, gives_asks_count) values ($1, 1)", [d]);
+      await admin.query("insert into event_reports (event_date, attendee_count) values ($1, 1)", [d]);
       const { rows: [m] } = await insertMedia(admin, photo(d));
       await assertRefused(admin, "delete from event_reports where event_date = $1", [d]);
       await assertRefused(admin, "delete from events where event_date = $1", [d]);
@@ -177,14 +177,14 @@ describe("shape checks", () => {
     inRollback(admin, async () => {
       const ins = (cols, vals) => `insert into event_reports (event_date, ${cols}) values ($1, ${vals})`;
       const d = () => { const x = testDate(); return admin.query("insert into events (event_date) values ($1)", [x]).then(() => x); };
-      await assertRefused(admin, ins("gives_asks_count", "-1"), [await d()], CHECK);
+      await assertRefused(admin, ins("attendee_count", "-1"), [await d()], CHECK);
       await assertRefused(admin, ins("source", "'csv'"), [await d()], CHECK);
       await assertRefused(admin, ins("bling_given, bling_details", "false, 'mug'"), [await d()], CHECK);
-      await assertRefused(admin, ins("gives_asks_count", "1"), ["2099-12-30"], /foreign key/);
+      await assertRefused(admin, ins("attendee_count", "1"), ["2099-12-30"], /foreign key/);
       await assertRefused(admin, ins("submitted_by", "'no-such-user'"), [await d()], /foreign key/);
       // Imported rows: nothing recorded but the date, no submitter.
       await assertAllowed(admin, ins("source", "'pre_form'"), [await d()]);
-      await assertAllowed(admin, ins("source, gives_asks_count, bling_details", "'google_form', 0, 'mug'"), [await d()]);
+      await assertAllowed(admin, ins("source, attendee_count, bling_details", "'google_form', 0, 'mug'"), [await d()]);
     }));
 
   test("event_media: variants per kind, content types, publicly_usable only on social photos", () =>
@@ -225,7 +225,7 @@ describe("shape checks", () => {
       const u = unique("gone-user");
       await owner.query(`insert into auth."user" (id, name, email, "emailVerified") values ($1, 'G', $2, false)`, [u, `${u}@example.com`]);
       await owner.query("insert into events (event_date) values ($1)", [d]);
-      await owner.query("insert into event_reports (event_date, gives_asks_count, submitted_by) values ($1, 3, $2)", [d, u]);
+      await owner.query("insert into event_reports (event_date, attendee_count, submitted_by) values ($1, 3, $2)", [d, u]);
       await insertMedia(owner, photo(d, { uploaded_by: u }));
       await owner.query(`delete from auth."user" where id = $1`, [u]);
       const { rows } = await owner.query(
