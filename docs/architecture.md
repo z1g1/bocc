@@ -47,8 +47,7 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 > **Module layer (June 2026 refactor):** the `checkin.js` function is a thin HTTP
 > adapter; the check-in business flow lives in `utils/check-in.js`
 > (`checkInAttendee`). Configuration is centralized in `utils/config.js`. See
-> [architecture-review-2026-06.md](architecture-review-2026-06.md) and
-> [`CONTEXT.md`](../CONTEXT.md) for the module seams.
+> [architecture-review-2026-06.md](architecture-review-2026-06.md) for the module seams.
 >
 > **Datastore (September 2026):** check-ins moved from Airtable (free base full) to
 > Neon Postgres. See [ADR-0003](adr/0003-supabase-transactional-store.md) (data model)
