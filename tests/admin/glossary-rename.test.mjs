@@ -3,7 +3,8 @@
 //   1. migration 20261203120000_glossary_rename_expand.sql: the new table and column
 //      names, existing rows carried through (re-run on a rebuilt pre-migration schema, in
 //      a rolled-back transaction), the renamed constraints, and the grants per role.
-//      The status/kind VALUE backfill ships with #51 and #54, not here (see the migration)
+//      The status/kind VALUE backfill ships with #51 and #54, not here (see the migration;
+//      #51's is tested in event-status-migration.test.mjs)
 //   2. the compatibility pieces: the old code's queries, copied as they were before the
 //      rename, run as each role against the migrated database and still work
 //   3. a LinkedIn token stored before the rename still decrypts
@@ -124,7 +125,7 @@ describe("migration 20261203120000_glossary_rename_expand.sql", () => {
       await owner.query(MIGRATION);
 
       const ev = (await owner.query(`select status, updated_at from events where event_date = $1`, [d])).rows[0];
-      assert.equal(ev.status, "held", "the value switch ships with #51");
+      assert.equal(ev.status, "reported", "the 'held' write is rewritten by #51's trigger (event-status-migration.test.mjs)");
       assert.deepEqual(ev.updated_at, before, "the migration is not an edit");
       assert.equal((await owner.query(`select attendee_count from event_reports where event_date = $1`, [d])).rows[0].attendee_count, 23);
       assert.deepEqual((await owner.query(
@@ -202,7 +203,7 @@ describe("compatibility: the code live before the deploy keeps working", () => {
       const { rows: [row] } = await admin.query(
         `select e.status, r.gives_asks_count, r.attendee_count from public.events e
            left join public.event_reports r on r.event_date = e.event_date where e.event_date = $1::date`, [d]);
-      assert.deepEqual(row, { status: "held", gives_asks_count: 31, attendee_count: 31 });
+      assert.deepEqual(row, { status: "reported", gives_asks_count: 31, attendee_count: 31 }, "#51's trigger rewrites 'held'");
       await admin.query(`update public.events set status = 'reported' where event_date = $1::date`, [d]);
       await admin.query("savepoint s");
       await assert.rejects(admin.query(`update public.events set status = 'done' where event_date = $1`, [d]), /check constraint/);

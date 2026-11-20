@@ -365,7 +365,7 @@ on-device checks and production are open.
   - location
   - cancel flow (reason, announced on socials). Since 2026-11-19 it is part of the status
     form: Cancelled is a third status whose reason fields show only while it is selected
-    (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Held
+    (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Reported
     (past dates) leaves cancelled and clears the reason. The separate cancel and un-cancel
     forms are gone; the audit actions are unchanged.
   - report form (Gives and Asks count, notes, Bling given and details)

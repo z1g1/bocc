@@ -84,7 +84,7 @@ describe("admin_app on events, event_reports, event_media", () => {
       await admin.query(
         `insert into event_reports (event_date, gives_asks_count, notes, bling_given, bling_details, submitted_by)
          values ($1, 12, 'good one', true, 'mug', $2)`, [d, userId]);
-      await admin.query("update events set status = 'held' where event_date = $1", [d]);
+      await admin.query("update events set status = 'reported' where event_date = $1", [d]);
       await admin.query("update event_reports set gives_asks_count = 13 where event_date = $1", [d]);
       const { rows: [m] } = await insertMedia(admin, photo(d));
       assert.equal(m.status, "pending");
@@ -93,7 +93,7 @@ describe("admin_app on events, event_reports, event_media", () => {
         `select e.status, r.gives_asks_count, r.source, count(m.*)::int as media
            from events e join event_reports r using (event_date) left join event_media m using (event_date)
           where e.event_date = $1 group by 1, 2, 3`, [d]);
-      assert.deepEqual(rows, [{ status: "held", gives_asks_count: 13, source: "admin", media: 1 }]);
+      assert.deepEqual(rows, [{ status: "reported", gives_asks_count: 13, source: "admin", media: 1 }]);
     }));
 
   test("can delete only event_media; no TRUNCATE anywhere", () =>
@@ -158,7 +158,7 @@ describe("shape checks", () => {
       const ins = (cols, vals) => `insert into events (event_date, ${cols}) values ($1, ${vals})`;
       await assertRefused(admin, ins("status", "'cancelled'"), [testDate()], CHECK);
       await assertRefused(admin, ins("cancel_reason", "'weather'"), [testDate()], CHECK);
-      await assertRefused(admin, ins("status, cancel_announced", "'held', true"), [testDate()], CHECK);
+      await assertRefused(admin, ins("status, cancel_announced", "'reported', true"), [testDate()], CHECK);
       await assertRefused(admin, ins("status, cancel_reason", "'cancelled', 'other'"), [testDate()], CHECK);
       await assertRefused(admin, ins("status, cancel_reason, cancel_reason_other", "'cancelled', 'weather', 'snow'"), [testDate()], CHECK);
       await assertRefused(admin, ins("status, cancel_reason", "'cancelled', 'aliens'"), [testDate()], CHECK);

@@ -160,7 +160,7 @@ describe("import script against the database", () => {
     owner = await connect(OWNER_URL);
     dir = mkdtempSync(join(tmpdir(), "bocc-import-test-"));
     // An admin already filed 2081-02-18 by hand: the import must leave it alone.
-    await owner.query(`insert into events (event_date, status, location) values ('2081-02-18', 'held', 'lobby')`);
+    await owner.query(`insert into events (event_date, status, location) values ('2081-02-18', 'reported', 'lobby')`);
     await owner.query(`insert into event_reports (event_date, gives_asks_count, bling_given, source) values ('2081-02-18', 99, false, 'admin')`);
   });
   after(async () => {
@@ -202,7 +202,7 @@ describe("import script against the database", () => {
     const { events, reports } = await snapshot();
     const ev = Object.fromEntries(events.map((e) => [e.event_date, e]));
     const rep = Object.fromEntries(reports.map((r) => [r.event_date, r]));
-    assert.deepEqual([ev["2081-01-14"].status, ev["2081-01-14"].location], ["held", "food_hall"]);
+    assert.deepEqual([ev["2081-01-14"].status, ev["2081-01-14"].location], ["reported", "food_hall"]);
     assert.deepEqual([ev["2081-01-21"].status, ev["2081-01-21"].cancel_reason, ev["2081-01-21"].cancel_announced], ["cancelled", "weather", true]);
     assert.equal(rep["2081-01-21"], undefined, "no report for a cancelled event");
     assert.deepEqual([ev["2081-01-28"].location, ev["2081-01-28"].location_other], ["other", "Rooftop patio"]);

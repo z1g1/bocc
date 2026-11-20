@@ -123,7 +123,7 @@ export const contextAllowed = (deployContext) => deployContext !== "deploy-previ
  * @returns {null | { title: string, message: string, priority: "high", tags: string[], click: string|null }}
  */
 export function socialAlert({ order, date, siteUrl = null }) {
-  if (order && order.eventStatus !== "scheduled") return null; // cancelled (or already held)
+  if (order && order.eventStatus !== "scheduled") return null; // cancelled (or already reported)
   if (!order && isHolidayWeek(date)) return null; // holiday break, no meeting
   const exists = Boolean(order?.exists);
   const problems = exists ? order.problems ?? [] : [];
