@@ -12,6 +12,9 @@
   base = ""
   command = "npm run build"
   publish = "dist"
+  # `dev` and `main` build only from the build hook the "Migrate and deploy" workflow
+  # calls after migrating Neon (issue #32, docs/backend/DEPLOYS.md).
+  ignore = "sh scripts/netlify-ignore.sh"
 
 [build.environment]
   # Astro 7 needs Node >= 22.23.4. 24 is the current LTS (20 went end-of-life in April 2026).

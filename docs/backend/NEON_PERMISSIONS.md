@@ -8,7 +8,7 @@ ADR 0008 (admin login, roles and the `admin_app` identity), ADR 0009 (events), A
 in Neon Object Storage).
 
 - Project: `young-queen-80162551`, branch `production`, database `neondb`, region `us-east-2`
-- Migrations: `backend/db/migrations/*.sql`, applied by `npm run migrate`
+- Migrations: `backend/db/migrations/*.sql`, applied by the "Migrate and deploy" GitHub workflow before each `dev`/`main` deploy ([DEPLOYS.md](DEPLOYS.md)); `npm run migrate` is the manual fallback
 
 ## Identities (principle of least privilege)
 
@@ -18,7 +18,7 @@ in Neon Object Storage).
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
 | `site_reader` | public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, rendered on request in the Astro SSR function (ADR 0009 decision 4) | `USAGE` on `public`; `SELECT` on `events`, `event_links` only | Netlify env `SITE_DB_URL` (secret) |
 | `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_posts`, `social_post_channels`; `SELECT (id, event_date, kind, status)` on `event_media`; `SELECT (user_id, expires_at, display_name)` on `linkedin_connections`; nothing in `auth` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
-| `neondb_owner` | operator only: `npm run migrate` | owner of schema objects, creates roles | local `.env.local` from `neon link` (gitignored). **Never in Netlify.** |
+| `neondb_owner` | the "Migrate and deploy" workflow; operator fallback `npm run migrate` | owner of schema objects, creates roles | GitHub environment secret `NEON_OWNER_URL` (`dev`, `production`); locally `.env.local` from `neon link` (gitignored, points at production). **Never in Netlify.** |
 | Storage credential (one per branch) | admin app: presigned media URLs (`src/lib/admin/storage.mjs`); `scripts/storage-cors.mjs` | `storage:read`, `storage:write` on the branch it was made on and its descendants. Not a Postgres role | Netlify env `STORAGE_ACCESS_KEY_ID` / `STORAGE_SECRET_ACCESS_KEY`; see "Storage" |
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
 
