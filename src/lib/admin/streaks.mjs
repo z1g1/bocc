@@ -1,8 +1,9 @@
 // Active streaks for /admin/streaks/ (admin only; the CALLER checks requireRole).
 //
-// "Active" follows the streaks view (migrations 20260625120100 and 20260912120000):
-// current_streak is the run ending at the event's most recent HELD week (a week with
-// at least one non-debug check-in), and 0 if the attendee missed that week. So an
+// "Active" follows the streaks view (migrations 20260625120100, 20260912120000 and
+// 20261203190000): current_streak is the run ending at the event's most recent HELD week
+// (a week with a non-debug check-in or a Reported Event, and no Cancelled Event), and 0
+// if the attendee missed that week. So an
 // active streak is current_streak > 0. The view already ignores debug check-ins;
 // debug attendees are left out here as well.
 //

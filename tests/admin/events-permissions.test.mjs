@@ -131,12 +131,19 @@ describe("admin_app on events, event_reports, event_media", () => {
 });
 
 describe("checkin_writer", () => {
-  test("can't read or write any of them", () =>
+  test("can't read whole rows or write any of them", () =>
     inRollback(writer, async () => {
       for (const t of TABLES) {
         await assertRefused(writer, `select * from ${t}`);
       }
       await assertRefused(writer, "insert into events (event_date) values ('2099-12-31')");
+      await assertRefused(writer, "update events set status = 'cancelled'");
+    }));
+
+  test("can read events.event_date and events.status only, for the Held view", () =>
+    inRollback(writer, async () => {
+      await assertAllowed(writer, "select event_date, status from events");
+      await assertRefused(writer, "select location from events");
     }));
 });
 
