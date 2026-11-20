@@ -140,6 +140,22 @@ describe("readiness: the LinkedIn event posted line", () => {
       assert.doesNotMatch(l.note, /Social Posts/);
     }
   });
+  it("made outside the app (a LinkedIn listing URL, no posted ledger row): a caution line, noting it", () => {
+    const LISTING = "https://www.linkedin.com/events/7000000000000000000/";
+    const links = { linkedin_event: { url: LISTING, externalId: null } };
+    for (const ledger of [null, posted({ status: "pending", eventUrl: null })]) {
+      const l = readiness(event, links, null, { linkedIn: linkedInFollowUp({ ledger, event: scheduled(), eventImage: LOGO }) })
+        .listings.items.find((i) => i.key === "linkedin_posted");
+      assert.equal(l.ok, true, String(ledger?.status));
+      assert.equal(l.caution, true);
+      assert.equal(l.href, LISTING);
+      assert.match(l.note, /created manually/);
+    }
+    // Posted from the app: the ledger wins, a plain tick.
+    const app = readiness(event, links, null, { linkedIn: linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: LOGO }) })
+      .listings.items.find((i) => i.key === "linkedin_posted");
+    assert.deepEqual(app, { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: EVENT_URL });
+  });
   it("no line for a cancelled event (the cancel line covers it) or without a ledger read", () => {
     const ev = { ...event, status: "cancelled" };
     assert.equal(line(linkedInFollowUp({ ledger: posted(), event: ev, eventImage: LOGO }), ev), undefined);
