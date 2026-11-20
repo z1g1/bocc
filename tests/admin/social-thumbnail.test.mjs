@@ -1,13 +1,13 @@
-// The Social plan cover image (ticket #22) against the throwaway database
+// The Social plan's Thumbnail (tickets #22, #57) against the throwaway database
 // (npm run test:db):
-//   1. migration 20261127120000_social_post_cover.sql: the nullable cover reference,
+//   1. migration 20261127120000_social_post_cover.sql: the nullable Thumbnail reference,
 //      which may only point at event_media and is cleared when that media is deleted
-//   2. src/lib/admin/social-plan.mjs as admin_app: the cover resolves to the Event Image (the
-//      logo default or an uploaded one); setCover sets and clears an override, each
+//   2. src/lib/admin/social-plan.mjs as admin_app: the Thumbnail resolves to the Event Image (the
+//      logo default or an uploaded one); setThumbnail sets and clears an override, each
 //      audited; only a ready, publicly usable Photo from Event can be chosen; the video
 //      is still what blocks ready
-//   3. the Cover image block of the Social plan section over HTTP (astro dev)
-// The pure resolution is in social-unit.test.mjs; the work order's cover link in
+//   3. the Thumbnail block of the Social plan tab over HTTP (astro dev)
+// The pure resolution is in social-unit.test.mjs; the work order's Thumbnail link in
 // social-orders.test.mjs.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -46,9 +46,9 @@ let h = 100 + randomInt(0, 60);
 const httpDate = () => new Date(Date.UTC(2086, 0, 1 + 7 * h++)).toISOString().slice(0, 10);
 
 const planRow = (d) => owner.query(`select * from social_plans where event_date = $1`, [d]).then((r) => r.rows[0] ?? null);
-const coverAudits = (d) => owner.query(
+const thumbnailAudits = (d) => owner.query(
   `select actor_user_id, action, details from audit_log
-    where target_id = $1 and action = 'social_plan.cover' order by id`, [d]).then((r) => r.rows);
+    where target_id = $1 and action = 'social_plan.thumbnail' order by id`, [d]).then((r) => r.rows);
 
 /** A media row inserted as the owner (no bucket needed). */
 async function insertMedia(d, { kind = "event_photo", status = "ready" } = {}) {
@@ -105,39 +105,39 @@ describe("migration 20261127120000_social_post_cover.sql", () => {
 });
 
 // ── 2. The module ───────────────────────────────────────────────────────────
-describe("social cover (admin_app)", () => {
-  test("no override: the cover is the Event Image, the logo by default, then an uploaded one", async () => {
+describe("the Social plan Thumbnail (admin_app)", () => {
+  test("no override: the Thumbnail is the Event Image, the logo by default, then an uploaded one", async () => {
     const d = date();
     const none = await so.getWorkOrder(pool, d);
-    assert.deepEqual([none.cover.source, none.cover.eventImageSource, none.cover.file.path],
+    assert.deepEqual([none.thumbnail.source, none.thumbnail.eventImageSource, none.thumbnail.file.path],
       ["event_image", "default", "/assets/images/brand/bocc-logo-square.png"]);
     const img = await insertMedia(d, { kind: "event_image" });
     const up = await so.getWorkOrder(pool, d);
-    assert.deepEqual([up.cover.source, up.cover.eventImageSource, up.cover.mediaId, up.cover.file.key],
+    assert.deepEqual([up.thumbnail.source, up.thumbnail.eventImageSource, up.thumbnail.mediaId, up.thumbnail.file.key],
       ["event_image", "uploaded", img, `events/${d}/${img}/display.jpg`]);
   });
 
-  test("setCover: set, change and clear an override, each audited; clearing returns to the Event Image", async () => {
+  test("setThumbnail: set, change and clear an override, each audited; clearing returns to the Event Image", async () => {
     const [d, earlier] = [date(), date()];
     const mine = await insertMedia(d);
     const old = await insertMedia(earlier);
-    const r1 = await so.setCover(actor.id, d, mine);
+    const r1 = await so.setThumbnail(actor.id, d, mine);
     assert.deepEqual(r1, { changed: true, eventCreated: false });
     assert.equal((await planRow(d)).thumbnail_media_id, mine);
     let w = await so.getWorkOrder(pool, d);
-    assert.deepEqual([w.cover.source, w.cover.mediaId, w.cover.file.key], ["override", mine, `events/${d}/${mine}/display.jpg`]);
-    assert.deepEqual(await so.setCover(actor.id, d, mine), { changed: false, eventCreated: false });
+    assert.deepEqual([w.thumbnail.source, w.thumbnail.mediaId, w.thumbnail.file.key], ["override", mine, `events/${d}/${mine}/display.jpg`]);
+    assert.deepEqual(await so.setThumbnail(actor.id, d, mine), { changed: false, eventCreated: false });
 
-    await so.setCover(actor.id, d, old); // a photo from another event is fine
-    assert.equal((await so.getWorkOrder(pool, d)).cover.eventDate, earlier);
+    await so.setThumbnail(actor.id, d, old); // a photo from another event is fine
+    assert.equal((await so.getWorkOrder(pool, d)).thumbnail.eventDate, earlier);
 
-    assert.deepEqual(await so.setCover(actor.id, d, ""), { changed: true, eventCreated: false });
+    assert.deepEqual(await so.setThumbnail(actor.id, d, ""), { changed: true, eventCreated: false });
     w = await so.getWorkOrder(pool, d);
-    assert.deepEqual([w.cover.source, w.cover.eventImageSource], ["event_image", "default"]);
-    assert.deepEqual(await so.setCover(actor.id, d, ""), { changed: false, eventCreated: false });
+    assert.deepEqual([w.thumbnail.source, w.thumbnail.eventImageSource], ["event_image", "default"]);
+    assert.deepEqual(await so.setThumbnail(actor.id, d, ""), { changed: false, eventCreated: false });
 
-    const a = await coverAudits(d);
-    assert.deepEqual(a.map((x) => [x.actor_user_id, x.details.before.cover_media_id, x.details.after.cover_media_id]), [
+    const a = await thumbnailAudits(d);
+    assert.deepEqual(a.map((x) => [x.actor_user_id, x.details.before.thumbnail_media_id, x.details.after.thumbnail_media_id]), [
       [actor.id, null, mine], [actor.id, mine, old], [actor.id, old, null],
     ]);
     assert.equal(a[0].details.created, true, "the first set creates the post");
@@ -145,51 +145,65 @@ describe("social cover (admin_app)", () => {
 
   test("clearing with no post creates nothing", async () => {
     const d = date();
-    assert.deepEqual(await so.setCover(actor.id, d, ""), { changed: false, eventCreated: false });
+    assert.deepEqual(await so.setThumbnail(actor.id, d, ""), { changed: false, eventCreated: false });
     assert.equal(await planRow(d), null);
-    assert.deepEqual(await coverAudits(d), []);
+    assert.deepEqual(await thumbnailAudits(d), []);
   });
 
-  test("only a ready, publicly usable Photo from Event can be the cover", async () => {
+  test("only a ready, publicly usable Photo from Event can be the Thumbnail", async () => {
     const d = date();
     const video = await insertMedia(d, { kind: "promo_video" });
     const board = await insertMedia(d, { kind: "signin_board" });
     const img = await insertMedia(d, { kind: "event_image" });
     const pending = await insertMedia(d, { status: "pending" });
     for (const id of [video, board, img, randomUUID()]) {
-      await assert.rejects(so.setCover(actor.id, d, id), (e) => /isn't a Photo from Event/.test(e.errors.cover), id);
+      await assert.rejects(so.setThumbnail(actor.id, d, id), (e) => /isn't a Photo from Event/.test(e.errors.thumbnail), id);
     }
-    await assert.rejects(so.setCover(actor.id, d, pending), (e) => /finished uploading/.test(e.errors.cover));
-    await assert.rejects(so.setCover(actor.id, d, "nope"), (e) => /Choose a photo/.test(e.errors.cover));
+    await assert.rejects(so.setThumbnail(actor.id, d, pending), (e) => /finished uploading/.test(e.errors.thumbnail));
+    await assert.rejects(so.setThumbnail(actor.id, d, "nope"), (e) => /Choose a photo/.test(e.errors.thumbnail));
     assert.equal(await planRow(d), null, "nothing created");
   });
 
-  test("the video is still required for ready; the cover doesn't change that", async () => {
+  test("the video is still required for ready; the Thumbnail doesn't change that", async () => {
     const d = date();
     await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-cover", externalId: "" });
-    await so.setCover(actor.id, d, await insertMedia(d));
+    await so.setThumbnail(actor.id, d, await insertMedia(d));
     await assert.rejects(so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready" }),
       (e) => e.errors.status === "Not ready yet: Upload the promo video.");
     await so.setVideo(actor.id, d, await insertMedia(d, { kind: "promo_video" }));
     assert.deepEqual((await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready" })).changed, true);
   });
 
-  test("deleting the override photo returns the cover to the Event Image", async () => {
+  test("savePlan stores the Thumbnail timecode; a stale tab's old coverNote field still saves it", async () => {
     const d = date();
-    const photo = await insertMedia(d);
-    await so.setCover(actor.id, d, photo);
-    await media.deleteMedia(actor.id, { deleteObject: async () => {} }, photo);
-    assert.equal((await so.getWorkOrder(pool, d)).cover.source, "event_image");
+    await so.savePlan(actor.id, d, { baseCaption: "Coffee", thumbnailTimecode: "0:03" });
+    assert.equal((await planRow(d)).thumbnail_timecode, "0:03");
+    assert.equal((await so.getWorkOrder(pool, d)).thumbnailTimecode, "0:03");
+    await so.savePlan(actor.id, d, { baseCaption: "Coffee", coverNote: "0:05" });
+    assert.equal((await planRow(d)).thumbnail_timecode, "0:05");
+    const { rows } = await owner.query(
+      `select details from audit_log where target_id = $1 and action = 'social_plan.update' order by id`, [d]);
+    assert.deepEqual(rows.at(-1).details.after.thumbnail_timecode, "0:05");
+    await assert.rejects(so.savePlan(actor.id, d, { thumbnailTimecode: "x".repeat(501) }),
+      (e) => /At most 500/.test(e.errors.thumbnailTimecode));
   });
 
-  test("listCoverChoices: ready, publicly usable photos of this and earlier events, newest first", async () => {
+  test("deleting the override photo returns the Thumbnail to the Event Image", async () => {
+    const d = date();
+    const photo = await insertMedia(d);
+    await so.setThumbnail(actor.id, d, photo);
+    await media.deleteMedia(actor.id, { deleteObject: async () => {} }, photo);
+    assert.equal((await so.getWorkOrder(pool, d)).thumbnail.source, "event_image");
+  });
+
+  test("listThumbnailChoices: ready, publicly usable photos of this and earlier events, newest first", async () => {
     const [a, b, c] = [date(), date(), date()];
     const pa = await insertMedia(a);
     const pb = await insertMedia(b);
     await insertMedia(b, { status: "pending" });
     await insertMedia(b, { kind: "signin_board" });
     await insertMedia(c); // after b: not offered for b
-    const got = (await so.listCoverChoices(pool, b)).filter((p) => [a, b, c].includes(p.eventDate));
+    const got = (await so.listThumbnailChoices(pool, b)).filter((p) => [a, b, c].includes(p.eventDate));
     assert.deepEqual(got.map((p) => p.id), [pb, pa]);
     assert.deepEqual(Object.keys(got[0]).sort(), ["contentType", "eventDate", "id", "thumbKey"]);
   });
@@ -198,7 +212,7 @@ describe("social cover (admin_app)", () => {
 // ── 3. Over HTTP ────────────────────────────────────────────────────────────
 // Needs MinIO: the photo choices are only offered when media storage is set up.
 const skip = process.env.STORAGE_ENDPOINT ? false : "MinIO not running (STORAGE_ENDPOINT unset)";
-describe("the Cover image block over HTTP", { timeout: 300_000, skip }, () => {
+describe("the Thumbnail block over HTTP", { timeout: 300_000, skip }, () => {
   let server, admin, social;
   const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -226,32 +240,46 @@ describe("the Cover image block over HTTP", { timeout: 300_000, skip }, () => {
     const d = httpDate();
     const photo = await insertMedia(d);
     const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
-    assert.ok(page.includes('id="social-cover"'));
+    assert.ok(page.includes('id="social-thumbnail"'));
+    assert.match(page, /<h3 id="h-social-thumbnail"[^>]*>Thumbnail<\/h3>/, "the field is called Thumbnail");
+    const section = /<section[^>]*id="social"[\s\S]*?<\/section>/.exec(page)[0];
+    assert.ok(!/cover/i.test(section.replace(/<[^>]+>/g, " ")), "no cover wording left on the Social plan tab");
+    assert.ok(/>Use as Thumbnail<\/button>/.test(section));
+    assert.match(page, /<label for="thumbnailTimecode"[^>]*>Thumbnail timecode <span class="muted"[^>]*>\(the frame of the video to use as the Thumbnail where a Thumbnail can't be uploaded/,
+      "the hint says when the timecode is used");
+    assert.ok(page.includes('name="thumbnailTimecode"'));
     assert.ok(page.includes("Event Image (the BOCC logo)"), "the default is named");
     assert.ok(page.includes(`value="${photo}"`), "the photo is offered");
 
-    const set = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_cover", mediaId: photo } });
+    const set = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_thumbnail", mediaId: photo } });
     assert.equal(set.status, 303);
-    assert.equal(set.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_cover#social-cover`);
+    assert.equal(set.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_thumbnail#social-thumbnail`);
     assert.equal((await planRow(d)).thumbnail_media_id, photo);
-    const after = await (await req(`/admin/events/${d}/?tab=social&notice=social_cover`, { cookie: admin.cookie })).text();
-    assert.ok(after.includes("Cover image saved."));
+    const after = await (await req(`/admin/events/${d}/?tab=social&notice=social_thumbnail`, { cookie: admin.cookie })).text();
+    assert.ok(after.includes("Thumbnail saved."));
     assert.ok(after.includes(`Photo from Event (${d})`));
     assert.ok(after.includes("Use the Event Image"));
 
-    const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_cover", mediaId: "" } });
+    // A tab opened before the rename still posts the old action name: it sets the Thumbnail.
+    const other = await insertMedia(d);
+    const stale = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_cover", mediaId: other } });
+    assert.equal(stale.status, 303);
+    assert.equal(stale.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_thumbnail#social-thumbnail`);
+    assert.equal((await planRow(d)).thumbnail_media_id, other);
+
+    const clear = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_thumbnail", mediaId: "" } });
     assert.equal(clear.status, 303);
     assert.equal((await planRow(d)).thumbnail_media_id, null);
 
     const bad = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "social_cover", mediaId: await insertMedia(d, { kind: "signin_board" }) } });
+      form: { action: "social_thumbnail", mediaId: await insertMedia(d, { kind: "signin_board" }) } });
     assert.equal(bad.status, 400);
     assert.match(await bad.text(), /t a Photo from Event/);
 
-    const soc = await req(`/admin/events/${d}/`, { cookie: social.cookie, method: "POST", form: { action: "social_cover", mediaId: photo } });
+    const soc = await req(`/admin/events/${d}/`, { cookie: social.cookie, method: "POST", form: { action: "social_thumbnail", mediaId: photo } });
     assert.equal(soc.status, 403);
     const wrong = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", origin: "https://evil.example",
-      form: { action: "social_cover", mediaId: photo } });
+      form: { action: "social_thumbnail", mediaId: photo } });
     assert.equal(wrong.status, 403);
     assert.equal((await planRow(d)).thumbnail_media_id, null, "neither wrote anything");
   });

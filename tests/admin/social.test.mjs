@@ -203,7 +203,7 @@ describe("the Social plan module (admin_app)", () => {
     const fresh = await so.getWorkOrder(pool, d);
     assert.deepEqual([fresh.exists, fresh.actionable, fresh.eventStatus], [false, false, "scheduled"]);
 
-    const res = await so.savePlan(actor.id, d, { baseCaption: "  Coffee!\r\nTuesday.  ", extraHashtags: "founders, #Networking", coverNote: "", publishAt: "" });
+    const res = await so.savePlan(actor.id, d, { baseCaption: "  Coffee!\r\nTuesday.  ", extraHashtags: "founders, #Networking", thumbnailTimecode: "", publishAt: "" });
     assert.deepEqual(res, { changed: true, eventCreated: true });
     assert.equal((await owner.query(`select status from events where event_date = $1`, [d])).rows[0].status, "scheduled");
     const row = await planRow(d);
@@ -257,12 +257,12 @@ describe("the Social plan module (admin_app)", () => {
     const dayAfter = new Date(Date.parse(`${d}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10);
     await assert.rejects(so.savePlan(actor.id, d, { baseCaption: "Coffee", publishAt: `${dayAfter}T07:00` }), (e) => /after the event/.test(e.errors.publishAt));
 
-    assert.deepEqual(await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready", coverNote: "Frame 0:02" }), { changed: true, eventCreated: false });
+    assert.deepEqual(await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready", thumbnailTimecode: "Frame 0:02" }), { changed: true, eventCreated: false });
     const w = await so.getWorkOrder(pool, d);
     assert.deepEqual([w.ready, w.actionable, w.problems, w.video.id, w.video.kind], [true, true, [], vid, "promo_video"]);
     assert.equal(w.channels.find((c) => c.channel === "facebook").caption, "Coffee\n\nRSVP: https://luma.com/bocc-test");
     assert.equal(w.channels.find((c) => c.channel === "instagram").firstComment, "RSVP: https://luma.com/bocc-test");
-    assert.equal(w.coverNote, "Frame 0:02");
+    assert.equal(w.thumbnailTimecode, "Frame 0:02");
     const acts = (await audits(d)).map((a) => a.action);
     assert.deepEqual(acts, ["social_plan.video", "social_plan.update"]);
 
@@ -422,7 +422,7 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
   test("save, refused ready (400 with the reasons, re-filled), social media post override, and the readiness lines", async () => {
     const d = httpDate();
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
-      form: { action: "social_plan", baseCaption: "Coffee <b>Tuesday</b>", extraHashtags: "founders", coverNote: "", publishAt: `${so.mondayBefore(d)}T08:30` } });
+      form: { action: "social_plan", baseCaption: "Coffee <b>Tuesday</b>", extraHashtags: "founders", thumbnailTimecode: "", publishAt: `${so.mondayBefore(d)}T08:30` } });
     assert.equal(ok.status, 303);
     assert.equal(ok.headers.get("location"), `/admin/events/${d}/?tab=social&notice=social_plan#social`);
     const row = await planRow(d);
@@ -504,14 +504,15 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
     assert.equal(unknown.status, 400);
   });
 
-  test("the cover wording: cover image intro, Thumbnail timecode, and the Publish at default hint (#41)", async () => {
+  test("the Thumbnail wording: Thumbnail intro, Thumbnail timecode, and the Publish at default hint (#41, #57)", async () => {
     const d = "2086-11-19"; // a Tuesday; the Monday before is Nov 18
     const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
     const text = page.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-    assert.ok(text.includes("The video's cover image on the platforms that support this feature"), "cover image intro");
-    assert.ok(!text.includes("promo video's cover on the platforms"), "the old intro is gone");
-    assert.match(page, /<label for="coverNote"[^>]*>Thumbnail timecode </);
-    assert.ok(text.includes("the frame of the video to use where a cover image can't be uploaded, for example \"0:03\""), "timecode hint");
+    assert.ok(text.includes("The video's Thumbnail on the platforms that let you upload one"), "Thumbnail intro");
+    const section = /<section[^>]*id="social"[\s\S]*?<\/section>/.exec(page)[0].replace(/<[^>]+>/g, " ");
+    assert.ok(!/cover/i.test(section), "no cover wording left on the Social plan tab");
+    assert.match(page, /<label for="thumbnailTimecode"[^>]*>Thumbnail timecode </);
+    assert.ok(text.includes("the frame of the video to use as the Thumbnail where a Thumbnail can't be uploaded, for example \"0:03\""), "timecode hint");
     assert.ok(!text.includes("Cover note"), "no Cover note label left");
     assert.ok(text.includes("(blank = the Monday before the event, 7:00 AM Eastern (Mon, Nov 18))"), "Publish at hint");
   });

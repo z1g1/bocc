@@ -97,7 +97,7 @@ export const CAPTION_LIMITS = Object.freeze({
 /** Field limits; keep in step with the CHECKs in migration 20261122120000_social_posts.sql. */
 export const LIMITS = Object.freeze({
   baseCaption: 2000,
-  coverNote: 500,
+  thumbnailTimecode: 500,
   extraHashtags: 10,
   hashtag: 50,
   caption: 5000,
@@ -304,17 +304,17 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
   return null;
 }
 
-// ── Cover image (ticket #22) ─────────────────────────────────────────────────
+// ── Thumbnail (tickets #22, #57) ─────────────────────────────────────────────
 
 /**
- * The promo video's cover image. With no override it is the event's Event Image
+ * The promo video's Thumbnail (GLOSSARY.md). With no override it is the event's Event Image
  * (event-image-rules.mjs resolveEventImage: uploaded, referenced, or the BOCC logo);
  * an override is a publicly usable, ready `event_photo`, a Photo from Event (social_plans.thumbnail_media_id).
- * An override that can't be used falls back to the Event Image. The cover is the
- * display copy (a JPEG at most 1600px on its long edge, the image's own shape; the
+ * An override that can't be used falls back to the Event Image. The Thumbnail file is
+ * the display copy (a JPEG at most 1600px on its long edge, the image's own shape; the
  * original can be up to 25 MB, too big for some uploaders; video platforms crop
- * covers themselves), plus its thumbnail
- * for the admin page's preview. Files are { key, contentType } (private bucket) or
+ * Thumbnails themselves), plus `thumb`, its small gallery preview copy (thumb_key, not
+ * the Thumbnail itself) for the admin page's preview. Files are { key, contentType } (private bucket) or
  * { path, contentType, width, height } (checked in under public/).
  * @param {{ override?: null | { id: string, eventDate: string, kind: string, status: string, publiclyUsable: boolean,
  *            displayKey: string, thumbKey: string },
@@ -322,7 +322,7 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
  * @returns {{ source: "override"|"event_image", eventImageSource: string|null, mediaId: string|null,
  *             eventDate: string|null, file: object, thumb: object }}
  */
-export function resolveSocialCover({ override = null, eventImage }) {
+export function resolveThumbnail({ override = null, eventImage }) {
   if (override && override.kind === "event_photo" && override.status === "ready" && override.publiclyUsable) {
     return {
       source: "override", eventImageSource: null, mediaId: override.id, eventDate: override.eventDate,
@@ -339,16 +339,16 @@ export function resolveSocialCover({ override = null, eventImage }) {
 /**
  * The whole work order for one event, calculated (nothing here is stored).
  * @param {{ date: string, event: { status: string, exists?: boolean },
- *           post: null | { videoMediaId: string|null, coverNote: string|null, baseCaption: string|null,
+ *           post: null | { videoMediaId: string|null, thumbnailTimecode: string|null, baseCaption: string|null,
  *                          extraHashtags: string[], publishAt: Date, status: string, updatedAt?: Date,
  *                          channels: Record<string, { caption: string|null, firstComment: string|null, status: string,
  *                            postUrl: string|null, verifiedAt: Date|null, commentPostedAt: Date|null, notes: string|null }> },
  *           lumaUrl: string|null, video: null | { id: string, kind: string, status: string, contentType: string, sizeBytes: number },
- *           coverMedia?: object|null, eventImage?: object|null }} s
- *   coverMedia: the event_media row of post.coverMediaId (null = none); eventImage: the
- *   resolved Event Image. Both only feed `cover` (resolveSocialCover).
+ *           thumbnailMedia?: object|null, eventImage?: object|null }} s
+ *   thumbnailMedia: the event_media row of post.thumbnailMediaId (null = none); eventImage: the
+ *   resolved Event Image. Both only feed `thumbnail` (resolveThumbnail).
  */
-export function buildWorkOrder({ date, event, post, lumaUrl, video, coverMedia = null, eventImage = null }) {
+export function buildWorkOrder({ date, event, post, lumaUrl, video, thumbnailMedia = null, eventImage = null }) {
   const texts = { baseCaption: post?.baseCaption ?? null, lumaUrl, extraHashtags: post?.extraHashtags ?? [] };
   const channels = CHANNEL_KEYS.map((channel) => {
     const row = post?.channels?.[channel] ?? null;
@@ -381,14 +381,14 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, coverMedia =
     publishAt,
     publishAtDisplay: formatPublishAt(publishAt),
     publishAtIsDefault: publishAt.getTime() === defaultPublishAt(date).getTime(),
-    coverNote: post?.coverNote ?? null,
+    thumbnailTimecode: post?.thumbnailTimecode ?? null,
     baseCaption: post?.baseCaption ?? null,
     extraHashtags: post?.extraHashtags ?? [],
     tiktokHashtags: tiktokHashtags(post?.extraHashtags ?? []),
     lumaUrl,
     video,
-    /** resolveSocialCover(); null only when the caller passed no Event Image. Never a ready problem. */
-    cover: eventImage ? resolveSocialCover({ override: coverMedia, eventImage }) : null,
+    /** resolveThumbnail(); null only when the caller passed no Event Image. Never a ready problem. */
+    thumbnail: eventImage ? resolveThumbnail({ override: thumbnailMedia, eventImage }) : null,
     updatedAt: post?.updatedAt ?? null,
     channels,
   };

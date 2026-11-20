@@ -77,7 +77,7 @@ const NOTICES: Record<string, string> = {
   unlink: "Listing cleared.",
   social_plan: "Social plan saved.",
   social_video: "Promo video attached to the Social plan.",
-  social_cover: "Cover image saved.",
+  social_thumbnail: "Thumbnail saved.",
   social_media_post: "Social media post text saved.",
   linkedin_posted: "LinkedIn event created and its LinkedIn post published.",
   linkedin_retry: "The pending LinkedIn create was cleared: you can create the event again.",
@@ -92,18 +92,18 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
   social_plan: (actor, d, input) => so.savePlan(actor, d, input),
   social_video: (actor, d, input) => so.setVideo(actor, d, input.videoMediaId),
-  social_cover: (actor, d, input) => so.setCover(actor, d, input.mediaId ?? ""),
+  social_thumbnail: (actor, d, input) => so.setThumbnail(actor, d, input.mediaId ?? ""),
   social_media_post: (actor, d, input) => so.saveSocialMediaPost(actor, d, input.channel, input),
   linkedin_cancel_done: async (actor, d) => (await import("../../../lib/linkedin/linkedin.mjs")).markCancelledOnLinkedIn(actor, d),
 };
 // Saves the public page doesn't show: no purge.
 const NO_PURGE = new Set(["linkedin_cancel_done"]);
-const SOCIAL = new Set(["social_plan", "social_video", "social_cover", "social_media_post"]);
+const SOCIAL = new Set(["social_plan", "social_video", "social_thumbnail", "social_media_post"]);
 // Where a social form's redirect lands: its own block, else the section.
-const ANCHORS: Record<string, string> = { social_cover: "#social-cover", linkedin_cancel_done: "#linkedin-cancel" };
+const ANCHORS: Record<string, string> = { social_thumbnail: "#social-thumbnail", linkedin_cancel_done: "#linkedin-cancel" };
 const DONE: Record<string, string> = {
   save: "saved", report: "report", link: "link", unlink: "unlink",
-  social_plan: "social_plan", social_video: "social_video", social_cover: "social_cover", social_media_post: "social_media_post",
+  social_plan: "social_plan", social_video: "social_video", social_thumbnail: "social_thumbnail", social_media_post: "social_media_post",
   linkedin_cancel_done: "linkedin_cancel_done",
 };
 
@@ -129,7 +129,9 @@ if (Astro.request.method === "POST") {
   } catch {
     return new Response("Bad Request", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
-  const action = String(data.get("action") ?? "");
+  const rawAction = String(data.get("action") ?? "");
+  // DEPRECATED: a tab opened before #57 still posts `social_cover` (now social_thumbnail). #60 drops it.
+  const action = rawAction === "social_cover" ? "social_thumbnail" : rawAction;
   const run = ACTIONS[action];
   if (LINKEDIN_ACTIONS.has(action)) {
     // A live success that reached `posted`, and allow-retry, 303 back to the section
