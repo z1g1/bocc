@@ -125,12 +125,13 @@ A person's own account on LinkedIn, such as Zack's.
 A text or video post on LinkedIn, made by either a LinkedIn profile or the LinkedIn page.
 
 **LinkedIn repost**:
-A LinkedIn profile sharing an existing LinkedIn post or LinkedIn event to its own followers.
+A LinkedIn profile or the LinkedIn page sharing an existing LinkedIn post or LinkedIn event to
+its own followers.
 _Avoid_: Using it for the LinkedIn post that announces a new LinkedIn event
 
 **LinkedIn event**:
 An event on LinkedIn hosted by the LinkedIn page. Its URL is the Event's LinkedIn Listing.
-Creating one always comes with a LinkedIn post from the LinkedIn page that links to it.
+Creating one always comes with a LinkedIn post that links to it, which makes the event visible.
 
 **LinkedIn connection**:
 A link between two people on LinkedIn. LinkedIn's own term, not an admin-app term.
