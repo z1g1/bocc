@@ -63,7 +63,7 @@ function dates(n) {
 const ensureEvent = (d) => owner.query("insert into events (event_date) values ($1) on conflict do nothing", [d]);
 
 /** Seed a ready Photo from Event or uploaded Event Image as the owner, its cover made under the old rule. */
-async function seed(d, { kind = "social_photo", cover = true, outdated = cover } = {}) {
+async function seed(d, { kind = "event_photo", cover = true, outdated = cover } = {}) {
   await ensureEvent(d);
   const id = randomUUID();
   const k = (v) => `events/${d}/${id}/${v}.jpg`;
@@ -71,7 +71,7 @@ async function seed(d, { kind = "social_photo", cover = true, outdated = cover }
     `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, image_16x9_key, image_16x9_outdated,
                               content_type, size_bytes, publicly_usable, status)
      values ($1, $2, $3, $4, $5, $6, $7, $8, 'image/jpeg', 10, $9, 'ready')`,
-    [id, d, kind, k("original"), k("display"), k("thumb"), cover ? k("cover") : null, outdated, kind === "social_photo"]);
+    [id, d, kind, k("original"), k("display"), k("thumb"), cover ? k("cover") : null, outdated, kind === "event_photo"]);
   return id;
 }
 const row = (id) => owner.query("select * from event_media where id = $1", [id]).then((r) => r.rows[0]);
@@ -185,7 +185,7 @@ describe("an outdated 16:9 Event Image", () => {
 });
 
 describe("remaking an outdated 16:9 Event Image against MinIO", { skip }, () => {
-  for (const kind of ["social_photo", "event_image"]) {
+  for (const kind of ["event_photo", "event_image"]) {
     test(`${kind}: start signs a PUT to the same key; complete waits for the new file, then clears the flag (audited)`, async () => {
       const [d] = dates(1);
       const id = await seed(d, { kind });

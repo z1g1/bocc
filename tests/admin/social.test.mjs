@@ -64,7 +64,7 @@ async function insertMedia(d, { kind = "promo_video", status = "ready", contentT
     `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
      values ($1, $2, $3, $4, $5, $6, $7, 4800000, $8, $9)`,
     [id, d, kind, `${base}/original.${video ? "mp4" : "jpg"}`, video ? null : `${base}/display.jpg`, video ? null : `${base}/thumb.jpg`,
-      contentType ?? (video ? "video/mp4" : "image/jpeg"), status, kind === "social_photo"]);
+      contentType ?? (video ? "video/mp4" : "image/jpeg"), status, kind === "event_photo"]);
   return id;
 }
 const lumaLink = (d) => el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
@@ -282,7 +282,7 @@ describe("social module (admin_app)", () => {
 
   test("setVideo: only a ready promo video of the same event", async () => {
     const [d, other] = [date(), date()];
-    const photo = await insertMedia(d, { kind: "social_photo" });
+    const photo = await insertMedia(d, { kind: "event_photo" });
     const pending = await insertMedia(d, { status: "pending" });
     const elsewhere = await insertMedia(other);
     await assert.rejects(so.setVideo(actor.id, d, photo), (e) => /isn't a promo video of this event/.test(e.errors.video));

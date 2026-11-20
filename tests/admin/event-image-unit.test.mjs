@@ -14,7 +14,7 @@ const uploaded = {
   thumbKey: "events/2026-11-24/1111/thumb.jpg", image16x9Key: "events/2026-11-24/1111/cover.jpg", contentType: "image/png",
 };
 const photo = {
-  id: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17", kind: "social_photo", status: "ready",
+  id: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17", kind: "event_photo", status: "ready",
   originalKey: "events/2026-11-17/2222/original.jpg", displayKey: "events/2026-11-17/2222/display.jpg",
   thumbKey: "events/2026-11-17/2222/thumb.jpg", image16x9Key: "events/2026-11-17/2222/cover.jpg", contentType: "image/jpeg",
 };

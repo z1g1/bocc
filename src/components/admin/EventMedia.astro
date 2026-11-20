@@ -4,7 +4,7 @@
 // order, ADR 0008). Props are stable for the event page:
 //   <EventMedia date="2026-11-24" />
 //
-// - Two sections, "Sign-in board" and "Photos from Event" (kind social_photo; the label
+// - Two sections, "Sign-in board" and "Photos from Event" (kind event_photo, named social_photo until #54; the label
 //   was "Social photos" until ADR 0012), each with its own upload form
 //   (kind fixed by a hidden field), status line, gallery and unfinished uploads. No
 //   "OK to use publicly" control: every photo from the event is covered by the posted photo
@@ -48,7 +48,7 @@ const SECTIONS = [
     pickLabel: "Sign-in board photos (JPEG or PNG)", button: "Upload sign-in board photos",
   },
   {
-    kind: "social_photo", slug: "social", heading: "Photos from Event", label: "Photo from Event",
+    kind: "event_photo", slug: "social", heading: "Photos from Event", label: "Photo from Event",
     empty: "No photos from the event yet.",
     pickLabel: "Photos from Event (JPEG or PNG)", button: "Upload photos from the event",
   },

@@ -167,7 +167,7 @@ export function uploadRequestBody({ eventDate, kind, publiclyUsable, original, d
   return {
     eventDate,
     kind,
-    publiclyUsable: kind === "social_photo" && publiclyUsable === true,
+    publiclyUsable: kind === "event_photo" && publiclyUsable === true,
     original: { contentType: original.contentType, size: original.size },
     display: { contentType: "image/jpeg", size: display.size },
     thumb: { contentType: "image/jpeg", size: thumb.size },

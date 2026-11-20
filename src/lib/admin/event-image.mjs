@@ -70,15 +70,15 @@ export async function getEventImage(db, date) {
 /** "About the last 8 events": how many recent events with photos the picker offers. */
 export const PICK_EVENTS = 8;
 
-// The pickable photos for $1: ready, publicly usable social photos of the PICK_EVENTS
+// The pickable photos for $1: ready, publicly usable Photos from Event of the PICK_EVENTS
 // most recent event dates (with such photos) on or before $1.
 const PICKABLE = `
   with recent as (
     select distinct event_date from public.event_media
-     where kind = 'social_photo' and status = 'ready' and publicly_usable and event_date <= $1
+     where kind = 'event_photo' and status = 'ready' and publicly_usable and event_date <= $1
      order by event_date desc limit ${PICK_EVENTS})
   select ${COLUMNS} from public.event_media join recent using (event_date)
-   where kind = 'social_photo' and status = 'ready' and publicly_usable`;
+   where kind = 'event_photo' and status = 'ready' and publicly_usable`;
 
 /**
  * The picker's photos for one event, newest event first, then in upload order.

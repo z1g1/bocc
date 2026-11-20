@@ -3,7 +3,7 @@
 //
 // Resolution order:
 //   1. uploaded    the event's own `event_image` row (at most one ready per event)
-//   2. referenced  a publicly usable `social_photo` the event points at (ticket #21 adds
+//   2. referenced  a publicly usable `event_photo` (Photo from Event) the event points at (ticket #21 adds
 //                  the reference; until then the caller passes none)
 //   3. default     the square BOCC logo, with a checked-in 16:9 version: the logo at
 //                  full height on the "Just the Beans" background (ticket #40)
