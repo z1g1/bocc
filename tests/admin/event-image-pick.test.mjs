@@ -56,7 +56,7 @@ function dates(n) {
 const ensureEvent = (d) => owner.query("insert into events (event_date) values ($1) on conflict do nothing", [d]);
 
 /** Seed a ready Photo from Event (or another kind) as the owner. */
-async function seedPhoto(d, { kind = "social_photo", cover = false, status = "ready" } = {}) {
+async function seedPhoto(d, { kind = "event_photo", cover = false, status = "ready" } = {}) {
   await ensureEvent(d);
   const id = randomUUID();
   const k = (v, ext = "jpg") => `events/${d}/${id}/${v}.${ext}`;
@@ -64,7 +64,7 @@ async function seedPhoto(d, { kind = "social_photo", cover = false, status = "re
     `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, cover_key, content_type,
                               size_bytes, publicly_usable, status)
      values ($1, $2, $3, $4, $5, $6, $7, 'image/jpeg', 10, $8, $9)`,
-    [id, d, kind, k("original"), k("display"), k("thumb"), cover ? k("cover") : null, kind === "social_photo", status]);
+    [id, d, kind, k("original"), k("display"), k("thumb"), cover ? k("cover") : null, kind === "event_photo", status]);
   return id;
 }
 const row = (id) => owner.query("select * from event_media where id = $1", [id]).then((r) => r.rows[0]);
@@ -124,7 +124,7 @@ describe("schema: the Event Image reference", () => {
 
 // ── 2. Data module ──────────────────────────────────────────────────────────
 describe("the picker: publicly usable photos from about the last 8 events", () => {
-  test("lists ready social photos of the 8 most recent events with photos, on or before this one, newest first", async () => {
+  test("lists ready Photos from Event of the 8 most recent events with photos, on or before this one, newest first", async () => {
     const ds = dates(11); // ds[0] oldest … ds[10] the event being edited
     const target = ds[10];
     const photos = {};
@@ -245,7 +245,7 @@ describe("deleting a photo that is an Event Image", () => {
     const photo = await seedPhoto(p, { cover: true });
     const objects = [];
     const res = await media.deleteMedia(actor.id, { deleteObject: async ({ key }) => { objects.push(key); } }, photo);
-    assert.equal(res.kind, "social_photo");
+    assert.equal(res.kind, "event_photo");
     assert.equal(await row(photo), undefined);
     assert.ok(objects.includes(`events/${p}/${photo}/cover.jpg`));
   });
@@ -365,7 +365,7 @@ describe("switching and the 16:9 cover against MinIO", { skip }, () => {
     await assert.rejects(media.startCover(actor.id, storage(), photo, { size: COVER.length }), { status: 400 });
   });
 
-  test("the cover: a wrong size stays pending; only for ready social photos; size within the cap", async () => {
+  test("the cover: a wrong size stays pending; only for ready Photos from Event; size within the cap", async () => {
     const [p] = dates(1);
     const photo = await seedPhoto(p);
     const start = await media.startCover(actor.id, storage(), photo, { size: COVER.length + 1 });

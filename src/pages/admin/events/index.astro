@@ -83,14 +83,14 @@ const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "
     : (
       <div class="scroll">
         <table class="data">
-          <thead><tr><th>Date</th><th>Status</th><th>Location</th><th class="num">Gives and Asks</th><th class="num">Checked in</th><th>Bling</th></tr></thead>
+          <thead><tr><th>Date</th><th>Status</th><th>Location</th><th class="num">Attendee count</th><th class="num">Check-in count</th><th>Bling</th></tr></thead>
           <tbody>
             {past.rows.map((e: any) => (
               <tr>
                 <td><a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a></td>
                 <td>{e.reportMissing ? <strong class="missing">Report missing</strong> : statusText(e)}</td>
                 <td>{where(e)}</td>
-                <td class="num">{e.report?.givesAsksCount ?? ""}</td>
+                <td class="num">{e.report?.attendeeCount ?? ""}</td>
                 <td class="num">{e.checkinCount || ""}</td>
                 <td>{yesNo(e.report?.blingGiven)}</td>
               </tr>
@@ -106,7 +106,7 @@ const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "
       {page < pages && <a href={pageHref(page + 1)}>Older →</a>}
     </p>
   )}
-  <p class="muted">“Checked in” counts the check-in form (test rows left out). It is not attendance: not everyone checks in.</p>
+  <p class="muted">“Attendee count” is the official attendance, counted in the room. “Check-in count” counts the check-in form (test rows left out). It is not attendance: not everyone checks in.</p>
 </Admin>
 
 <style>

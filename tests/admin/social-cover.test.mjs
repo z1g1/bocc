@@ -51,7 +51,7 @@ const coverAudits = (d) => owner.query(
     where target_id = $1 and action = 'social_plan.cover' order by id`, [d]).then((r) => r.rows);
 
 /** A media row inserted as the owner (no bucket needed). */
-async function insertMedia(d, { kind = "social_photo", status = "ready" } = {}) {
+async function insertMedia(d, { kind = "event_photo", status = "ready" } = {}) {
   const id = randomUUID();
   const video = kind === "promo_video";
   const base = `events/${d}/${id}`;
@@ -60,7 +60,7 @@ async function insertMedia(d, { kind = "social_photo", status = "ready" } = {}) 
     `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, cover_key, content_type, size_bytes, status, publicly_usable)
      values ($1, $2, $3, $4, $5, $6, $7, $8, 4800000, $9, $10)`,
     [id, d, kind, `${base}/original.${video ? "mp4" : "jpg"}`, video ? null : `${base}/display.jpg`, video ? null : `${base}/thumb.jpg`,
-      kind === "event_image" ? `${base}/cover.jpg` : null, video ? "video/mp4" : "image/jpeg", status, kind === "social_photo"]);
+      kind === "event_image" ? `${base}/cover.jpg` : null, video ? "video/mp4" : "image/jpeg", status, kind === "event_photo"]);
   return id;
 }
 

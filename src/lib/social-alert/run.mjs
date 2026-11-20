@@ -9,10 +9,10 @@
 // connection per run, parameterized SQL only. The work order is built with the same
 // buildWorkOrder() the admin pages use (src/lib/admin/social-plan-rules.mjs).
 //
-// A second, independent check (ADR 0012, issue #24) reads each LinkedIn connection's
+// A second, independent check (ADR 0012, issue #24) reads each LinkedIn authentication's
 // expiry and LinkedIn display name (SELECT (user_id, expires_at, display_name) on
-// linkedin_connections, nothing in auth; migration
-// 20261126120000_social_checker_linkedin.sql, never the token or member URN) and pushes a "reconnect at /admin/account/" alert for each one with
+// linkedin_authentications, nothing in auth; migration
+// 20261126120000_social_checker_linkedin.sql, never the token or member URN) and pushes a "re-authenticate at /admin/account/" alert for each one with
 // under 10 days left or expired. Each check runs and alerts on its own: a failure in one
 // never stops the other. The run's outcome is the worse of the two ("failed" > "sent" >
 // "ok"); `linkedin` in the result carries the LinkedIn check's own outcome.
@@ -85,15 +85,15 @@ export async function readWorkOrder(db, date) {
 }
 
 /**
- * Every LinkedIn connection's expiry and its LinkedIn display name, soonest first. Never the token,
+ * Every LinkedIn authentication's expiry and its LinkedIn display name, soonest first. Never the token,
  * the member URN or anything else in the row (social_checker can't read them).
  * @param {{ query: Function }} db  connected as social_checker
  * @returns {Promise<Array<{ name: string|null, expiresAt: Date }>>}
  */
-export async function readLinkedInConnections(db) {
+export async function readLinkedInAuthentications(db) {
   const { rows } = await db.query(
     `select c.display_name as name, c.expires_at as "expiresAt"
-       from public.linkedin_connections c
+       from public.linkedin_authentications c
       order by c.expires_at, c.user_id`);
   return rows;
 }
@@ -118,8 +118,8 @@ async function connect(env) {
  * One run of the check.
  * @param {{ env?: Record<string, string|undefined>, context?: any, now?: Date,
  *           fetch?: typeof fetch, readOrder?: (date: string) => Promise<any>,
- *           readConnections?: () => Promise<Array<{ name: string|null, expiresAt: Date|string }>> }} [opts]
- *   readOrder / readConnections replace the database reads (tests); fetch replaces the ntfy call
+ *           readAuthentications?: () => Promise<Array<{ name: string|null, expiresAt: Date|string }>> }} [opts]
+ *   readOrder / readAuthentications replace the database reads (tests); fetch replaces the ntfy call
  * @returns {Promise<{ outcome: "skipped"|"ok"|"sent"|"failed", date?: string, alert?: object,
  *           linkedin?: { outcome: "ok"|"sent"|"failed", alerts: object[] } }>}
  */
@@ -136,7 +136,7 @@ const RANK = Object.freeze({ ok: 0, sent: 1, failed: 2 });
 
 /** runSocialCheck's body: the gates, then the two checks on one lazily opened connection. */
 async function check({
-  env = process.env, context = undefined, now = new Date(), fetch: doFetch = globalThis.fetch, readOrder, readConnections,
+  env = process.env, context = undefined, now = new Date(), fetch: doFetch = globalThis.fetch, readOrder, readAuthentications,
 } = {}) {
   const deployContext = context?.deploy?.context ?? null;
   if (!contextAllowed(deployContext)) {
@@ -172,7 +172,7 @@ async function check({
     });
     const linkedin = await linkedinCheck({
       now, siteUrl, ntfy, doFetch, alreadyAlerted: social.failedOn,
-      read: readConnections ?? (async () => readLinkedInConnections(await db())),
+      read: readAuthentications ?? (async () => readLinkedInAuthentications(await db())),
     });
     const outcome = RANK[linkedin.outcome] > RANK[social.outcome] ? linkedin.outcome : social.outcome;
     const result = { outcome, date };
@@ -221,32 +221,32 @@ async function socialCheck({ date, siteUrl, ntfy, doFetch, read }) {
 }
 
 /**
- * The LinkedIn connections' expiry. Logs counts only: the alert names the user, the
+ * The LinkedIn authentications' expiry. Logs counts only: the alert names the user, the
  * log never does.
  * @returns {Promise<{ outcome: "ok"|"sent"|"failed", alerts: object[] }>}
  */
 async function linkedinCheck({ now, siteUrl, ntfy, doFetch, read, alreadyAlerted }) {
-  let connections;
+  let authentications;
   try {
-    connections = await read();
+    authentications = await read();
   } catch (err) {
     if (err === alreadyAlerted) {
       logError("linkedin: not checked (no database connection; the failure alert is already sent)");
       return { outcome: "failed", alerts: [] };
     }
-    logError(`linkedin: could not read the connections: ${redact(err?.message ?? err)}`);
+    logError(`linkedin: could not read the LinkedIn authentications: ${redact(err?.message ?? err)}`);
     const alert = linkedinFailureAlert({ siteUrl });
     try { await push(alert, ntfy, doFetch); log("linkedin: failure alert sent"); } catch (e) { logError(`linkedin: ${e.message}`); }
     return { outcome: "failed", alerts: [alert] };
   }
-  if (connections.length === 0) {
-    log("linkedin: no connection; no alert");
+  if (authentications.length === 0) {
+    log("linkedin: no LinkedIn authentication; no alert");
     return { outcome: "ok", alerts: [] };
   }
-  const alerts = linkedinExpiryAlerts({ connections, now, siteUrl });
+  const alerts = linkedinExpiryAlerts({ authentications, now, siteUrl });
   if (alerts.length === 0) {
-    const n = connections.length;
-    log(`linkedin: ${n} connection${n === 1 ? "" : "s"}, none expiring within ${EXPIRY_ALERT_DAYS} days; no alert`);
+    const n = authentications.length;
+    log(`linkedin: ${n} LinkedIn authentication${n === 1 ? "" : "s"}, none expiring within ${EXPIRY_ALERT_DAYS} days; no alert`);
     return { outcome: "ok", alerts };
   }
   let sent = 0;

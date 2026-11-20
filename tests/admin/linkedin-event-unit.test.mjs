@@ -202,15 +202,15 @@ describe("checkCoverImage: PNG/JPEG by magic bytes, 480x270 minimum, 8 MiB cap, 
   });
 });
 
-describe("allowedActions: state x date x cancelled x location x connection x environment", () => {
+describe("allowedActions: state x date x cancelled x location x LinkedIn authentication x environment", () => {
   const NOW = new Date("2026-10-02T16:00:00Z"); // the CLI tests' clock: the Friday before
   const base = {
     date: "2026-10-06", now: NOW, event: { status: "scheduled", location: "lobby" },
-    ledger: null, connection: { level: "ok" }, live: true,
+    ledger: null, authentication: { level: "ok" }, live: true,
   };
   const codes = (over) => rules.allowedActions({ ...base, ...over }).refusals.map((r) => r.code);
 
-  it("an upcoming scheduled event, connected, nothing in the ledger: create, live", () => {
+  it("an upcoming scheduled event, authenticated, nothing in the ledger: create, live", () => {
     assert.deepEqual(rules.allowedActions(base), { action: "create", mode: "live", refusals: [] });
   });
   it("dry run everywhere LINKEDIN_LIVE isn't set", () => {
@@ -227,18 +227,26 @@ describe("allowedActions: state x date x cancelled x location x connection x env
     assert.deepEqual(codes({ event: { status: "scheduled", location: null } }), []);
     assert.deepEqual(codes({ event: { status: "scheduled", location: "food_hall" } }), []);
   });
-  it("live: refuses no connection and an expired one; amber is fine", () => {
-    assert.deepEqual(codes({ connection: null }), ["no_connection"]);
-    assert.deepEqual(codes({ connection: { level: "red" } }), ["expired"]);
-    assert.deepEqual(codes({ connection: { level: "amber" } }), []);
+  it("live: refuses no LinkedIn authentication and an expired one; amber is fine", () => {
+    assert.deepEqual(codes({ authentication: null }), ["no_authentication"]);
+    assert.deepEqual(codes({ authentication: { level: "red" } }), ["expired"]);
+    assert.deepEqual(codes({ authentication: { level: "amber" } }), []);
   });
-  it("dry run: no connection is not a refusal (the duplicate check is skipped)", () => {
-    assert.deepEqual(codes({ live: false, connection: null }), []);
-    assert.deepEqual(codes({ live: false, connection: { level: "red" } }), []);
+  it("dry run: no LinkedIn authentication is not a refusal (the duplicate check is skipped)", () => {
+    assert.deepEqual(codes({ live: false, authentication: null }), []);
+    assert.deepEqual(codes({ live: false, authentication: { level: "red" } }), []);
+  });
+  it("says LinkedIn authentication, never connection (GLOSSARY.md)", () => {
+    const msg = (over) => rules.allowedActions({ ...base, ...over }).refusals[0].message;
+    assert.equal(msg({ authentication: null }), "Authenticate with LinkedIn first.");
+    assert.equal(msg({ authentication: { level: "red" } }), "Your LinkedIn authentication has expired. Re-authenticate with LinkedIn first.");
+    for (const m of Object.values(rules.REFUSALS)) {
+      assert.doesNotMatch(m, /connect|Publish event/i, m);
+    }
   });
   it("lists every refusal at once", () => {
-    assert.deepEqual(codes({ date: "2026-09-29", event: { status: "cancelled", location: "other" }, connection: null }),
-      ["past", "cancelled", "location_other", "no_connection"]);
+    assert.deepEqual(codes({ date: "2026-09-29", event: { status: "cancelled", location: "other" }, authentication: null }),
+      ["past", "cancelled", "location_other", "no_authentication"]);
   });
   it("a ledger row for the date: create is refused and the row's recovery is offered", () => {
     const at = (status, over = {}) => rules.allowedActions({ ...base, ...over, ledger: { status } });
@@ -249,22 +257,22 @@ describe("allowedActions: state x date x cancelled x location x connection x env
     // Allow-retry doesn't care about the date or the event's state.
     assert.equal(at("pending", { date: "2026-09-29", event: { status: "cancelled", location: "other" } }).action, "allow_retry");
   });
-  it("a created row: Publish event is refused like create once past or cancelled, and without a live connection", () => {
+  it("a created row: Publish the LinkedIn post is refused like create once past or cancelled, and without a live LinkedIn authentication", () => {
     const at = (over) => rules.allowedActions({ ...base, ...over, ledger: { status: "created" } }).refusals.map((r) => r.code);
     assert.deepEqual(at({}), ["ledger"]);
     assert.deepEqual(at({ now: new Date("2026-10-06T11:30:00Z") }), ["ledger", "past"]);
     assert.deepEqual(at({ event: { status: "cancelled", location: "lobby" } }), ["ledger", "cancelled"]);
     // The post doesn't carry the location: "other" doesn't block it.
     assert.deepEqual(at({ event: { status: "scheduled", location: "other" } }), ["ledger"]);
-    assert.deepEqual(at({ connection: null }), ["ledger", "no_connection"]);
-    assert.deepEqual(at({ connection: null, live: false }), ["ledger"]);
+    assert.deepEqual(at({ authentication: null }), ["ledger", "no_authentication"]);
+    assert.deepEqual(at({ authentication: null, live: false }), ["ledger"]);
   });
 });
 
-describe("publishRefusals: the server's check for one Publish event request", () => {
+describe("publishRefusals: the server's check for one Publish the LinkedIn post request", () => {
   const ctx = {
     date: "2026-10-06", now: new Date("2026-10-02T16:00:00Z"), event: { status: "scheduled", location: "lobby" },
-    ledger: { status: "created" }, connection: { level: "ok" }, live: true,
+    ledger: { status: "created" }, authentication: { level: "ok" }, live: true,
   };
   const codes = (over, req = { confirm: "live" }) => rules.publishRefusals({ ...ctx, ...over }, req).map((r) => r.code);
   it("a created row, confirmed, upcoming: allowed", () => assert.deepEqual(codes({}), []));
@@ -274,10 +282,10 @@ describe("publishRefusals: the server's check for one Publish event request", ()
     assert.deepEqual(codes({ ledger: { status: "pending" } }), ["not_created"]);
     assert.deepEqual(codes({ ledger: { status: "posted" } }), ["not_created"]);
   });
-  it("refuses past dates, cancelled events and a missing or expired live connection", () => {
+  it("refuses past dates, cancelled events and a missing or expired live LinkedIn authentication", () => {
     assert.deepEqual(codes({ date: "2026-09-29" }), ["past"]);
     assert.deepEqual(codes({ event: { status: "cancelled", location: null } }), ["cancelled"]);
-    assert.deepEqual(codes({ connection: { level: "red" } }), ["expired"]);
+    assert.deepEqual(codes({ authentication: { level: "red" } }), ["expired"]);
     assert.deepEqual(codes({ date: "2026-09-29" }, {}), ["confirm", "past"]);
   });
 });
@@ -285,7 +293,7 @@ describe("publishRefusals: the server's check for one Publish event request", ()
 describe("createRefusals: the server's check for one create request", () => {
   const ctx = {
     date: "2026-10-06", now: new Date("2026-10-02T16:00:00Z"), event: { status: "scheduled", location: "lobby" },
-    ledger: null, connection: { level: "ok" }, live: false,
+    ledger: null, authentication: { level: "ok" }, live: false,
   };
   it("requires confirm=live, in dry run too", () => {
     assert.deepEqual(rules.createRefusals(ctx, { confirm: "live" }), []);

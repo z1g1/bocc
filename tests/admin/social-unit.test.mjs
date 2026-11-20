@@ -174,7 +174,7 @@ describe("ready and the work order", () => {
       .problems.map((p) => p.key);
     assert.deepEqual(keys({ video: null }), ["video"]);
     assert.deepEqual(keys({ video: { ...video, status: "pending" } }), ["video"]);
-    assert.deepEqual(keys({ video: { ...video, kind: "social_photo" } }), ["video"]);
+    assert.deepEqual(keys({ video: { ...video, kind: "event_photo" } }), ["video"]);
     assert.deepEqual(keys({ post: stored({ baseCaption: null }) }), ["baseCaption"]);
     assert.deepEqual(keys({ lumaUrl: null }), ["luma"]);
     assert.deepEqual(keys({ event: { status: "cancelled" } }), ["event"]);
@@ -237,7 +237,7 @@ describe("the Social plan cover image", () => {
     thumbKey: "events/2026-11-24/1111/thumb.jpg", coverKey: "events/2026-11-24/1111/cover.jpg", contentType: "image/png",
   } });
   const photo = {
-    id: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17", kind: "social_photo", status: "ready",
+    id: "22222222-2222-4222-8222-222222222222", eventDate: "2026-11-17", kind: "event_photo", status: "ready",
     publiclyUsable: true, originalKey: "events/2026-11-17/2222/original.jpg", displayKey: "events/2026-11-17/2222/display.jpg",
     thumbKey: "events/2026-11-17/2222/thumb.jpg", contentType: "image/jpeg",
   };

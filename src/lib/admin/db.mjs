@@ -14,7 +14,7 @@
 //   event_links         SELECT, INSERT, UPDATE, DELETE (migration 20261121120000_event_links_site_reader.sql)
 //   social_plans,
 //   social_media_posts  SELECT, INSERT, UPDATE (migrations 20261122120000_social_posts.sql, 20261203120000_glossary_rename_expand.sql)
-//   linkedin_connections SELECT, INSERT, UPDATE, DELETE (migration 20261124120000_linkedin_connections.sql)
+//   linkedin_authentications SELECT, INSERT, UPDATE, DELETE (migration 20261124120000_linkedin_connections.sql; renamed by 20261203120000)
 //   linkedin_events     SELECT, INSERT, UPDATE (migration 20261129120000_linkedin_events.sql; no DELETE:
 //                       allow-retry retires a pending row)
 //   auth.*              Better Auth's tables

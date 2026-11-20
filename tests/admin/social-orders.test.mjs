@@ -522,7 +522,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     const photo = randomUUID();
     await owner.query(
       `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
-       values ($1, $2, 'social_photo', $3, $4, $5, 'image/jpeg', 900000, 'ready', true)`,
+       values ($1, $2, 'event_photo', $3, $4, $5, 'image/jpeg', 900000, 'ready', true)`,
       [photo, D, `events/${D}/${photo}/original.jpg`, `events/${D}/${photo}/display.jpg`, `events/${D}/${photo}/thumb.jpg`]);
     await so.setCover(actor.id, D, photo);
     calls.length = 0;

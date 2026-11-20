@@ -215,6 +215,20 @@ describe("errors are mapped to domain errors", () => {
       });
     });
   }
+  it("a 401 asks to re-authenticate with LinkedIn, in the glossary's words", async () => {
+    const fetch = fakeFetch(json(401, { message: "expired" }));
+    await assert.rejects(client(fetch).createPost(TOKEN, {}), (err) => {
+      assert.equal(err.userMessage, "LinkedIn says the LinkedIn authentication is invalid or expired. Re-authenticate with LinkedIn and try again.");
+      return true;
+    });
+  });
+  it("a 403 names the LinkedIn page", async () => {
+    const fetch = fakeFetch(json(403, { message: "no" }));
+    await assert.rejects(client(fetch).createPost(TOKEN, {}), (err) => {
+      assert.match(err.userMessage, /of the LinkedIn page/);
+      return true;
+    });
+  });
 });
 
 describe("a hidden member post (#26)", () => {

@@ -309,7 +309,7 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
 /**
  * The promo video's cover image. With no override it is the event's Event Image
  * (event-image-rules.mjs resolveEventImage: uploaded, referenced, or the BOCC logo);
- * an override is a publicly usable, ready `social_photo` (social_plans.thumbnail_media_id).
+ * an override is a publicly usable, ready `event_photo`, a Photo from Event (social_plans.thumbnail_media_id).
  * An override that can't be used falls back to the Event Image. The cover is the
  * display copy (a JPEG at most 1600px on its long edge, the image's own shape; the
  * original can be up to 25 MB, too big for some uploaders; video platforms crop
@@ -323,7 +323,7 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
  *             eventDate: string|null, file: object, thumb: object }}
  */
 export function resolveSocialCover({ override = null, eventImage }) {
-  if (override && override.kind === "social_photo" && override.status === "ready" && override.publiclyUsable) {
+  if (override && override.kind === "event_photo" && override.status === "ready" && override.publiclyUsable) {
     return {
       source: "override", eventImageSource: null, mediaId: override.id, eventDate: override.eventDate,
       file: { key: override.displayKey, contentType: "image/jpeg" },

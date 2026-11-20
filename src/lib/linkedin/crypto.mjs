@@ -1,13 +1,13 @@
-// Secrets for the LinkedIn connection (ADR 0012 decision 4). Pure node:crypto.
+// Secrets for the LinkedIn authentication (ADR 0012 decision 4). Pure node:crypto.
 //
 // Both keys are derived from LINKEDIN_TOKEN_KEY with HKDF-SHA256 and a distinct label,
 // so the token key and the cookie-signing key are never the same bytes.
 //
-// Access token at rest (linkedin_connections.token_ciphertext, bytea):
+// Access token at rest (linkedin_authentications.token_ciphertext, bytea):
 //   [1 byte version = 1][12 byte IV][16 byte GCM tag][ciphertext]
 //   AES-256-GCM, AAD "linkedin_connections:<user id>" (TOKEN_AAD_PREFIX), so a row copied onto another
 //   user doesn't decrypt. Rotating the key = bump the version byte and keep the old
-//   key for decrypting until everyone has reconnected.
+//   key for decrypting until everyone has re-authenticated.
 //
 // OAuth state cookie value: "<payload>.<mac>", both base64url.
 //   payload = JSON { s: state, e: expiry (epoch seconds), r: return target }

@@ -19,8 +19,8 @@
 //   listEventMedia(db, date)             -> { ready, pending } for the gallery
 //   listStalePending(db, { date? })      pending rows older than STALE_PENDING_HOURS
 //
-// publicly_usable is not a choice: every social photo is covered by the photo waiver
-// posted at the event, so a social_photo row is always created true, and a
+// publicly_usable is not a choice: every Photo from Event is covered by the photo waiver
+// posted at the event, so an event_photo row is always created true, and a
 // signin_board row always false (the CHECK on event_media agrees), whatever the client
 // sends (ADR 0010 decision 2, amended 2026-11-18). Phase 5 reads the column.
 //
@@ -44,7 +44,13 @@ import { COVER_LIMITS } from "../linkedin/rules.mjs";
 
 export { NotFoundError, ValidationError };
 
-export const PHOTO_KINDS = Object.freeze(["signin_board", "social_photo"]);
+/** A Photo from Event (GLOSSARY.md): cleared by the photo waiver, always publicly usable. */
+export const EVENT_PHOTO_KIND = "event_photo";
+export const PHOTO_KINDS = Object.freeze(["signin_board", EVENT_PHOTO_KIND]);
+// DEPRECATED (#54): the kind's old name. A tab opened before the deploy runs the old
+// static browser JS and still posts it, so an upload request with it is taken as
+// event_photo (migration 20261203150000 maps it in the database too). Remove with #60.
+const OLD_EVENT_PHOTO_KIND = "social_photo";
 export const VIDEO_KIND = "promo_video";
 /** The week's one image (ADR 0012 decision 3): see src/lib/admin/event-image.mjs. */
 export const EVENT_IMAGE_KIND = "event_image";
@@ -106,15 +112,16 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, errors: ["body must be a JSON object"] };
   const b = /** @type {Record<string, any>} */ (input);
 
+  const kind = b.kind === OLD_EVENT_PHOTO_KIND ? EVENT_PHOTO_KIND : b.kind;
   if (!isIsoDate(b.eventDate)) errors.push("eventDate must be a date, YYYY-MM-DD");
   else if (b.eventDate < EARLIEST_DATE || b.eventDate > plusDays(today, 366)) errors.push("eventDate is out of range");
 
-  if (!UPLOAD_KINDS.includes(b.kind)) errors.push(`kind must be one of ${UPLOAD_KINDS.join(", ")}`);
-  const video = b.kind === VIDEO_KIND;
-  const eventImage = b.kind === EVENT_IMAGE_KIND;
+  if (!UPLOAD_KINDS.includes(kind)) errors.push(`kind must be one of ${UPLOAD_KINDS.join(", ")}`);
+  const video = kind === VIDEO_KIND;
+  const eventImage = kind === EVENT_IMAGE_KIND;
 
   // Not the client's choice (see the top of this file): any publiclyUsable sent is ignored.
-  const publiclyUsable = b.kind === "social_photo";
+  const publiclyUsable = kind === EVENT_PHOTO_KIND;
 
   const o = b.original;
   const types = video ? VIDEO_TYPES : ORIGINAL_TYPES;
@@ -147,7 +154,7 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
     ok: true,
     values: {
       eventDate: b.eventDate,
-      kind: b.kind,
+      kind,
       publiclyUsable,
       original: { contentType: o.contentType, size: o.size },
       ...(eventImage ? { original: { contentType: o.contentType, size: o.size, width: o.width, height: o.height } } : {}),
@@ -360,10 +367,10 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
     },
   }));
 
-  // A social photo's cover is at a known key: also delete it when a cover upload was
+  // A Photo from Event's cover is at a known key: also delete it when a cover upload was
   // started but never completed (deleting a missing object is not an error).
   const keys = rowKeys(row);
-  const coverKey = row.kind === "social_photo" ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
+  const coverKey = row.kind === EVENT_PHOTO_KIND ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
   if (coverKey && !keys.includes(coverKey)) keys.push(coverKey);
   const leftovers = await deleteObjects(storage, `media delete ${id}`, keys, log);
   return { id, eventDate: row.eventDate, kind: row.kind, leftovers };
@@ -390,7 +397,7 @@ export class InUseError extends Error {
 // is remade. The browser makes it (its display copy at full height on the beans
 // background, public/js/admin-media-lib.js composeCover) and PUTs it:
 //   startCover(actor, storage, id, { size })  -> { id, eventDate, key, expiresInSeconds, upload }
-//       a ready social_photo without a cover, or a ready social_photo / event_image
+//       a ready event_photo without a cover, or a ready event_photo / event_image
 //       whose cover is outdated: one presigned PUT for events/<date>/<id>/cover.jpg
 //       (the same key when remaking; type and size signed), audited
 //       `media.cover_upload` with what was signed, COVER_LAYOUT, and when remaking the
@@ -401,7 +408,7 @@ export class InUseError extends Error {
 
 /** The rule the browser composes the 16:9 version by; recorded with each cover upload. */
 export const COVER_LAYOUT = "beans-full-height";
-const COVER_KINDS = Object.freeze(["social_photo", EVENT_IMAGE_KIND]);
+const COVER_KINDS = Object.freeze([EVENT_PHOTO_KIND, EVENT_IMAGE_KIND]);
 
 /**
  * @param {string} actorUserId
@@ -416,7 +423,7 @@ export async function startCover(actorUserId, storage, id, input) {
   if (!COVER_KINDS.includes(row.kind) || row.status !== "ready") {
     errors.push("only a ready Photo from Event or Event Image can be given a 16:9 version");
   } else if (row.coverKey && !row.coverOutdated) errors.push("this image already has a current 16:9 version");
-  else if (!row.coverKey && row.kind !== "social_photo") errors.push("this image has no 16:9 version to remake");
+  else if (!row.coverKey && row.kind !== EVENT_PHOTO_KIND) errors.push("this image has no 16:9 version to remake");
   if (!isSize(size, LIMITS.cover)) errors.push(`size must be 1 to ${LIMITS.cover} bytes`);
   if (errors.length) throw new ValidationError(errors);
   const key = row.coverKey ?? mediaKey(row.eventDate, id, "cover", "jpg");
@@ -466,7 +473,7 @@ export async function completeCover(actorUserId, storage, id, { db }) {
       ? await client.query(
         "update public.event_media set cover_outdated = false where id = $1 and cover_key = $2 and cover_outdated", [id, started.key])
       : await client.query(
-        "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, started.key]);
+        "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'event_photo'", [id, started.key]);
     // Nothing changed (a race with another complete, or a delete): roll back, no audit row.
     if (r.rowCount !== 1) throw raced;
     return true;
@@ -529,7 +536,7 @@ export async function listEventMedia(db, date) {
     `select ${MEDIA_COLUMNS},
             created_at < now() - make_interval(hours => $2) as stale
        from public.event_media
-      where event_date = $1 and kind in ('signin_board', 'social_photo')
+      where event_date = $1 and kind in ('signin_board', 'event_photo')
       order by created_at, id`, [date, STALE_PENDING_HOURS]);
   const all = rows.map((r) => ({ ...r, sizeBytes: Number(r.sizeBytes) }));
   return { ready: all.filter((r) => r.status === "ready"), pending: all.filter((r) => r.status === "pending") };
