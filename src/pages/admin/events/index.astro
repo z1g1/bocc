@@ -106,7 +106,7 @@ const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "
       {page < pages && <a href={pageHref(page + 1)}>Older →</a>}
     </p>
   )}
-  <p class="muted">“Attendee count” is the official attendance, counted in the room. “Check-in count” counts the check-in form (test rows left out). It is not attendance: not everyone checks in.</p>
+  <p class="muted">“Attendee count” is the official attendance, counted in the room. “Check-in count” counts the check-in form (Debug check-ins left out). It is not attendance: not everyone checks in.</p>
 </Admin>
 
 <style>

@@ -1,5 +1,5 @@
 // Pure LinkedIn event rules (ADR 0012, issue #25): the event name, times, wording,
-// payloads, cover image checks, the duplicate match and the allowed-actions matrix.
+// payloads, 16:9 Event Image checks, the duplicate match and the allowed-actions matrix.
 // No database, no network:   node --test tests/admin/linkedin-event-unit.test.mjs
 // Expected values come from the CLI (tools/linkedin-events, its tests) and spec #18.
 import { describe, it } from "node:test";
@@ -160,54 +160,55 @@ function jpeg(width, height) {
   return Buffer.concat([Buffer.from([0xff, 0xd8]), app0, sof]);
 }
 
-describe("checkCoverImage: PNG/JPEG by magic bytes, 480x270 minimum, 8 MiB cap, 16:9 warning", () => {
+describe("checkImage16x9: PNG/JPEG by magic bytes, 480x270 minimum, 8 MiB cap, 16:9 warning", () => {
   it("a 1920x1080 PNG passes with no warning", () => {
-    assert.deepEqual(rules.checkCoverImage(png(1920, 1080)), { ok: true, contentType: "image/png", width: 1920, height: 1080, bytes: 33, errors: [], warnings: [] });
+    assert.deepEqual(rules.checkImage16x9(png(1920, 1080)), { ok: true, contentType: "image/png", width: 1920, height: 1080, bytes: 33, errors: [], warnings: [] });
   });
   it("a JPEG is read from its SOF segment", () => {
-    const r = rules.checkCoverImage(jpeg(1280, 720));
+    const r = rules.checkImage16x9(jpeg(1280, 720));
     assert.equal(r.ok, true);
     assert.equal(r.contentType, "image/jpeg");
     assert.deepEqual([r.width, r.height], [1280, 720]);
   });
   it("refuses anything else, whatever it claims to be", () => {
-    const r = rules.checkCoverImage(Buffer.from("GIF89a........"));
+    const r = rules.checkImage16x9(Buffer.from("GIF89a........"));
     assert.equal(r.ok, false);
     assert.match(r.errors[0], /PNG or JPEG/);
   });
   it("refuses smaller than 480x270", () => {
-    const r = rules.checkCoverImage(png(479, 270));
+    const r = rules.checkImage16x9(png(479, 270));
     assert.equal(r.ok, false);
     assert.match(r.errors.join(" "), /480×270/);
   });
   it("refuses over 8 MiB", () => {
-    const r = rules.checkCoverImage(png(1920, 1080, 8 * 1024 * 1024));
+    const r = rules.checkImage16x9(png(1920, 1080, 8 * 1024 * 1024));
     assert.equal(r.ok, false);
     assert.match(r.errors.join(" "), /8 MiB/);
   });
   it("refuses more than 36,152,320 pixels", () => {
-    assert.equal(rules.checkCoverImage(png(8000, 4600)).ok, false);
+    assert.equal(rules.checkImage16x9(png(8000, 4600)).ok, false);
   });
   it("the checked-in 16:9 logo default passes with no warning", async () => {
     const { readFile } = await import("node:fs/promises");
     const bytes = await readFile(new URL("../../public/assets/images/brand/bocc-logo-wide-16x9.png", import.meta.url));
-    const r = rules.checkCoverImage(bytes);
+    const r = rules.checkImage16x9(bytes);
     assert.deepEqual([r.ok, r.width, r.height, r.warnings], [true, 1920, 1080, []]);
   });
   it("warns, but passes, when the ratio is more than 5% off 16:9 (the CLI's 2:1 default)", () => {
-    const r = rules.checkCoverImage(png(1280, 640));
+    const r = rules.checkImage16x9(png(1280, 640));
     assert.equal(r.ok, true);
     assert.match(r.warnings[0], /16:9/);
-    assert.deepEqual(rules.checkCoverImage(png(1300, 720)).warnings, []);
+    assert.deepEqual(rules.checkImage16x9(png(1300, 720)).warnings, []);
   });
   it("its messages name the 16:9 Event Image, never the cover", () => {
     const msgs = [
-      ...rules.checkCoverImage(Buffer.from("GIF89a........")).errors,
-      ...rules.checkCoverImage(png(479, 270, 8 * 1024 * 1024)).errors,
-      ...rules.checkCoverImage(png(8000, 4600)).errors,
-      ...rules.checkCoverImage(png(1280, 640)).warnings,
+      ...rules.checkImage16x9(Buffer.from("GIF89a........")).errors,
+      ...rules.checkImage16x9(png(479, 270, 8 * 1024 * 1024)).errors,
+      ...rules.checkImage16x9(png(8000, 4600)).errors,
+      ...rules.checkImage16x9(png(1280, 640)).warnings,
+      rules.REFUSALS.image,
     ];
-    assert.equal(msgs.length, 5);
+    assert.equal(msgs.length, 6);
     for (const m of msgs) {
       assert.match(m, /16:9 Event Image/);
       assert.doesNotMatch(m, /cover/i);

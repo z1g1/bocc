@@ -25,7 +25,7 @@
 // can't leak it.
 
 import {
-  CHANNELS, CHANNEL_KEYS, DONE_POST_STATUSES, OFFERED_PLAN_STATUSES, PLAN_STATUS_LABELS, POST_STATUS_LABELS,
+  CHANNELS, CHANNEL_KEYS, DONE_POST_STATUSES, OFFERED_PLAN_STATUSES, PLAN_STATUS_LABELS, postStatusLabel,
 } from "../admin/social-plan-rules.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
 import { expiryAlertDue, expiryLevel } from "../linkedin/rules.mjs";
@@ -158,7 +158,7 @@ export function socialAlert({ order, date, siteUrl = null }) {
   if (channels.length) {
     lines.push("", "Social media posts not scheduled yet:");
     for (const c of channels) {
-      lines.push(`- ${c.label ?? CHANNELS[c.channel] ?? c.channel}: ${POST_STATUS_LABELS[c.status] ?? "no social media post"}`);
+      lines.push(`- ${c.label ?? CHANNELS[c.channel] ?? c.channel}: ${postStatusLabel(c.status, "no social media post")}`);
     }
   }
   const origin = originOf(siteUrl);

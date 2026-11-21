@@ -9,7 +9,7 @@
 //                  full height on the "Just the Beans" background (ticket #40)
 //
 // The resolved image has the same shape whatever its source, so consumers (the Event
-// Image section, the Social plan cover, the LinkedIn image upload) don't branch on it:
+// Image section, the Social plan Thumbnail, the LinkedIn image upload) don't branch on it:
 //   { source, mediaId, eventDate, original, display, thumb, image16x9, image16x9Outdated }
 // where each file is either { key, contentType } (an object in the private bucket:
 // sign it with storage.presignGet, or read it with storage.getObject) or

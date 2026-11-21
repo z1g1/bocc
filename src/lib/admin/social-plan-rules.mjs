@@ -58,6 +58,8 @@ export const POST_STATUS_LABELS = Object.freeze({
   failed: "Failed",
 });
 export const isPostStatus = (s) => typeof s === "string" && POST_STATUSES.includes(s);
+/** A Post status's label: an unknown one as itself, none (no social media post yet) as `none`. */
+export const postStatusLabel = (s, none = "not created") => (s ? POST_STATUS_LABELS[s] ?? s : none);
 
 /** Plan statuses (social_plans.status CHECK), in dropdown order. See the header. */
 export const PLAN_STATUSES = Object.freeze(["todo", "ready", "posted", "error"]);

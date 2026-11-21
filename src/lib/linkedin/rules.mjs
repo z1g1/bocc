@@ -1,7 +1,7 @@
 // Pure LinkedIn rules (ADR 0012). No database, no network, no imports, so unit tests
 // and the browser-free Thursday check can load it. Holds the LinkedIn authentication's expiry and
 // scopes (#23), and the weekly event (#25): name, times, wording by location, the
-// payloads, the cover image checks, the duplicate match and the allowed-actions matrix.
+// payloads, the 16:9 Event Image checks, the duplicate match and the allowed-actions matrix.
 // Drift and the cancellation follow-up (#27): linkedInFollowUp.
 
 const DAY_MS = 86_400_000;
@@ -143,7 +143,7 @@ export const REFUSALS = Object.freeze({
   ledger: "The ledger already has a LinkedIn event for this date, so another one won't be created.",
   confirm: "Not confirmed: confirm in the dialog first.",
   duplicate: "LinkedIn already lists a BOCC event with the same name or on the same day.",
-  image: "The cover image can't be sent to LinkedIn.",
+  image: "The 16:9 Event Image can't be sent to LinkedIn.",
   not_created: "Publish the LinkedIn post only retries the LinkedIn post of a LinkedIn event that was created and not posted yet.",
   posting: "Another Publish the LinkedIn post for this date is in progress, or its outcome is unknown. Check your LinkedIn posts, then try again in a few minutes if it isn't there.",
   not_pending: "Allow retry only clears a pending create (one whose outcome is unknown).",
@@ -275,7 +275,7 @@ export function publishRefusals(ctx, { confirm }) {
 }
 
 // LinkedIn's image limits (the CLI's images.py), checked on the bytes the server sends.
-export const COVER_LIMITS = Object.freeze({
+export const IMAGE_16X9_LIMITS = Object.freeze({
   maxBytes: 8 * 1024 * 1024, minWidth: 480, minHeight: 270, maxPixels: 36_152_320, ratio: 16 / 9, ratioTolerance: 0.05,
 });
 
@@ -312,8 +312,8 @@ function sniffImage(bytes) {
  * @returns {{ ok: boolean, contentType: string|null, width: number|null, height: number|null, bytes: number,
  *   errors: string[], warnings: string[] }}
  */
-export function checkCoverImage(bytes) {
-  const L = COVER_LIMITS;
+export function checkImage16x9(bytes) {
+  const L = IMAGE_16X9_LIMITS;
   const size = bytes.length;
   const info = sniffImage(bytes);
   const errors = [];

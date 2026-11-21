@@ -440,7 +440,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
                 required value={rep.attendeeCount} aria-invalid={repErr.attendeeCount ? "true" : undefined} aria-describedby="checkin-note">
               <p id="checkin-note" class="checkins">
                 Check-in count (not attendance): <strong>{event.checkinCount}</strong>
-                <span class="muted">(not everyone checks in; test check-ins left out)</span>
+                <span class="muted">(not everyone checks in; Debug check-ins left out)</span>
                 {event.checkinCount > 0 && <> · <a href={`/admin/checkins/?date=${date}`}>who</a></>}
               </p>
             </div>

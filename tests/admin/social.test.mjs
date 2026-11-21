@@ -468,7 +468,7 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
   test("the Plan status dropdown (ticket #39): the intro, four Plan statuses, Ready for Posting refused next to it, the others saved and audited", async () => {
     const d = httpDate();
     const page = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
-    assert.ok(page.includes("The weekly promo video, posted on Facebook, Instagram, Threads, TikTok, and LinkedIn page is done by work order."));
+    assert.ok(page.includes("The weekly promo video, posted on Facebook, Instagram, Threads, TikTok, and LinkedIn page, is handled by this Social plan."));
     assert.ok(page.includes("It is only posted when the Plan status is set to &#39;Ready for Posting&#39;") || page.includes("It is only posted when the Plan status is set to 'Ready for Posting'"));
     assert.match(page, /<label for="social-status"[^>]*>Plan status </);
     assert.ok(page.includes("Save Social plan"));

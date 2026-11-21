@@ -6,7 +6,7 @@
 // away: a dry run changes nothing, so there is no redirect).
 //
 // - The full preview of what would be sent: name, description, times, address, venue
-//   details, external link, cover, visibility, the post commentary, and the payloads.
+//   details, external link, 16:9 Event Image, visibility, the post commentary, and the payloads.
 // - "Create live event" opens a native <dialog> (/js/admin-linkedin.js) that names the
 //   date, title and visibility, warns this is a REAL public event and a PUBLIC post,
 //   quotes the commentary and, on a dry run, says "Dry run: nothing will be sent". Its
@@ -61,13 +61,13 @@ const a = EVENT_ADDRESS;
 const address = `${a.line1}, ${a.city}, ${a.geographicArea} ${a.postalCode}, ${a.country}`;
 
 // The 16:9 Event Image: a checked-in file from the site, a stored copy through a presigned GET.
-let coverSrc: string | null = null;
-const cover = p?.image?.image16x9;
-if (cover) {
-  if ("path" in cover) coverSrc = cover.path;
+let image16x9Src: string | null = null;
+const image16x9 = p?.image?.image16x9;
+if (image16x9) {
+  if ("path" in image16x9) image16x9Src = image16x9.path;
   else {
     const { storage } = getStorage();
-    coverSrc = storage ? storage.presignGet({ key: cover.key }).url : null;
+    image16x9Src = storage ? storage.presignGet({ key: image16x9.key }).url : null;
   }
 }
 const SOURCE: Record<string, string> = { uploaded: "the uploaded Event Image", referenced: "the picked Photo from Event", default: "the BOCC logo default" };
@@ -198,8 +198,8 @@ const postedAs = p?.authentication ? p.authentication.name : "your LinkedIn prof
               <dt>Visibility</dt><dd>LISTED (public, discoverable), organized by the LinkedIn page</dd>
               <dt>16:9 Event Image</dt>
               <dd>
-                {coverSrc ? <img src={coverSrc} alt="The 16:9 Event Image" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
-                <span class="muted"> {SOURCE[p.image.source] ?? p.image.source}{cover && "path" in cover ? ` (${cover.path})` : ""}</span>
+                {image16x9Src ? <img src={image16x9Src} alt="The 16:9 Event Image" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
+                <span class="muted"> {SOURCE[p.image.source] ?? p.image.source}{image16x9 && "path" in image16x9 ? ` (${image16x9.path})` : ""}</span>
               </dd>
               <dt>Post commentary</dt><dd><blockquote>{p.spec.commentary}</blockquote></dd>
               <dt>Posted as</dt><dd>{postedAs}</dd>

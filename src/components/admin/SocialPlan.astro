@@ -101,7 +101,7 @@ const MEDIA_NOTICES: Record<string, string> = {
 };
 const mediaNotice = MEDIA_NOTICES[Astro.url.searchParams.get("media") ?? ""] ?? null;
 // The intro's facts come from the rules: the Channels and the Ready for Posting label.
-const postStatusLabel = (s: string | null) => (s ? (rules.POST_STATUS_LABELS as Record<string, string>)[s] ?? s : "not created");
+const { postStatusLabel } = rules;
 const channelList = new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(Object.values(rules.CHANNELS));
 const fmtTime = (d: Date) =>
   new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }).format(d);
@@ -110,7 +110,7 @@ const fmtTime = (d: Date) =>
   <section aria-labelledby="h-social" id="social" class="social">
     <h2 id="h-social">Social plan</h2>
     <p class="muted" id="social-intro">
-      The weekly promo video, posted on {channelList} is done by work order.<br>
+      The weekly promo video, posted on {channelList}, is handled by this Social plan.<br>
       It is only posted when the Plan status is set to '{rules.PLAN_STATUS_LABELS.ready}'<br>
       Automated posting requires a logged in AI Agent with the Social role and a scheduled task to look for posts
     </p>
@@ -118,9 +118,9 @@ const fmtTime = (d: Date) =>
       {!order.exists
         ? <span class="muted">No Social plan yet: the first save below creates it.</span>
         : order.actionable
-          ? <strong class="ok">Plan status: {order.statusLabel}, in the work order.</strong>
+          ? <strong class="ok">Plan status: {order.statusLabel}, queued for posting.</strong>
           : order.ready
-            ? <strong class="todo">Plan status: {order.statusLabel}, but not in the work order until this is fixed:</strong>
+            ? <strong class="todo">Plan status: {order.statusLabel}, but not queued for posting until this is fixed:</strong>
             : <span>Plan status: {order.statusLabel}.</span>}
     </p>
     {order.problems.length > 0 && (order.ready || order.exists) && (

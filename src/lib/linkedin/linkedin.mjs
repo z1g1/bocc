@@ -17,7 +17,7 @@
 //   createLinkedInEvent, live (LINKEDIN_LIVE=1)          -> { ok: true, mode: "live", status: "posted", ledger, preview }
 //                                                            | { ok: false, mode: "live", status, failure, refusals: [], preview }
 //     commits the ledger row `pending` (audited) BEFORE anything is sent, then uploads
-//     the cover, creates the event, moves the row to `created` (audited), creates the
+//     the 16:9 Event Image, creates the event, moves the row to `created` (audited), creates the
 //     member post and moves the row to `posted` (audited) with the event's
 //     `linkedin_event` listing filled in the same transaction (event_link.set). A
 //     failure leaves the last committed state; `failure` says which step and why.
@@ -62,7 +62,7 @@ import { API_BASE, LinkedInError, authorizationUrl, linkedInClient } from "./cli
 import { readLinkedInEnv } from "./env.mjs";
 import {
   ORGANIZER_URN, REFUSALS, allowedActions, buildEventPayload, buildEventSpec, buildImageUploadPayload,
-  buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
+  buildPostPayload, checkImage16x9, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
   publishRefusals,
 } from "./rules.mjs";
 import { setLinkInTransaction } from "../admin/event-links.mjs";
@@ -285,7 +285,7 @@ function payloadsFor(spec, memberUrn) {
 }
 
 const describeBytes = (bytes, contentType) => {
-  const c = checkCoverImage(bytes);
+  const c = checkImage16x9(bytes);
   return `${bytes.length} bytes of ${contentType}${c.width ? ` (${c.width}×${c.height})` : ""}`;
 };
 
@@ -316,14 +316,14 @@ function recordingClient() {
 }
 
 /**
- * The write calls in order: upload the cover, create the event, publish the post. The
+ * The write calls in order: upload the 16:9 Event Image, create the event, publish the post. The
  * dry run runs it against recordingClient(). #26 runs the same steps against the real
  * client with the ledger transitions between them (pending committed first, then
  * created after createEvent, posted after createPost).
  */
-async function sendSequence(writer, token, { spec, memberUrn, cover }) {
+async function sendSequence(writer, token, { spec, memberUrn, image16x9 }) {
   const upload = await writer.initializeImageUpload(token, memberUrn);
-  await writer.uploadImage(token, upload.uploadUrl, cover.bytes, cover.contentType);
+  await writer.uploadImage(token, upload.uploadUrl, image16x9.bytes, image16x9.contentType);
   const created = await writer.createEvent(token, buildEventPayload(spec, upload.assetUrn));
   const posted = await writer.createPost(token, buildPostPayload(memberUrn, created.id, spec.commentary));
   return { upload, created, posted };
@@ -331,7 +331,7 @@ async function sendSequence(writer, token, { spec, memberUrn, cover }) {
 
 /**
  * Everything the LinkedIn section shows for one date: the mode, the action on offer and
- * why create can't run, the ledger row, the LinkedIn authentication, the cover, and the payloads.
+ * why create can't run, the ledger row, the LinkedIn authentication, the 16:9 Event Image, and the payloads.
  * @param {{ query: Function }} db
  * @param {string} userId  the signed-in Admin
  * @param {string} date
@@ -356,7 +356,7 @@ export async function linkedInEventPreview(db, userId, date, { config, now = new
  * The Create live event button. Refused unless the request carries confirm=live (the
  * dialog) and the allowed-actions matrix allows create. When authenticated, the read-only
  * organizer listing refuses a duplicate (same name, old or new style, or the same
- * Eastern day). The cover's bytes are read and checked. Then:
+ * Eastern day). The 16:9 Event Image's bytes are read and checked. Then:
  *   dry run (no LINKEDIN_LIVE): the requests that would be sent; nothing is sent to
  *     LinkedIn and no ledger row or audit row is written
  *   live: the ledger-guarded sequence (liveSequence)
@@ -398,22 +398,22 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
     // Made under the old centre-crop rule (ticket #40): wait for the event page to remake it.
     return refuse([{ code: "image", message: `${REFUSALS.image} Its 16:9 Event Image is being remade: open this event's Event Info tab, let it finish, then try again.` }]);
   }
-  let cover;
+  let image16x9;
   try {
-    cover = await load16x9Bytes(preview.image, { storage, readAsset });
+    image16x9 = await load16x9Bytes(preview.image, { storage, readAsset });
   } catch (err) {
     log("error", `linkedin 16:9 Event Image unreadable: ${describeError(err)}`, { date });
     return refuse([{ code: "image", message: `${REFUSALS.image} It couldn't be read: try again, or set the Event Image again.` }]);
   }
-  const image = checkCoverImage(cover.bytes);
+  const image = checkImage16x9(image16x9.bytes);
   if (!image.ok) return refuse([{ code: "image", message: `${REFUSALS.image} ${image.errors.join(" ")}` }], { image });
 
   if (cfg.live) {
-    return liveSequence({ userId, date, token, li, spec, memberUrn: authentication.memberUrn, cover, image, eventImage: preview.image, cfg, now, duplicateCheck });
+    return liveSequence({ userId, date, token, li, spec, memberUrn: authentication.memberUrn, image16x9, image, eventImage: preview.image, cfg, now, duplicateCheck });
   }
 
   const recorder = recordingClient();
-  await sendSequence(recorder, token, { spec, memberUrn: authentication?.memberUrn ?? PLACEHOLDERS.member, cover });
+  await sendSequence(recorder, token, { spec, memberUrn: authentication?.memberUrn ?? PLACEHOLDERS.member, image16x9 });
   return { ok: true, mode: "dry_run", duplicateCheck, image, requests: recorder.requests, preview };
 }
 
@@ -476,7 +476,7 @@ async function succeeded(userId, date, cfg, now, extra = {}) {
  * The live create: pending (committed first), upload, create, created, post, posted.
  * Never retried automatically: a failure stops at the last committed state.
  */
-async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, image, eventImage, cfg, now, duplicateCheck }) {
+async function liveSequence({ userId, date, token, li, spec, memberUrn, image16x9, image, eventImage, cfg, now, duplicateCheck }) {
   const c = eventImage.image16x9;
   let row;
   try {
@@ -504,7 +504,7 @@ async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, i
   try {
     const upload = await li.initializeImageUpload(token, memberUrn);
     step = "image_upload";
-    await li.uploadImage(token, upload.uploadUrl, cover.bytes, cover.contentType);
+    await li.uploadImage(token, upload.uploadUrl, image16x9.bytes, image16x9.contentType);
     step = "create";
     created = await li.createEvent(token, buildEventPayload(spec, upload.assetUrn));
     url = eventUrl(created.id, created.vanityName);
