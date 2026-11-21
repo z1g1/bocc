@@ -1,7 +1,7 @@
 // The LinkedIn client adapter (ADR 0012, issue #18 "LinkedIn client"). Every call the
 // app makes to LinkedIn goes through here; the use-case (linkedin.mjs) gets one injected.
 //
-// Operations (ported from tools/linkedin-events, the CLI's client.py / events.py / auth.py):
+// Operations (ported from the retired CLI's client.py / events.py / auth.py, tools/linkedin-events in git history):
 //   exchangeCode({ code, redirectUri })              POST www.linkedin.com/oauth/v2/accessToken
 //   getProfile(token)                                GET  api.linkedin.com/v2/userinfo
 //   initializeImageUpload(token, ownerUrn)           POST /rest/images?action=initializeUpload
@@ -105,7 +105,7 @@ const KIND_BY_STATUS = (status) =>
   status === 401 ? "expired" : status === 403 ? "page_role" : status === 400 || status === 422 ? "validation" : "unknown";
 
 // LinkedIn refuses hidden member posts (feedDistribution NONE) as sponsored content
-// (tools/linkedin-events/README.md, "Verified behaviour"). Only on the post call.
+// (docs/backend/LINKEDIN_PERMISSIONS.md, "Verified behaviour"). Only on the post call.
 const HIDDEN_POST = /sponsored|feedDistribution/i;
 
 /**

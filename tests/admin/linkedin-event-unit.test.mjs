@@ -1,7 +1,7 @@
 // Pure LinkedIn event rules (ADR 0012, issue #25): the event name, times, wording,
 // payloads, 16:9 Event Image checks, the duplicate match and the allowed-actions matrix.
 // No database, no network:   node --test tests/admin/linkedin-event-unit.test.mjs
-// Expected values come from the CLI (tools/linkedin-events, its tests) and spec #18.
+// Expected values come from the retired CLI (tools/linkedin-events, its tests, in git history) and spec #18.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as rules from "../../src/lib/linkedin/rules.mjs";

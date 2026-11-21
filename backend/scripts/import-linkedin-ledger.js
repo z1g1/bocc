@@ -5,7 +5,8 @@
  * event pages and the web create refuses those dates. Run it against production BEFORE the
  * first web create.
  *
- * The ledger is the CLI's JSON (tools/linkedin-events/bocc_events/ledger.py):
+ * The ledger is the CLI's JSON (its ledger.py; the CLI, tools/linkedin-events, was retired
+ * in #30 and is in git history; this script needs only the JSON file):
  *   { "events": { "YYYY-MM-DD": { status, name, attempted_at, commentary?,
  *                                 event_id, url, created_at,        (created and posted)
  *                                 post_urn, posted_at } } }          (posted)
@@ -31,7 +32,8 @@
  *   posted   → a `posted` row: event id and URL, post URN and its feed URL, timestamps
  *   created  → a `created` row (the page then offers Publish event)
  *   pending  → SKIPPED and reported: the CLI never learnt whether LinkedIn created it.
- *              Check LinkedIn, finish it with the CLI or `bocc-event forget` it, re-run.
+ *              Check LinkedIn; if nothing was created, delete the entry from the JSON
+ *              (what `bocc-event forget` did) and re-run.
  *   anything else, a bad id/URL/URN/timestamp, an id written as a JSON number → error
  *   (`forget` removes an entry from the CLI ledger, so a forgotten week isn't there at all.)
  *   name and attempted_at come from the entry; commentary too (older entries have none:
