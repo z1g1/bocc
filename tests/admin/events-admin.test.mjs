@@ -822,6 +822,36 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     assert.equal(paged.status, 200);
   });
 
+  test("the list filters by status (?status=), ?missing=1 still works; home counts events by status", async () => {
+    // The newest past dates (Eastern), so they are on the first page of the past list.
+    const daysAgo = (n) => ev.todayEastern(new Date(Date.now() - n * 86400_000));
+    const [r, c] = [daysAgo(1), daysAgo(2)];
+    await ev.submitReport(actor.id, r, REPORT);
+    await ev.saveEvent(actor.id, c, { status: "cancelled", cancelReason: "weather" });
+    const list = async (q) => (await (await req(`/admin/events/${q}`, { cookie: admin.cookie })).text());
+    const has = (html, d) => html.includes(`href="/admin/events/${d}/"`);
+
+    const all = await list("");
+    for (const [st, label] of [["scheduled", "Scheduled"], ["reported", "Reported"], ["cancelled", "Cancelled"]]) {
+      assert.ok(all.includes(`href="/admin/events/?status=${st}"`) && all.includes(`>${label}</a>`), `filter link ${st}`);
+    }
+    const reported = await list("?status=reported");
+    assert.ok(has(reported, r) && !has(reported, c));
+    assert.ok(reported.includes('aria-current="true"'), "the chosen filter is marked");
+    const cancelled = await list("?status=cancelled");
+    assert.ok(has(cancelled, c) && !has(cancelled, r));
+    const bogus = await list("?status=held");
+    assert.ok(has(bogus, r) && has(bogus, c), "an unknown status is no filter");
+    const missing = await list("?missing=1");
+    assert.ok(!has(missing, r) && !has(missing, c));
+
+    const counts = await ev.statusCounts(pool);
+    const home = await (await req("/admin/", { cookie: admin.cookie })).text();
+    for (const [st, label] of [["scheduled", "Scheduled"], ["reported", "Reported"], ["cancelled", "Cancelled"]]) {
+      assert.match(home, new RegExp(`<a href="/admin/events/\\?status=${st}"[^>]*>${label} ${counts[st]}</a>`), `home count ${st}`);
+    }
+  });
+
   // Phase 4: the Listings forms; #59: Event readiness, and its tag on the list and home.
   test("listings: save creates the event, Event readiness at the top for upcoming dates, its tag on the list and home", async () => {
     // A few days ahead (Eastern), so it is among the soonest upcoming events.

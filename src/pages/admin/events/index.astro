@@ -2,7 +2,8 @@
 // /admin/events/: upcoming events and past events (ADR 0009, plan Phase 3). Admin only.
 // "Today" is the Eastern calendar day. A past date still `scheduled` is flagged
 // "report missing". The past list is paged (?page=N, 25 a page); ?missing=1 shows only
-// the report-missing ones. ?date=YYYY-MM-DD (the "open a date" GET form, no script)
+// the report-missing ones. ?status=scheduled|reported|cancelled filters both lists by
+// Event status (anything else is no filter). ?date=YYYY-MM-DD (the "open a date" GET form, no script)
 // redirects to /admin/events/YYYY-MM-DD/. Upcoming events show their Event readiness at a
 // glance (ReadyTag, #59).
 import Admin from "../../../layouts/Admin.astro";
@@ -26,16 +27,17 @@ const { pool } = await import("../../../lib/admin/db.mjs");
 const PER_PAGE = 25;
 const today = ev.todayEastern();
 const missingOnly = Astro.url.searchParams.get("missing") === "1";
+const status = ev.parseStatusFilter(Astro.url.searchParams.get("status"));
 const page = Math.max(1, Math.min(1000, Number.parseInt(Astro.url.searchParams.get("page") ?? "1", 10) || 1));
 const [upcoming, past, missingCount] = await Promise.all([
-  ev.listUpcoming(pool, { today }),
-  ev.listPast(pool, { today, limit: PER_PAGE, offset: (page - 1) * PER_PAGE, missingOnly }),
+  ev.listUpcoming(pool, { today, status }),
+  ev.listPast(pool, { today, limit: PER_PAGE, offset: (page - 1) * PER_PAGE, missingOnly, status }),
   ev.reportMissingCount(pool, { today }),
 ]);
 const { eventReadinessByDate } = await import("../../../lib/admin/event-readiness-load.mjs");
 const readiness = await eventReadinessByDate(pool, upcoming);
 const pages = Math.max(1, Math.ceil(past.total / PER_PAGE));
-const pageHref = (p: number) => `/admin/events/?${missingOnly ? "missing=1&" : ""}page=${p}`;
+const pageHref = (p: number) => `/admin/events/?${missingOnly ? "missing=1&" : ""}${status ? `status=${status}&` : ""}page=${p}`;
 const nextTue = ev.nextTuesday(today);
 const LOC: Record<string, string> = ev.LOCATIONS;
 const where = (e: any) => (e.location === "other" ? e.locationOther : e.location ? LOC[e.location] : "");
@@ -53,9 +55,19 @@ const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "
   </form>
   {requested !== null && <p class="error" role="alert">“{requested}” is not a date (YYYY-MM-DD).</p>}
 
+  <nav class="status-filter" aria-label="Filter by status">
+    Show:
+    <a href="/admin/events/" aria-current={status === null && !missingOnly ? "true" : undefined}>All</a>
+    {ev.STATUSES.map((st: string) => (
+      <a href={`/admin/events/?status=${st}`} aria-current={status === st ? "true" : undefined}>{STATUS_LABELS[st]}</a>
+    ))}
+  </nav>
+
   <h2>Upcoming</h2>
   {upcoming.length === 0
-    ? <p class="muted">No upcoming events saved yet. <a href={`/admin/events/${nextTue}/`}>Open next Tuesday ({longDay(nextTue)})</a>.</p>
+    ? status
+      ? <p class="muted">No upcoming {STATUS_LABELS[status]} events.</p>
+      : <p class="muted">No upcoming events saved yet. <a href={`/admin/events/${nextTue}/`}>Open next Tuesday ({longDay(nextTue)})</a>.</p>
     : (
       <ul>
         {upcoming.map((e: any) => (
@@ -112,4 +124,6 @@ const yesNo = (b: boolean | null | undefined) => (b == null ? "" : b ? "Yes" : "
 <style>
   .missing { color: var(--err); }
   .pager { display: flex; gap: 1rem; }
+  .status-filter { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-block: 0.5rem 1rem; }
+  .status-filter [aria-current] { font-weight: bold; text-decoration: none; }
 </style>

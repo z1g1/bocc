@@ -19,19 +19,21 @@ const isAdmin = hasRole(Astro.locals, "admin");
 const isSocial = hasRole(Astro.locals, "social");
 
 // Admin-only events block (plan Phase 3): the next events and the "report missing"
-// count, with "today" the Eastern calendar day; Event readiness at a glance (#59).
-let events: { upcoming: any[]; missing: number; nextTue: string; readiness: Map<string, any>; labels: Record<string, string> } | null = null;
+// count, with "today" the Eastern calendar day; Event readiness at a glance (#59); every
+// saved event counted by Event status, each count linking to the filtered events list.
+let events: { upcoming: any[]; missing: number; counts: Record<string, number>; statuses: readonly string[]; nextTue: string; readiness: Map<string, any>; labels: Record<string, string> } | null = null;
 if (isAdmin) {
   const { pool } = await import("../../lib/admin/db.mjs");
   const ev = await import("../../lib/admin/events.mjs");
   const today = ev.todayEastern();
-  const [upcoming, missing] = await Promise.all([
+  const [upcoming, missing, counts] = await Promise.all([
     ev.listUpcoming(pool, { today, limit: 2 }),
     ev.reportMissingCount(pool, { today }),
+    ev.statusCounts(pool),
   ]);
   const { eventReadinessByDate } = await import("../../lib/admin/event-readiness-load.mjs");
   const readiness = await eventReadinessByDate(pool, upcoming);
-  events = { upcoming, missing, nextTue: ev.nextTuesday(today), readiness, labels: ev.STATUS_LABELS };
+  events = { upcoming, missing, counts, statuses: ev.STATUSES, nextTue: ev.nextTuesday(today), readiness, labels: ev.STATUS_LABELS };
 }
 const statusText = (s: string) => (events!.labels[s] ?? events!.labels.scheduled).toLowerCase();
 ---
@@ -47,6 +49,7 @@ const statusText = (s: string) => (events!.labels[s] ?? events!.labels.scheduled
       {events.upcoming.length > 0
         ? <ul>{events.upcoming.map((e) => <li>Next: <a href={`/admin/events/${e.date}/`}>{longDay(e.date)}</a> <span class="muted">{statusText(e.status)}</span> <ReadyTag tag={events!.readiness.get(e.date)?.tag} /></li>)}</ul>
         : <p class="muted">No upcoming events saved. <a href={`/admin/events/${events.nextTue}/`}>Open next Tuesday ({longDay(events.nextTue)})</a></p>}
+      <p class="counts">All saved events: {events.statuses.map((st, i) => <>{i > 0 && " · "}<a href={`/admin/events/?status=${st}`}>{events!.labels[st]} {events!.counts[st]}</a></>)}</p>
     </section>
   )}
 
