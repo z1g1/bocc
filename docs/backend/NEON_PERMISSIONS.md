@@ -60,8 +60,11 @@ statements even for the owner. Roles live only in `user_roles`; the Better Auth 
 
 The Phase 3 tables (`events`, `event_reports`, `event_media`) have no RLS, like `user_roles` and
 `audit_log`: their rows aren't split between users, so the grants are the whole policy. Nothing
-else is granted on them: `checkin_writer` and `public` get nothing, and Supabase-style `anon` /
-`authenticated` roles are revoked if they exist. `event_links` (Phase 4) is the same, plus
+else is granted on them: `public` gets nothing, `checkin_writer` gets nothing but
+`SELECT (event_date, status)` on `events` (migration `20261203190000_held_from_events.sql`,
+so the Held view can read Reported and Cancelled Events; no other column, and nothing on
+`event_reports` or `event_media`), and Supabase-style `anon` / `authenticated` roles are
+revoked if they exist. `event_links` (Phase 4) is the same, plus
 `site_reader`'s SELECT. `social_plans` and `social_media_posts` (Phase 5) are the same, with
 no `site_reader` grant. `linkedin_authentications` (Phase 6) is granted to `admin_app` only:
 `site_reader` and `checkin_writer` get nothing; `social_checker` gets a column grant on

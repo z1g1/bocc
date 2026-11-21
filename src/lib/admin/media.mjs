@@ -37,15 +37,14 @@
 
 import { randomUUID } from "node:crypto";
 import { pool, withAudit, writeAudit } from "./db.mjs";
-import { EVENT_PHOTO_KIND, inUseMessage } from "./event-image-rules.mjs";
+import { inUseMessage } from "./event-image-rules.mjs";
+import { EVENT_PHOTO_KIND } from "./media-rules.mjs";
 import { NotFoundError, ValidationError, isUuid } from "./attendees.mjs";
 import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
 import { IMAGE_16X9_LIMITS } from "../linkedin/rules.mjs";
 
 export { NotFoundError, ValidationError };
 
-/** A Photo from Event (GLOSSARY.md): cleared by the photo waiver, always publicly usable. */
-export { EVENT_PHOTO_KIND };
 export const PHOTO_KINDS = Object.freeze(["signin_board", EVENT_PHOTO_KIND]);
 // DEPRECATED (#54): the kind's old name. A tab opened before the deploy runs the old
 // static browser JS and still posts it, so an upload request with it is taken as
@@ -77,7 +76,7 @@ export const LIMITS = Object.freeze({
 // The Event Image's original: smaller cap than a photo (it is a designed image, not a
 // phone photo), and big enough for the 16:9 Event Image. Its dimensions are measured in the
 // browser and declared (the server never reads the bytes), so the minimum is checked
-// here only as a guard against a buggy client. The numbers are LinkedIn's cover limits
+// here only as a guard against a buggy client. The numbers are the 16:9 Event Image limits
 // (src/lib/linkedin/rules.mjs IMAGE_16X9_LIMITS), the one copy on the server. Keep in step
 // with admin-media-lib.js (a test checks).
 export const EVENT_IMAGE = Object.freeze({

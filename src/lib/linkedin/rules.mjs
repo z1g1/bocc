@@ -395,6 +395,14 @@ export const LINKEDIN_SECTION_HREF = "?tab=info#h-linkedin";
  *   drift: null | { changes: ("location"|"image")[], message: string, href: string },
  *   cancel: null | { due: boolean, doneAt: Date|null, message: string, href: string } }}
  */
+/**
+ * Whether linkedInFollowUp compares the Event Image: only for a posted row that recorded
+ * an image, on an event that isn't cancelled. A caller reading many dates skips the
+ * Event Image read when this is false.
+ */
+export const followUpComparesImage = ({ ledger, event }) =>
+  ledger?.status === "posted" && event.status !== "cancelled" && ledger.imageSource != null;
+
 export function linkedInFollowUp({ ledger, event, eventImage }) {
   if (ledger?.status !== "posted") return { eventUrl: null, drift: null, cancel: null };
   const eventUrl = ledger.eventUrl;
@@ -405,7 +413,8 @@ export function linkedInFollowUp({ ledger, event, eventImage }) {
   }
   const changes = [];
   if (wording(ledger.location) !== wording(event.location)) changes.push("location");
-  if (ledger.imageSource != null && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== image16x9Ref(eventImage))) {
+  if (followUpComparesImage({ ledger, event })
+      && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== image16x9Ref(eventImage))) {
     changes.push("image");
   }
   if (!changes.length) return { eventUrl, drift: null, cancel: null };

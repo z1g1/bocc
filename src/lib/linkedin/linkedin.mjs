@@ -62,7 +62,7 @@ import { API_BASE, LinkedInError, authorizationUrl, linkedInClient } from "./cli
 import { readLinkedInEnv } from "./env.mjs";
 import {
   ORGANIZER_URN, REFUSALS, allowedActions, buildEventPayload, buildEventSpec, buildImageUploadPayload,
-  buildPostPayload, checkImage16x9, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
+  buildPostPayload, checkImage16x9, createRefusals, eventUrl, expiryLevel, findDuplicates, followUpComparesImage, linkedInFollowUp, missingScopes, postUrl,
   publishRefusals,
 } from "./rules.mjs";
 import { setLinkInTransaction } from "../admin/event-links.mjs";
@@ -264,14 +264,16 @@ export const PLACEHOLDERS = Object.freeze({
   postUrn: "<post id from the post>",
 });
 
+/** A ledger row's columns, as activeLedgerRow (and linkedInFollowUpsFor) return them. */
+const LEDGER_COLUMNS = `id, status, name, commentary, location, image_source as "imageSource", image_ref as "imageRef",
+  linkedin_event_id as "linkedinEventId", event_url as "eventUrl", post_urn as "postUrn", post_url as "postUrl",
+  created_by as "createdBy", attempted_at as "attemptedAt", posted_at as "postedAt",
+  cancelled_on_linkedin_at as "cancelledOnLinkedInAt"`;
+
 /** The date's active (not retired) ledger row, or null. */
 async function activeLedgerRow(db, date) {
   const { rows } = await db.query(
-    `select id, status, name, commentary, location, image_source as "imageSource", image_ref as "imageRef",
-            linkedin_event_id as "linkedinEventId", event_url as "eventUrl", post_urn as "postUrn", post_url as "postUrl",
-            created_by as "createdBy", attempted_at as "attemptedAt", posted_at as "postedAt",
-            cancelled_on_linkedin_at as "cancelledOnLinkedInAt"
-       from public.linkedin_events where event_date = $1 and status <> 'retired'`, [date]);
+    `select ${LEDGER_COLUMNS} from public.linkedin_events where event_date = $1 and status <> 'retired'`, [date]);
   return rows[0] ?? null;
 }
 
@@ -652,8 +654,8 @@ export async function linkedInFollowUpFor(db, date, { event, eventImage } = {}) 
 
 /**
  * linkedInFollowUpFor for several Events at once (the events list and home tags): the
- * ledger rows in one query, and the Event Image read only for a posted, not cancelled
- * Event (the only case whose drift compares it).
+ * ledger rows in one query, and the Event Image read only when rules.mjs
+ * followUpComparesImage says the drift compares it.
  * @param {{ query: Function }} db
  * @param {Array<{ date: string, status: string, location: string|null }>} events
  * @returns {Promise<Map<string, ReturnType<typeof linkedInFollowUp>>>} by date
@@ -661,14 +663,12 @@ export async function linkedInFollowUpFor(db, date, { event, eventImage } = {}) 
 export async function linkedInFollowUpsFor(db, events) {
   const dates = events.map((e) => e.date);
   const { rows } = dates.length ? await db.query(
-    `select event_date::text as date, status, location, image_source as "imageSource", image_ref as "imageRef",
-            event_url as "eventUrl", cancelled_on_linkedin_at as "cancelledOnLinkedInAt"
+    `select event_date::text as date, ${LEDGER_COLUMNS}
        from public.linkedin_events where event_date = any($1::date[]) and status <> 'retired'`, [dates]) : { rows: [] };
   const ledgers = new Map(rows.map(({ date, ...ledger }) => [date, ledger]));
   const out = await Promise.all(events.map(async (event) => {
     const ledger = ledgers.get(event.date) ?? null;
-    const needsImage = ledger?.status === "posted" && event.status !== "cancelled";
-    const eventImage = needsImage ? await getEventImage(db, event.date) : null;
+    const eventImage = followUpComparesImage({ ledger, event }) ? await getEventImage(db, event.date) : null;
     return [event.date, linkedInFollowUp({ ledger, event, eventImage })];
   }));
   return new Map(out);

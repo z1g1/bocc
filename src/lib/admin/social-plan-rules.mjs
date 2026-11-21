@@ -1,5 +1,5 @@
 // Social plan rules (ADR 0011 decision 2; plan Phase 5; words: GLOSSARY.md). Pure functions,
-// importing only the pure ./event-image-rules.mjs, so the admin event page, the social role's
+// importing only the pure ./media-rules.mjs, so the admin event page, the social role's
 // pages and any scheduled check all apply exactly the same rules. The database side is ./social-plan.mjs.
 //
 // Channel texts (defaultTexts, channelTexts). Luma is the only link ever used:
@@ -35,9 +35,9 @@
 // hand ends the Chrome tasks' work on the plan even with posts still pending
 // (social-plan.mjs findNext skips it). Intended: it is the Admin's "done, stop".
 
-/** Channels in work-order order (the Wednesday task's order), with their labels. */
-import { EVENT_PHOTO_KIND } from "./event-image-rules.mjs";
+import { EVENT_PHOTO_KIND } from "./media-rules.mjs";
 
+/** Channels in work-order order (the Wednesday task's order), with their labels. */
 export const CHANNELS = Object.freeze({
   facebook: "Facebook",
   instagram: "Instagram",

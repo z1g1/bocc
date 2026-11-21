@@ -240,20 +240,20 @@ async function make16x9(mediaId, displayUrl, step) {
   } finally {
     src.close();
   }
-  let cover;
+  let image16x9;
   try {
-    cover = await toJpeg(canvas, IMAGE_16X9_QUALITY);
+    image16x9 = await toJpeg(canvas, IMAGE_16X9_QUALITY);
   } finally {
     canvas.width = 0; canvas.height = 0;
   }
 
   step("uploading the 16:9 Event Image…");
-  const start = await postJson(`/api/admin/media/${mediaId}/cover`, { size: cover.size });
+  const start = await postJson(`/api/admin/media/${mediaId}/cover`, { size: image16x9.size });
   if (start.status !== 201) throw new UserError(await serverMessage(start, "the 16:9 Event Image couldn't start"));
   const plan = await start.json();
   let put;
   try {
-    put = await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: cover, credentials: "omit" });
+    put = await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: image16x9, credentials: "omit" });
   } catch {
     throw new UserError("the 16:9 Event Image upload failed (network). Try again.");
   }
@@ -285,14 +285,14 @@ async function uploadOne(file, opts, step) {
   }
 
   step(eventImage ? "preparing the image…" : "preparing the photo…");
-  const { display, thumb, cover, width, height } = await makeCopies(file, { cover: eventImage });
+  const { display, thumb, image16x9, width, height } = await makeCopies(file, { with16x9: eventImage });
 
   let requestBody;
   if (eventImage) {
     const ok = checkEventImage({ type: file.type, size: file.size, width, height });
     if (!ok.ok) throw new UserError(ok.message);
     requestBody = eventImageRequestBody({
-      eventDate: opts.eventDate, original: { contentType: ok.contentType, size: file.size, width, height }, display, thumb, cover,
+      eventDate: opts.eventDate, original: { contentType: ok.contentType, size: file.size, width, height }, display, thumb, cover: image16x9,
     });
   } else {
     requestBody = uploadRequestBody({ ...opts, original: { contentType: check.contentType, size: file.size }, display, thumb });
@@ -311,7 +311,7 @@ async function uploadOne(file, opts, step) {
   const parts = [
     ["thumb", thumb, "thumbnail"],
     ["display", display, "display copy"],
-    ...(cover ? [["cover", cover, "16:9 Event Image"]] : []),
+    ...(image16x9 ? [["cover", image16x9, "16:9 Event Image"]] : []),
     ["original", file, `original (${formatBytes(file.size)})`],
   ];
   for (const [variant, blob, label] of parts) {
@@ -367,7 +367,7 @@ async function serverMessage(res, fallback) {
 
 // ── Resizing ────────────────────────────────────────────────────────────────
 
-async function makeCopies(file, { cover: with16x9 = false } = {}) {
+async function makeCopies(file, { with16x9 = false } = {}) {
   const src = await decode(file);
   const { width, height } = src;
   let displayCanvas;
@@ -386,8 +386,8 @@ async function makeCopies(file, { cover: with16x9 = false } = {}) {
     thumbCanvas = drawScaled(displayCanvas, t);
     const display = await toJpeg(displayCanvas, DISPLAY_QUALITY);
     const thumb = await toJpeg(thumbCanvas, THUMB_QUALITY);
-    const cover = image16x9Canvas ? await toJpeg(image16x9Canvas, IMAGE_16X9_QUALITY) : null;
-    return { display, thumb, cover, width, height };
+    const image16x9 = image16x9Canvas ? await toJpeg(image16x9Canvas, IMAGE_16X9_QUALITY) : null;
+    return { display, thumb, image16x9, width, height };
   } finally {
     // iOS keeps canvas memory until the canvas is shrunk.
     for (const c of [displayCanvas, thumbCanvas, image16x9Canvas]) if (c) { c.width = 0; c.height = 0; }

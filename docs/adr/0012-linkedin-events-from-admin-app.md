@@ -150,8 +150,12 @@ Deliberate extras beyond the spec, recorded so they aren't mistaken for drift:
   **`/admin/media/covers/`** remakes them all at once (a one-off for an Admin after the
   migration and deploy). A remake overwrites the same object key, so a LinkedIn event already
   posted records no image drift and is not touched; while one is outdated it is not sent
-  to LinkedIn. The object key stays `…/cover.jpg` and the route `/admin/media/covers/`: only
-  the words and the columns changed (ticket #55, GLOSSARY.md).
+  to LinkedIn. Kept under the old name, as compatibility pieces: the object key
+  `…/cover.jpg`, the page `/admin/media/covers/`, the API routes
+  `/api/admin/media/[id]/cover` and `/api/admin/media/[id]/cover-complete`, and the upload
+  variant and request field `cover` (in `/api/admin/media/uploads` and its plan's
+  `uploads.cover`). Only the words, the columns and the code's own names changed (ticket
+  #55, GLOSSARY.md); renaming the kept ones is for the contract work (#60).
 
 ## Amendment: LinkedIn authentication and the LinkedIn words (2026-12-03, #58)
 

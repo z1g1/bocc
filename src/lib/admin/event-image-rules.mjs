@@ -1,5 +1,4 @@
-// Which image an event uses (ADR 0012 decision 3). Pure, no imports (EVENT_PHOTO_KIND lives
-// here so other pure rules can share it): the database side
+// Which image an event uses (ADR 0012 decision 3). Pure, no imports: the database side
 // is src/lib/admin/event-image.mjs.
 //
 // Resolution order:
@@ -35,8 +34,6 @@
 const SQUARE_LOGO = Object.freeze({
   path: "/assets/images/brand/bocc-logo-square.png", contentType: "image/png", width: 2000, height: 2000,
 });
-/** A Photo from Event's event_media kind (GLOSSARY.md): cleared by the photo waiver, always publicly usable. */
-export const EVENT_PHOTO_KIND = "event_photo";
 
 const LOGO_16X9 = Object.freeze({
   path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png", width: 1920, height: 1080,
