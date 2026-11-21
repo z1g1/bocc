@@ -183,7 +183,7 @@ export async function clearEventImage(actorUserId, storage, date, { log } = {}) 
 
 /**
  * The 16:9 Event Image's bytes on the server: a stored copy through a header-signed GET,
- * the logo's wide version through `readAsset` (by default readPublicAsset: public/ on
+ * the logo's 16:9 version through `readAsset` (by default readPublicAsset: public/ on
  * disk, else fetched from the site's own origin, since the Netlify function bundle
  * has no public/).
  * @param {import("./event-image-rules.mjs").EventImage} image
@@ -191,12 +191,12 @@ export async function clearEventImage(actorUserId, storage, date, { log } = {}) 
  * @returns {Promise<{ contentType: string, bytes: Buffer }>}
  */
 export async function load16x9Bytes(image, { storage, readAsset = readPublicAsset } = {}) {
-  const wide = image.image16x9;
-  if (!wide) throw new Error("event image: this image has no 16:9 Event Image yet");
+  const image16x9 = image.image16x9;
+  if (!image16x9) throw new Error("event image: this image has no 16:9 Event Image yet");
   if (image.image16x9Outdated) throw new Error("event image: the 16:9 Event Image is being remade (open the event page)");
-  if ("path" in wide) return { contentType: wide.contentType, bytes: Buffer.from(await readAsset(wide.path)) };
+  if ("path" in image16x9) return { contentType: image16x9.contentType, bytes: Buffer.from(await readAsset(image16x9.path)) };
   if (!storage) throw new Error("event image: storage is not configured");
-  const got = await storage.getObject({ key: wide.key });
-  if (!got) throw new Error(`event image: the 16:9 Event Image ${wide.key} is missing from the bucket`);
-  return { contentType: wide.contentType, bytes: got.bytes };
+  const got = await storage.getObject({ key: image16x9.key });
+  if (!got) throw new Error(`event image: the 16:9 Event Image ${image16x9.key} is missing from the bucket`);
+  return { contentType: image16x9.contentType, bytes: got.bytes };
 }

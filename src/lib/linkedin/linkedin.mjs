@@ -651,6 +651,30 @@ export async function linkedInFollowUpFor(db, date, { event, eventImage } = {}) 
 }
 
 /**
+ * linkedInFollowUpFor for several Events at once (the events list and home tags): the
+ * ledger rows in one query, and the Event Image read only for a posted, not cancelled
+ * Event (the only case whose drift compares it).
+ * @param {{ query: Function }} db
+ * @param {Array<{ date: string, status: string, location: string|null }>} events
+ * @returns {Promise<Map<string, ReturnType<typeof linkedInFollowUp>>>} by date
+ */
+export async function linkedInFollowUpsFor(db, events) {
+  const dates = events.map((e) => e.date);
+  const { rows } = dates.length ? await db.query(
+    `select event_date::text as date, status, location, image_source as "imageSource", image_ref as "imageRef",
+            event_url as "eventUrl", cancelled_on_linkedin_at as "cancelledOnLinkedInAt"
+       from public.linkedin_events where event_date = any($1::date[]) and status <> 'retired'`, [dates]) : { rows: [] };
+  const ledgers = new Map(rows.map(({ date, ...ledger }) => [date, ledger]));
+  const out = await Promise.all(events.map(async (event) => {
+    const ledger = ledgers.get(event.date) ?? null;
+    const needsImage = ledger?.status === "posted" && event.status !== "cancelled";
+    const eventImage = needsImage ? await getEventImage(db, event.date) : null;
+    return [event.date, linkedInFollowUp({ ledger, event, eventImage })];
+  }));
+  return new Map(out);
+}
+
+/**
  * "Done on LinkedIn": the Admin cancelled the LinkedIn event by hand. Records who and
  * when on the posted row (audited); a second tick changes nothing.
  * @param {string} userId

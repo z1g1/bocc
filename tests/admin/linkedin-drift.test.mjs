@@ -145,6 +145,26 @@ describe("drift and cancellation (use-case, admin_app, fake client)", () => {
     assert.deepEqual(await li.markCancelledOnLinkedIn(user.id, date, { now: NOW }), { changed: false });
     assert.equal((await ackAudits(date)).length, 1);
   });
+
+  test("several Events at once (the list and home tags): the same follow-ups as one by one", async () => {
+    const unchanged = await postedDate(user);
+    const moved = await postedDate(user);
+    await ev.saveEvent(user.id, moved, { status: "scheduled", location: "food_hall" });
+    const newImage = await postedDate(user);
+    await seedEventImage(newImage);
+    const cancelled = await postedDate(user);
+    await cancel(user, cancelled);
+    const never = await nextDate();
+    await owner.query(`insert into events (event_date, status) values ($1, 'scheduled')`, [never]);
+    const dates = [unchanged, moved, newImage, cancelled, never];
+    const events = await Promise.all(dates.map((d) => ev.getEvent(pool, d)));
+    const many = await li.linkedInFollowUpsFor(pool, events);
+    assert.deepEqual([...many.keys()], dates);
+    for (const d of dates) assert.deepEqual(many.get(d), await li.linkedInFollowUpFor(pool, d), d);
+    assert.deepEqual(dates.map((d) => [many.get(d).drift?.changes ?? null, many.get(d).cancel?.due ?? null]),
+      [[null, null], [["location"], null], [["image"], null], [null, true], [null, null]]);
+    assert.deepEqual(await li.linkedInFollowUpsFor(pool, []), new Map());
+  });
 });
 
 // ── 2. Over HTTP ────────────────────────────────────────────────────────────

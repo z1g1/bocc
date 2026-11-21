@@ -37,7 +37,7 @@
 
 import { randomUUID } from "node:crypto";
 import { pool, withAudit, writeAudit } from "./db.mjs";
-import { inUseMessage } from "./event-image-rules.mjs";
+import { EVENT_PHOTO_KIND, inUseMessage } from "./event-image-rules.mjs";
 import { NotFoundError, ValidationError, isUuid } from "./attendees.mjs";
 import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
 import { IMAGE_16X9_LIMITS } from "../linkedin/rules.mjs";
@@ -45,7 +45,7 @@ import { IMAGE_16X9_LIMITS } from "../linkedin/rules.mjs";
 export { NotFoundError, ValidationError };
 
 /** A Photo from Event (GLOSSARY.md): cleared by the photo waiver, always publicly usable. */
-export const EVENT_PHOTO_KIND = "event_photo";
+export { EVENT_PHOTO_KIND };
 export const PHOTO_KINDS = Object.freeze(["signin_board", EVENT_PHOTO_KIND]);
 // DEPRECATED (#54): the kind's old name. A tab opened before the deploy runs the old
 // static browser JS and still posts it, so an upload request with it is taken as
@@ -97,8 +97,8 @@ const variantsFor = (kind) => (kind === VIDEO_KIND ? /** @type {const} */ (["ori
   : kind === EVENT_IMAGE_KIND ? /** @type {const} */ ([...VARIANTS, "cover"]) : VARIANTS);
 
 /** How a problem names an object: the upload variant `cover` is the 16:9 Event Image. */
-const WIDE = "16:9 Event Image";
-const label = (variant) => (variant === "cover" ? WIDE : variant);
+const IMAGE_16X9_LABEL = "16:9 Event Image";
+const label = (variant) => (variant === "cover" ? IMAGE_16X9_LABEL : variant);
 
 const isSize = (n, max) => Number.isSafeInteger(n) && n > 0 && n <= max;
 const plusDays = (d, days) => new Date(d.getTime() + days * 86400000).toISOString().slice(0, 10);
@@ -374,8 +374,8 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
   // A Photo from Event's 16:9 Event Image is at a known key: also delete it when its upload
   // was started but never completed (deleting a missing object is not an error).
   const keys = rowKeys(row);
-  const wideKey = row.kind === EVENT_PHOTO_KIND ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
-  if (wideKey && !keys.includes(wideKey)) keys.push(wideKey);
+  const image16x9Key = row.kind === EVENT_PHOTO_KIND ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
+  if (image16x9Key && !keys.includes(image16x9Key)) keys.push(image16x9Key);
   const leftovers = await deleteObjects(storage, `media delete ${id}`, keys, log);
   return { id, eventDate: row.eventDate, kind: row.kind, leftovers };
 }
@@ -466,14 +466,14 @@ export async function completeImage16x9(actorUserId, storage, id, { db }) {
       order by id desc limit 1`, [id]);
   const started = audit[0]?.details;
   // Only an upload started under the current rule counts (not one of the old crop).
-  if (!started || started.layout !== IMAGE_16X9_LAYOUT) return { id, status: "pending", problems: [`${WIDE}: not started`] };
+  if (!started || started.layout !== IMAGE_16X9_LAYOUT) return { id, status: "pending", problems: [`${IMAGE_16X9_LABEL}: not started`] };
   const h = await storage.headObject({ key: started.key });
   const problems = [];
-  if (!h || (remake && started.replacesEtag && h.etag === started.replacesEtag)) problems.push(`${WIDE}: not uploaded`);
+  if (!h || (remake && started.replacesEtag && h.etag === started.replacesEtag)) problems.push(`${IMAGE_16X9_LABEL}: not uploaded`);
   else {
     const type = (h.contentType ?? "").split(";")[0].trim().toLowerCase();
-    if (type !== COPY_TYPE) problems.push(`${WIDE}: content type ${type || "missing"}, expected ${COPY_TYPE}`);
-    if (h.contentLength !== started.signed.size) problems.push(`${WIDE}: ${h.contentLength} bytes, expected ${started.signed.size}`);
+    if (type !== COPY_TYPE) problems.push(`${IMAGE_16X9_LABEL}: content type ${type || "missing"}, expected ${COPY_TYPE}`);
+    if (h.contentLength !== started.signed.size) problems.push(`${IMAGE_16X9_LABEL}: ${h.contentLength} bytes, expected ${started.signed.size}`);
   }
   if (problems.length) return { id, status: "pending", problems };
   const raced = Symbol("raced");
@@ -482,7 +482,7 @@ export async function completeImage16x9(actorUserId, storage, id, { db }) {
       ? await client.query(
         "update public.event_media set image_16x9_outdated = false where id = $1 and image_16x9_key = $2 and image_16x9_outdated", [id, started.key])
       : await client.query(
-        "update public.event_media set image_16x9_key = $2 where id = $1 and image_16x9_key is null and kind = 'event_photo'", [id, started.key]);
+        "update public.event_media set image_16x9_key = $2 where id = $1 and image_16x9_key is null and kind = $3", [id, started.key, EVENT_PHOTO_KIND]);
     // Nothing changed (a race with another complete, or a delete): roll back, no audit row.
     if (r.rowCount !== 1) throw raced;
     return true;
@@ -545,8 +545,8 @@ export async function listEventMedia(db, date) {
     `select ${MEDIA_COLUMNS},
             created_at < now() - make_interval(hours => $2) as stale
        from public.event_media
-      where event_date = $1 and kind in ('signin_board', 'event_photo')
-      order by created_at, id`, [date, STALE_PENDING_HOURS]);
+      where event_date = $1 and kind = any($3::text[])
+      order by created_at, id`, [date, STALE_PENDING_HOURS, PHOTO_KINDS]);
   const all = rows.map((r) => ({ ...r, sizeBytes: Number(r.sizeBytes) }));
   return { ready: all.filter((r) => r.status === "ready"), pending: all.filter((r) => r.status === "pending") };
 }

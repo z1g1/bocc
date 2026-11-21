@@ -72,14 +72,14 @@ function links(file: any, downloadName: string) {
   };
 }
 let square: ReturnType<typeof links> = null;
-let wide: ReturnType<typeof links> = null;
+let image16x9Links: ReturnType<typeof links> = null;
 let stale: any[] = [];
 let pickable: any[] = [];
 if (allowed && image) {
   const sq = links(image.display, "");
   const orig = links(image.original, `bocc-${date}-event-image.${"key" in image.original ? ext(image.original.key) : "png"}`);
   square = sq && orig ? { ...orig, src: sq.src } : null;
-  wide = links(image.image16x9, `bocc-${date}-event-image-16x9.jpg`);
+  image16x9Links = links(image.image16x9, `bocc-${date}-event-image-16x9.jpg`);
   if (storage) {
     const { listStalePending } = await import("../../lib/admin/media.mjs");
     const { pool } = await import("../../lib/admin/db.mjs");
@@ -100,7 +100,7 @@ const statusId = `event-image-status-${date}`;
 const pickStatusId = `event-image-pick-status-${date}`;
 // A picked photo without its 16:9 Event Image (picked without the script): offer to make it.
 // One made under the old rule (uploaded or picked): the script remakes it on open.
-const wideToMake = storage && ((image?.source === "referenced" && !image.image16x9) || image?.image16x9Outdated)
+const image16x9ToMake = storage && ((image?.source === "referenced" && !image.image16x9) || image?.image16x9Outdated)
   ? { id: image.mediaId, displayUrl: storage.presignGet({ key: image.display.key }).url, auto: Boolean(image.image16x9Outdated) } : null;
 const previewId = `event-image-preview-${date}`;
 const warningId = `event-image-warning-${date}`;
@@ -126,10 +126,10 @@ const fmtTime = (d: Date) =>
         {square && <p><a class="button small" href={square.href} download={square.download}>Download square/original</a></p>}
       </figure>
       <figure>
-        {wide ? <img src={wide.src} alt={`Event Image, 16:9, ${date}`} loading="lazy" decoding="async"> : <p class="muted">No 16:9 Event Image yet.</p>}
+        {image16x9Links ? <img src={image16x9Links.src} alt={`Event Image, 16:9, ${date}`} loading="lazy" decoding="async"> : <p class="muted">No 16:9 Event Image yet.</p>}
         <figcaption>16:9 Event Image <span class="muted">(listings entered by hand, LinkedIn)</span></figcaption>
         {image.image16x9Outdated && <p class="muted">This 16:9 Event Image is a centre crop, made under the old rule: it is being remade on the beans background.</p>}
-        {wide && <p><a class="button small" href={wide.href} download={wide.download}>Download 16:9 Event Image</a></p>}
+        {image16x9Links && <p><a class="button small" href={image16x9Links.href} download={image16x9Links.download}>Download 16:9 Event Image</a></p>}
       </figure>
     </div>
 
@@ -148,9 +148,9 @@ const fmtTime = (d: Date) =>
         </form>
         <p class="media-status" id={statusId} role="status" aria-live="polite"></p>
 
-        {wideToMake && (
-          <form class="inline" data-make-16x9 data-auto={wideToMake.auto ? "" : undefined} data-media-id={wideToMake.id} data-display-url={wideToMake.displayUrl} data-status={pickStatusId} hidden>
-            <button type="submit">{wideToMake.auto ? "Remake the 16:9 Event Image" : "Make the 16:9 Event Image"}</button>
+        {image16x9ToMake && (
+          <form class="inline" data-make-16x9 data-auto={image16x9ToMake.auto ? "" : undefined} data-media-id={image16x9ToMake.id} data-display-url={image16x9ToMake.displayUrl} data-status={pickStatusId} hidden>
+            <button type="submit">{image16x9ToMake.auto ? "Remake the 16:9 Event Image" : "Make the 16:9 Event Image"}</button>
           </form>
         )}
 

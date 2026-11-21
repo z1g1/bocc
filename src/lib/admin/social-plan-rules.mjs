@@ -1,6 +1,6 @@
-// Social plan rules (ADR 0011 decision 2; plan Phase 5; words: GLOSSARY.md). Pure functions, NO
-// imports, so the admin event page, the social role's pages and any scheduled check
-// all apply exactly the same rules. The database side is ./social-plan.mjs.
+// Social plan rules (ADR 0011 decision 2; plan Phase 5; words: GLOSSARY.md). Pure functions,
+// importing only the pure ./event-image-rules.mjs, so the admin event page, the social role's
+// pages and any scheduled check all apply exactly the same rules. The database side is ./social-plan.mjs.
 //
 // Channel texts (defaultTexts, channelTexts). Luma is the only link ever used:
 //   facebook, threads, linkedin_page   caption = base caption + "\n\nRSVP: <Luma URL>"
@@ -36,6 +36,8 @@
 // (social-plan.mjs findNext skips it). Intended: it is the Admin's "done, stop".
 
 /** Channels in work-order order (the Wednesday task's order), with their labels. */
+import { EVENT_PHOTO_KIND } from "./event-image-rules.mjs";
+
 export const CHANNELS = Object.freeze({
   facebook: "Facebook",
   instagram: "Instagram",
@@ -325,7 +327,7 @@ export function publishAtProblem(publishAt, eventDate, now = new Date()) {
  *             eventDate: string|null, file: object, thumb: object }}
  */
 export function resolveThumbnail({ override = null, eventImage }) {
-  if (override && override.kind === "event_photo" && override.status === "ready" && override.publiclyUsable) {
+  if (override && override.kind === EVENT_PHOTO_KIND && override.status === "ready" && override.publiclyUsable) {
     return {
       source: "override", eventImageSource: null, mediaId: override.id, eventDate: override.eventDate,
       file: { key: override.displayKey, contentType: "image/jpeg" },

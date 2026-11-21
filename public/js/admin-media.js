@@ -372,12 +372,12 @@ async function makeCopies(file, { cover: with16x9 = false } = {}) {
   const { width, height } = src;
   let displayCanvas;
   let thumbCanvas;
-  let wideCanvas;
+  let image16x9Canvas;
   try {
     const d = fitWithin(src.width, src.height, DISPLAY_EDGE);
     displayCanvas = drawScaled(src.image, d);
     // The 16:9 Event Image is drawn from the decoded original, not the display copy.
-    if (with16x9) wideCanvas = await draw16x9(src);
+    if (with16x9) image16x9Canvas = await draw16x9(src);
   } finally {
     src.close();
   }
@@ -386,11 +386,11 @@ async function makeCopies(file, { cover: with16x9 = false } = {}) {
     thumbCanvas = drawScaled(displayCanvas, t);
     const display = await toJpeg(displayCanvas, DISPLAY_QUALITY);
     const thumb = await toJpeg(thumbCanvas, THUMB_QUALITY);
-    const cover = wideCanvas ? await toJpeg(wideCanvas, IMAGE_16X9_QUALITY) : null;
+    const cover = image16x9Canvas ? await toJpeg(image16x9Canvas, IMAGE_16X9_QUALITY) : null;
     return { display, thumb, cover, width, height };
   } finally {
     // iOS keeps canvas memory until the canvas is shrunk.
-    for (const c of [displayCanvas, thumbCanvas, wideCanvas]) if (c) { c.width = 0; c.height = 0; }
+    for (const c of [displayCanvas, thumbCanvas, image16x9Canvas]) if (c) { c.width = 0; c.height = 0; }
   }
 }
 
