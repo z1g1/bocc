@@ -29,10 +29,13 @@
 //   - Cancelling is refused once a report exists (the event is Reported). Cancelling ahead
 //     of time, or re-saving a cancelled event's reason/announced flag, is allowed.
 //   - One form sets the Event status (scheduled, reported or cancelled; GLOSSARY.md) and
-//     the location together. Cancelled needs a reason; leaving cancelled (to scheduled or
-//     reported) clears the cancel fields in the same UPDATE, as the CHECKs require.
-//     `scheduled` and `cancelled` are refused while a report exists, and `reported` on a
-//     date after today. ("Held" is not a status: it means the event took place.)
+//     the location together. Cancelled needs a reason; leaving cancelled clears the cancel
+//     fields in the same UPDATE, as the CHECKs require. `scheduled` and `cancelled` are
+//     refused while a report exists. Reported means "its Event Report is in", so only
+//     submitReport moves an event to `reported`: the form refuses a change to it (a
+//     Reported event re-saved as `reported` is fine). A cancelled event that went ahead
+//     goes back to Scheduled, then takes its report. ("Held" is not a status: it means the
+//     event took place.)
 //   - The check-in count is calculated here and never stored. It is not attendance: not
 //     everyone checks in.
 //   - Editing an imported report (source google_form/pre_form) makes it source = 'admin'
@@ -360,12 +363,13 @@ async function audited(actorUserId, date, table, fn) {
 }
 
 const CANCEL_FIELDS = ["cancel_reason", "cancel_reason_other", "cancel_announced"];
+const REPORTED_BY_REPORT = "An event becomes Reported when its Event Report is saved. File the Event Report on the Post Event tab.";
 
 /**
  * Status (scheduled, reported or cancelled), location and, for cancelled, the reason and
  * announced flag: one UPDATE. Creates the event on its first save.
- * `reported` is refused for a date after today (Eastern), like a report; `scheduled` and
- * `cancelled` once a report exists (the event is Reported).
+ * A change to `reported` is refused: only saving an Event Report sets it (submitReport).
+ * `scheduled` and `cancelled` are refused once a report exists (the event is Reported).
  * @param {{ today?: string }} [opts]  "today" (Eastern); tests pass it
  */
 export async function saveEvent(actorUserId, date, input, { today = todayEastern() } = {}) {
@@ -377,6 +381,10 @@ export async function saveEvent(actorUserId, date, input, { today = todayEastern
   return audited(actorUserId, date, "events", async (client) => {
     const { created, row } = await lockEvent(client, date);
     const status = v.status ?? row.status;
+    // Reported means its Event Report is in (GLOSSARY.md): only submitReport sets it.
+    if (status === "reported" && row.status !== "reported") {
+      throw new ConflictError({ status: REPORTED_BY_REPORT });
+    }
     // A report means it is Reported: no way back to scheduled, and no cancelling. (A
     // cancelled event can't have a report, so only a change of status needs the check.)
     if (status !== row.status && status !== "reported" && (await hasReport(client, date))) {
@@ -420,7 +428,7 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
   return audited(actorUserId, date, "event_reports", async (client) => {
     const { created, row } = await lockEvent(client, date);
     if (row.status === "cancelled") {
-      throw new ConflictError({ date: "This event is cancelled. Set its status to Reported (Event Info tab) before filing a report." });
+      throw new ConflictError({ date: "This event is cancelled. If it went ahead, set its status back to Scheduled (Event Info tab), then file the report." });
     }
     const { rows } = await client.query(
       `select attendee_count, notes, bling_given, bling_details, source, submitted_by

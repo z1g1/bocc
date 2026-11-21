@@ -305,7 +305,8 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       <input type="hidden" name="action" value="save">
       <label for="status">Status</label>
       <select id="status" name="status" aria-invalid={detErr.status ? "true" : undefined}>
-        {Object.entries(STATUS_LABELS).map(([v, label]) => <option value={v} selected={det.status === v}>{label}</option>)}
+        {Object.entries(STATUS_LABELS).filter(([v]) => v !== "reported" || event.status === "reported")
+          .map(([v, label]) => <option value={v} selected={det.status === v}>{label}</option>)}
       </select>
       {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
       {/* Shown only while Cancelled is selected, and each "if Other" text box only while
@@ -428,7 +429,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       </p>
     )}
     {event.status === "cancelled"
-      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Reported (Event Info tab) first.</p>
+      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status back to Scheduled (Event Info tab), then file the report here.</p>
       : isFuture
         ? null
         : (
