@@ -111,3 +111,25 @@ for "last time you got to N"), `prior_longest_streak` (to detect a *first* 2-wee
 `weeks_attended` (to detect a first visit). `getStreak` also returns the event's longest
 active streak and how many attendees hold it, so "longest / tied for longest" is computed per
 event at read time. A 1-week run never counts as the longest active streak.
+
+## Amendment — 2026-12-03: the Events table is the schedule for Reported and Cancelled Events
+
+Amends decisions 3 and 5 (ticket #52, spec #49). The admin app's `events` table (ADR 0009) now
+records every Event's status: Scheduled, Reported (its Event Report is in) or Cancelled. It is
+the authoritative schedule for Reported and Cancelled Events, so the Occurrence calendar reads
+it instead of deriving everything from check-ins (GLOSSARY.md, **Held**):
+
+- A week is **Held** for the BOCC series when it has a non-debug check-in **or** its Event is
+  Reported, and **never** when its Event is Cancelled. Debug check-ins still count toward
+  nothing. A week with no Event and no check-in is still a non-occurrence and bridges a streak.
+- Migration `20261203190000_held_from_events.sql` redefines `held_occurrences` behind the same
+  seam (same two columns, still `security_invoker`); `streaks` and the Celebration are unchanged
+  downstream. The events table has no event id, so Reported and Cancelled Events apply to the
+  series' check-in event id `bocc` only; other event ids keep the check-in-only rule.
+- `checkin_writer` gets `SELECT (event_date, status)` on `events`, nothing more.
+
+Consequences: the "real-but-unattended week looks like a cancellation" gap above is closed for
+Reported Events. Agreed: a Reported Event with no check-ins breaks the streak of every attendee
+who didn't check in. Check-ins on a Cancelled Event's day no longer count, so an attendee whose
+only check-ins fall on Cancelled Events has no streak row, which `getStreak` reads as a zero
+streak.

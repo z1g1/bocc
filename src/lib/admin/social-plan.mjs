@@ -1,7 +1,9 @@
-// The weekly social work order (ADR 0011; plan Phase 5): one social_posts row per event
-// and its five social_post_channels rows. Parameterized SQL only, as admin_app
-// (SELECT/INSERT/UPDATE on both tables, migration 20261122120000_social_posts.sql).
-// The caption, hashtag, publish-time, ready and post status rules are in ./social-rules.mjs.
+// The Social plan module (ADR 0011; plan Phase 5; words: GLOSSARY.md): one Event's Social
+// plan (a social_plans row) and its five social media posts (social_media_posts rows, one
+// per Channel). Parameterized SQL only, as admin_app (SELECT/INSERT/UPDATE on both tables,
+// migrations 20261122120000_social_posts.sql and 20261203120000_glossary_rename_expand.sql).
+// The caption, hashtag, publish-time, ready, Plan status and Post status rules are in
+// ./social-plan-rules.mjs. The Chrome tasks' view of a plan is its "work order".
 //
 // The CALLER checks the role and, for changes, checkOrigin. The admin event page
 // (/admin/events/YYYY-MM-DD/, "admin" only) uses everything here. The social role's
@@ -9,62 +11,65 @@
 // see attendees, check-ins or the audit log, and nothing here returns any.
 //
 // Reads (take `db`, the pool or a client, first):
-//   getSocialPost(db, date)              -> post | null
-//       { date, videoMediaId, coverMediaId, coverNote, baseCaption, extraHashtags[], publishAt, status,
+//   getSocialPlan(db, date)              -> plan | null
+//       { date, videoMediaId, thumbnailMediaId, thumbnailTimecode, baseCaption, extraHashtags[], publishAt, status,
 //         createdAt, updatedAt, channels: { facebook: { caption, firstComment, status,
 //         postUrl, verifiedAt, commentPostedAt, notes, updatedAt }, … } }
-//       caption / firstComment are the stored overrides (null = the code default).
-//   getWorkOrder(db, date)               -> buildWorkOrder() (social-rules.mjs): the post,
+//       status is the Plan status; channels.<c>.status is that social media post's Post
+//       status. caption / firstComment are the stored overrides (null = the code default).
+//   getWorkOrder(db, date)               -> buildWorkOrder() (social-plan-rules.mjs): the plan,
 //       its final per-channel texts, the video row, the Luma URL, `problems`, and
-//       `actionable` (status Ready for Posting or Error, and no problems). For a date
-//       with no post, `exists: false`
+//       `actionable` (Plan status Ready for Posting or Error, and no problems). For a date
+//       with no Social plan, `exists: false`
 //       and the defaults.
-//   readState(db, date)                  -> { event, post, lumaUrl, video, coverMedia, eventImage }
-//       (its inputs; the work order's `cover` is resolveSocialCover(): the override
+//   readState(db, date)                  -> { event, plan, lumaUrl, video, thumbnailMedia, eventImage }
+//       (its inputs; the work order's `thumbnail` is resolveThumbnail(): the override
 //       photo, else the Event Image, event-image.mjs getEventImage)
-//   listCoverChoices(db, date)           -> the photos the cover can be set to
+//   listThumbnailChoices(db, date)       -> the photos the Thumbnail can be set to
 //
 // Writes (each change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }; target_id is the
-// date). The first write creates the events row (`scheduled`) if missing, the post
-// (publish_at = Monday 7:00 AM ET before the event) and its five `pending` channel
-// rows, in the same transaction (details.created / details.eventCreated).
-//   savePost(actor, date, input, { now })        social_post.update
-//       baseCaption, extraHashtags ("#a b, c"), coverNote, publishAt (Eastern
-//       "YYYY-MM-DDTHH:MM"; blank = the default), status (todo|ready|posted|error, the
-//       Social Posts tab's dropdown; absent = keep). Ready for Posting is refused
+// date). The first write creates the events row (`scheduled`) if missing, the Social plan
+// (publish_at = Monday 7:00 AM ET before the event) and its five `pending` social media
+// posts, in the same transaction (details.created / details.eventCreated).
+//   savePlan(actor, date, input, { now })        social_plan.update
+//       baseCaption, extraHashtags ("#a b, c"), thumbnailTimecode (a stale tab's old
+//       field name coverNote is still read; #60 drops that), publishAt (Eastern
+//       "YYYY-MM-DDTHH:MM"; blank = the default), status (the Plan status:
+//       todo|ready|posted|error, the Social plan tab's dropdown; absent = keep). Ready for Posting is refused
 //       (ValidationError .errors.status) while readyProblems() lists anything; To do,
 //       Posted and Error can always be set. A changed publish time (or switching to
 //       Ready for Posting) must be in the future and not after the event day
 //       (.errors.publishAt). Status changes are in the audit row's before/after.
-//   setVideo(actor, date, mediaId)               social_post.video
+//   setVideo(actor, date, mediaId)               social_plan.video
 //       a `ready` promo_video of the same event (.errors.video otherwise).
-//   setCover(actor, date, mediaId | "")       social_post.cover
-//       the cover image override: a ready, publicly usable social_photo of any event
-//       (.errors.cover otherwise); "" clears it (the cover is the Event Image again).
+//   setThumbnail(actor, date, mediaId | "")   social_plan.thumbnail
+//       the Thumbnail override: a ready, publicly usable event_photo of any event
+//       (.errors.thumbnail otherwise); "" clears it (the Thumbnail is the Event Image again).
 //       Never part of what blocks `ready`. Deleting that photo clears it (FK ON DELETE
 //       SET NULL, migration 20261127120000_social_post_cover). A photo that is also an
-//       Event Image (ticket #21) can't be deleted at all, so the cover stays.
-//   saveChannel(actor, date, channel, input)     social_post_channel.update
-//       caption / firstComment overrides; blank, or exactly the default, stores NULL
-//       (so the channel keeps following the default). On a post that is Ready for Posting
-//       or Error, a caption over the channel's limit is refused.
-//   setChannelResult(actor, date, channel, input, { now })   social_post_channel.result
-//       What the Chrome tasks write back (the social role's /admin/social/* pages and
-//       POST /api/admin/social/channel). Never creates a post (404 without one).
-//       input: status (pending|scheduled|live|failed; absent = keep), postUrl and notes
+//       Event Image (ticket #21) can't be deleted at all, so the Thumbnail stays.
+//   saveSocialMediaPost(actor, date, channel, input)     social_media_post.update
+//       one Channel's caption / firstComment overrides; blank, or exactly the default,
+//       stores NULL (so the post keeps following the default). On a plan that is Ready for
+//       Posting or Error, a caption over the Channel's limit is refused.
+//   setPostResult(actor, date, channel, input, { now })   social_media_post.result
+//       What the Chrome tasks write back about one social media post (the social role's
+//       /admin/social/* pages and POST /api/admin/social/channel). Never creates a plan
+//       (404 without one).
+//       input: status (the Post status: pending|scheduled|live|failed; absent = keep), postUrl and notes
 //       (absent = keep; "" or null = clear; any other non-string is a 400), verified
 //       (true: stamp verified_at again on a live post), commentPosted (true: stamp comment_posted_at, false: clear it).
-//       Rules: the changes in TRANSITIONS (social-rules.mjs; only live -> pending is
-//       refused, 409); moving INTO scheduled needs an actionable post (Ready for
+//       Rules: the changes in TRANSITIONS (social-plan-rules.mjs; only live -> pending is
+//       refused, 409); moving INTO scheduled needs an actionable plan (Ready for
 //       Posting or Error, no problems; 409); live needs a post URL; failed needs a note; a post URL must
 //       be https on the channel's domain (postUrlProblem) and is stored as parsed
 //       (new URL().href: "HTTPS://WWW.Facebook.com/x" -> "https://www.facebook.com/x").
-//       The post row is held FOR UPDATE for the whole change (channel saves of one post
-//       queue, so each sees the others' statuses). Then the post status follows
-//       (postStatusAfterChannelUpdate, ticket #39): recording `failed` makes it Error,
-//       leaving every channel scheduled or live makes it Posted; that change is its own
-//       audit row, social_post.status (details.automatic), in the same transaction.
+//       The plan row is held FOR UPDATE for the whole change (post saves of one plan
+//       queue, so each sees the others' statuses). Then the Plan status follows
+//       (planStatusAfterPostUpdate, ticket #39): recording `failed` makes it Error,
+//       leaving every post scheduled or live makes it Posted; that change is its own
+//       audit row, social_plan.status (details.automatic), in the same transaction.
 //       Becoming live stamps
 //       verified_at; leaving live clears it. The first comment exists only on
 //       Instagram and TikTok (COMMENT_CHANNELS) and can be marked posted only while
@@ -72,19 +77,22 @@
 // Returns { changed, eventCreated }: the caller purges the public page only when the
 // events row was created (nothing here shows on the public page).
 //
-// The social role's pages pick their post with:
+// Audit rows written before the glossary rename (#56) say social_post.* /
+// social_post_channel.* with target_table social_posts / social_post_channels.
+//
+// The social role's pages pick their Social plan with:
 //   findNext(db, { now, today })    the EARLIEST upcoming event (event_date >= today
 //       Eastern; every Tuesday counts, with or without an events row; cancelled ones
 //       don't, and neither does a Tuesday in the holiday break, Dec 22 to Jan 4, unless
 //       it has a scheduled row: ../holiday-weeks.mjs) whose publish time (the default one without a post) is still ahead and
-//       that still has work: no post, To do, or a channel pending (unless Posted). It never skips
+//       that still has work: no plan, To do, or a post pending (unless Posted). It never skips
 //       a stuck week for a later one; a week moves on once none of its channels is
-//       pending. { state: "ready", order } when that post is actionable, otherwise
+//       pending. { state: "ready", order } when that plan is actionable, otherwise
 //       { state: "nothing", reason, message, date, problems, upcoming } with reason
 //       no_post | not_ready (To do) | problems, about that same week.
-//   findVerify(db, { now, today })  the post (of an event that isn't cancelled) whose
-//       publish_at passed most recently, up to and including its event day (a post
-//       always has its events row, so a holiday-week post is the override and counts):
+//   findVerify(db, { now, today })  the plan (of an event that isn't cancelled) whose
+//       publish_at passed most recently, up to and including its event day (a plan
+//       always has its events row, so a holiday-week plan is the override and counts):
 //       { state: "verify", order, todo, allDone } or { state: "nothing", message, nextPublish }.
 //
 // Errors: ValidationError (400; .errors is { field: message }), ConflictError (409)
@@ -96,18 +104,18 @@ import { isUuid } from "./attendees.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
 import { getEventImage, PICK_EVENTS } from "./event-image.mjs";
 import {
-  CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, OFFERED_STATUSES, POST_STATUSES, POST_STATUS_LABELS, STATUSES,
-  TRANSITIONS, buildWorkOrder, canTransition, defaultPublishAt, defaultTexts, easternToUtc, isChannel, isPostStatus,
-  normaliseHashtags, postStatusAfterChannelUpdate, postUrlProblem, publishAtProblem,
-} from "./social-rules.mjs";
+  CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, OFFERED_PLAN_STATUSES, PLAN_STATUSES, PLAN_STATUS_LABELS, POST_STATUSES,
+  TRANSITIONS, buildWorkOrder, canTransition, defaultPublishAt, defaultTexts, easternToUtc, isChannel, isPlanStatus,
+  normaliseHashtags, planStatusAfterPostUpdate, postUrlProblem, publishAtProblem,
+} from "./social-plan-rules.mjs";
 
-export * from "./social-rules.mjs";
+export * from "./social-plan-rules.mjs";
 
-const POST_COLUMNS = `
+const PLAN_COLUMNS = `
   p.event_date::text   as date,
   p.video_media_id     as "videoMediaId",
-  p.cover_media_id     as "coverMediaId",
-  p.cover_note         as "coverNote",
+  p.thumbnail_media_id as "thumbnailMediaId",
+  p.thumbnail_timecode as "thumbnailTimecode",
   p.base_caption       as "baseCaption",
   p.extra_hashtags     as "extraHashtags",
   p.publish_at         as "publishAt",
@@ -123,74 +131,74 @@ function requireDate(date, fn) {
   if (!parseDate(date)) throw new Error(`${fn}: date must be YYYY-MM-DD`);
 }
 
-/** The post and its channel rows, or null. */
-export async function getSocialPost(db, date) {
-  requireDate(date, "getSocialPost");
-  const [{ rows: [post] }, { rows: channels }] = await Promise.all([
-    db.query(`select ${POST_COLUMNS} from public.social_posts p where p.event_date = $1::date`, [date]),
-    db.query(`select ${CHANNEL_COLUMNS} from public.social_post_channels where event_date = $1::date`, [date]),
+/** The Social plan and its social media posts (by Channel), or null. */
+export async function getSocialPlan(db, date) {
+  requireDate(date, "getSocialPlan");
+  const [{ rows: [plan] }, { rows: posts }] = await Promise.all([
+    db.query(`select ${PLAN_COLUMNS} from public.social_plans p where p.event_date = $1::date`, [date]),
+    db.query(`select ${CHANNEL_COLUMNS} from public.social_media_posts where event_date = $1::date`, [date]),
   ]);
-  if (!post) return null;
+  if (!plan) return null;
   const byChannel = Object.fromEntries(CHANNEL_KEYS.map((c) => [c, null]));
-  for (const { channel, ...rest } of channels) byChannel[channel] = rest;
-  return { ...post, channels: byChannel };
+  for (const { channel, ...rest } of posts) byChannel[channel] = rest;
+  return { ...plan, channels: byChannel };
 }
 
 /** Everything buildWorkOrder() needs for one date. */
 export async function readState(db, date) {
   requireDate(date, "readState");
-  const [{ rows: [event] }, { rows: [luma] }, post, eventImage] = await Promise.all([
+  const [{ rows: [event] }, { rows: [luma] }, plan, eventImage] = await Promise.all([
     db.query(`select status from public.events where event_date = $1::date`, [date]),
     db.query(`select url from public.event_links where event_date = $1::date and platform = 'luma'`, [date]),
-    getSocialPost(db, date),
+    getSocialPlan(db, date),
     getEventImage(db, date),
   ]);
-  const [video, coverMedia] = await Promise.all([
-    post?.videoMediaId ? getVideo(db, post.videoMediaId) : null,
-    post?.coverMediaId ? getCoverMedia(db, post.coverMediaId) : null,
+  const [video, thumbnailMedia] = await Promise.all([
+    plan?.videoMediaId ? getVideo(db, plan.videoMediaId) : null,
+    plan?.thumbnailMediaId ? getThumbnailMedia(db, plan.thumbnailMediaId) : null,
   ]);
   return {
     event: event ? { status: event.status, exists: true } : { status: "scheduled", exists: false },
-    post,
+    plan,
     lumaUrl: luma?.url ?? null,
     video,
-    coverMedia,
+    thumbnailMedia,
     eventImage,
   };
 }
 
-const COVER_COLUMNS = `
+const THUMBNAIL_COLUMNS = `
   id, event_date::text as "eventDate", kind, status, publicly_usable as "publiclyUsable",
   display_key as "displayKey", thumb_key as "thumbKey"`;
 
-async function getCoverMedia(db, id) {
-  const { rows: [m] } = await db.query(`select ${COVER_COLUMNS} from public.event_media where id = $1`, [id]);
+async function getThumbnailMedia(db, id) {
+  const { rows: [m] } = await db.query(`select ${THUMBNAIL_COLUMNS} from public.event_media where id = $1`, [id]);
   return m ?? null;
 }
 
-/** How many recent event dates' photos the cover picker offers. */
-export const COVER_CHOICE_DATES = PICK_EVENTS;
+/** How many recent event dates' photos the Thumbnail picker offers. */
+export const THUMBNAIL_CHOICE_DATES = PICK_EVENTS;
 
 /**
- * Photos the Social Post cover can be set to: ready, publicly usable Photos from Event
- * of this event and the most recent earlier dates with any (COVER_CHOICE_DATES dates
+ * Photos the Social plan's Thumbnail can be set to: ready, publicly usable Photos from Event
+ * of this event and the most recent earlier dates with any (THUMBNAIL_CHOICE_DATES dates
  * in all), newest first. { id, eventDate, thumbKey, contentType }.
  */
-export async function listCoverChoices(db, date) {
-  requireDate(date, "listCoverChoices");
+export async function listThumbnailChoices(db, date) {
+  requireDate(date, "listThumbnailChoices");
   const { rows } = await db.query(
     `with dates as (
        select distinct event_date from public.event_media
-        where kind = 'social_photo' and status = 'ready' and publicly_usable and event_date <= $1::date
+        where kind = 'event_photo' and status = 'ready' and publicly_usable and event_date <= $1::date
         order by event_date desc limit $2)
      select m.id, m.event_date::text as "eventDate", m.thumb_key as "thumbKey", m.content_type as "contentType"
        from public.event_media m join dates using (event_date)
-      where m.kind = 'social_photo' and m.status = 'ready' and m.publicly_usable
-      order by m.event_date desc, m.created_at desc, m.id`, [date, COVER_CHOICE_DATES]);
+      where m.kind = 'event_photo' and m.status = 'ready' and m.publicly_usable
+      order by m.event_date desc, m.created_at desc, m.id`, [date, THUMBNAIL_CHOICE_DATES]);
   return rows;
 }
 
-/** The work order for one date (see buildWorkOrder in social-rules.mjs). */
+/** The work order for one date (see buildWorkOrder in social-plan-rules.mjs). */
 export async function getWorkOrder(db, date) {
   const s = await readState(db, date);
   return buildWorkOrder({ date, ...s });
@@ -215,16 +223,20 @@ const text = (v) => {
 const len = (s) => [...s].length;
 
 /**
- * Form input of the post form -> values; throws ValidationError.
- * @returns {{ baseCaption: string|null, coverNote: string|null, extraHashtags: string[], publishAt: Date, status: string|null }}
- *   status null = keep the post's current status
+ * Form input of the Social plan form -> values; throws ValidationError.
+ * @returns {{ baseCaption: string|null, thumbnailTimecode: string|null, extraHashtags: string[], publishAt: Date, status: string|null }}
+ *   status null = keep the plan's current Plan status
  */
-export function validatePostInput(date, input) {
+export function validatePlanInput(date, input) {
   const errors = {};
   const baseCaption = text(input?.baseCaption);
   if (baseCaption !== null && len(baseCaption) > LIMITS.baseCaption) errors.baseCaption = `At most ${LIMITS.baseCaption} characters.`;
-  const coverNote = text(input?.coverNote);
-  if (coverNote !== null && len(coverNote) > LIMITS.coverNote) errors.coverNote = `At most ${LIMITS.coverNote} characters.`;
+  // DEPRECATED: `coverNote` is the field's name before #57, still posted by a tab opened
+  // before that deploy (without it the save would clear the timecode). #60 drops it.
+  const thumbnailTimecode = text(input?.thumbnailTimecode ?? input?.coverNote);
+  if (thumbnailTimecode !== null && len(thumbnailTimecode) > LIMITS.thumbnailTimecode) {
+    errors.thumbnailTimecode = `At most ${LIMITS.thumbnailTimecode} characters.`;
+  }
   let extraHashtags = [];
   try { extraHashtags = normaliseHashtags(input?.extraHashtags); } catch (e) { errors.extraHashtags = e.message; }
   let publishAt = null;
@@ -237,16 +249,16 @@ export function validatePostInput(date, input) {
   const rawStatus = input?.status;
   if (rawStatus != null && rawStatus !== "") {
     status = str(rawStatus).trim();
-    if (!isPostStatus(status)) {
-      errors.status = `Status must be ${POST_STATUSES.map((s) => POST_STATUS_LABELS[s]).join(", ").replace(/, ([^,]*)$/, " or $1")}.`;
+    if (!isPlanStatus(status)) {
+      errors.status = `Plan status must be ${PLAN_STATUSES.map((s) => PLAN_STATUS_LABELS[s]).join(", ").replace(/, ([^,]*)$/, " or $1")}.`;
     }
   }
   if (Object.keys(errors).length) throw new ValidationError(errors);
-  return { baseCaption, coverNote, extraHashtags, publishAt, status };
+  return { baseCaption, thumbnailTimecode, extraHashtags, publishAt, status };
 }
 
-/** Channel override input -> { caption, firstComment } (null = default); throws ValidationError. */
-export function validateChannelInput(channel, input) {
+/** A social media post's override input -> { caption, firstComment } (null = default); throws ValidationError. */
+export function validateSocialMediaPostInput(channel, input) {
   if (!isChannel(channel)) throw new ValidationError({ channel: "Unknown channel." });
   const errors = {};
   const caption = text(input?.caption);
@@ -285,25 +297,27 @@ async function audited(actorUserId, date, table, fn) {
 }
 
 /**
- * Make sure the events row, the post and its five channel rows exist; lock the post.
+ * Make sure the events row, the Social plan and its five social media posts exist; lock
+ * the plan.
  * @returns {Promise<{ eventCreated: boolean, created: boolean, row: object }>}
  */
-async function lockPost(client, date) {
+async function lockPlan(client, date) {
   const ev = await client.query(
     `insert into public.events (event_date) values ($1::date) on conflict (event_date) do nothing`, [date]);
   const ins = await client.query(
-    `insert into public.social_posts (event_date, publish_at) values ($1::date, $2)
+    `insert into public.social_plans (event_date, publish_at) values ($1::date, $2)
      on conflict (event_date) do nothing`, [date, defaultPublishAt(date)]);
   const created = ins.rowCount === 1;
   if (created) {
     await client.query(
-      `insert into public.social_post_channels (event_date, channel)
+      `insert into public.social_media_posts (event_date, channel)
        select $1::date, c from unnest($2::text[]) as c
        on conflict (event_date, channel) do nothing`, [date, CHANNEL_KEYS]);
   }
   const { rows: [row] } = await client.query(
-    `select video_media_id, cover_media_id, cover_note, base_caption, extra_hashtags, publish_at, status
-       from public.social_posts where event_date = $1::date for update`, [date]);
+    `select video_media_id, thumbnail_media_id, thumbnail_timecode,
+            base_caption, extra_hashtags, publish_at, status
+       from public.social_plans where event_date = $1::date for update`, [date]);
   return { eventCreated: ev.rowCount === 1, created, row };
 }
 
@@ -322,26 +336,26 @@ function diff(before, after) {
   return { before: b, after: a, changed: Object.keys(a) };
 }
 
-/** The post as getSocialPost() would return it, read inside the transaction, with `over` applied. */
+/** The work order of the plan as getSocialPlan() would return it, read inside the transaction, with `over` applied. */
 async function stateIn(client, date, over = {}) {
   const s = await readState(client, date);
-  const post = { ...s.post, ...over.post };
-  if (over.channel) post.channels = { ...post.channels, [over.channel.channel]: { ...post.channels[over.channel.channel], ...over.channel.values } };
-  const video = over.post && "videoMediaId" in over.post
-    ? (over.post.videoMediaId ? await getVideo(client, over.post.videoMediaId) : null)
+  const plan = { ...s.plan, ...over.plan };
+  if (over.channel) plan.channels = { ...plan.channels, [over.channel.channel]: { ...plan.channels[over.channel.channel], ...over.channel.values } };
+  const video = over.plan && "videoMediaId" in over.plan
+    ? (over.plan.videoMediaId ? await getVideo(client, over.plan.videoMediaId) : null)
     : s.video;
-  return buildWorkOrder({ date, ...s, post, video });
+  return buildWorkOrder({ date, ...s, plan, video });
 }
 
-/** The post form: caption, hashtags, cover note, publish time, status. */
-export async function savePost(actorUserId, date, input, { now = new Date() } = {}) {
+/** The Social plan form: caption, hashtags, Thumbnail timecode, publish time, Plan status. */
+export async function savePlan(actorUserId, date, input, { now = new Date() } = {}) {
   checkDate(date);
-  const v = validatePostInput(date, input);
-  return audited(actorUserId, date, "social_posts", async (client) => {
-    const { eventCreated, created, row } = await lockPost(client, date);
+  const v = validatePlanInput(date, input);
+  return audited(actorUserId, date, "social_plans", async (client) => {
+    const { eventCreated, created, row } = await lockPlan(client, date);
     const status = v.status ?? row.status;
     const after = {
-      base_caption: v.baseCaption, cover_note: v.coverNote, extra_hashtags: v.extraHashtags,
+      base_caption: v.baseCaption, thumbnail_timecode: v.thumbnailTimecode, extra_hashtags: v.extraHashtags,
       publish_at: v.publishAt, status,
     };
     const d = diff(row, after);
@@ -352,18 +366,18 @@ export async function savePost(actorUserId, date, input, { now = new Date() } = 
     }
     if (status === "ready") {
       const order = await stateIn(client, date, {
-        post: { baseCaption: v.baseCaption, extraHashtags: v.extraHashtags, coverNote: v.coverNote, publishAt: v.publishAt },
+        plan: { baseCaption: v.baseCaption, extraHashtags: v.extraHashtags, thumbnailTimecode: v.thumbnailTimecode, publishAt: v.publishAt },
       });
       if (order.problems.length) {
         throw new ValidationError({ status: `Not ready yet: ${order.problems.map((p) => p.message).join(" ")}` });
       }
     }
     await client.query(
-      `update public.social_posts
-          set base_caption = $2, cover_note = $3, extra_hashtags = $4, publish_at = $5, status = $6
+      `update public.social_plans
+          set base_caption = $2, thumbnail_timecode = $3, extra_hashtags = $4, publish_at = $5, status = $6
         where event_date = $1::date`,
-      [date, v.baseCaption, v.coverNote, v.extraHashtags, v.publishAt, status]);
-    return { action: "social_post.update", details: { created, eventCreated, before: d.before, after: d.after } };
+      [date, v.baseCaption, v.thumbnailTimecode, v.extraHashtags, v.publishAt, status]);
+    return { action: "social_plan.update", details: { created, eventCreated, before: d.before, after: d.after } };
   });
 }
 
@@ -371,81 +385,81 @@ export async function savePost(actorUserId, date, input, { now = new Date() } = 
 export async function setVideo(actorUserId, date, mediaId) {
   checkDate(date);
   if (!isUuid(mediaId)) throw new ValidationError({ video: "Choose a promo video." });
-  return audited(actorUserId, date, "social_posts", async (client) => {
-    const { eventCreated, created, row } = await lockPost(client, date);
+  return audited(actorUserId, date, "social_plans", async (client) => {
+    const { eventCreated, created, row } = await lockPlan(client, date);
     const { rows: [m] } = await client.query(
       `select event_date::text as date, kind, status from public.event_media where id = $1 for share`, [mediaId]);
     if (!m || m.date !== date || m.kind !== "promo_video") throw new ValidationError({ video: "That isn't a promo video of this event." });
     if (m.status !== "ready") throw new ValidationError({ video: "That video hasn't finished uploading." });
     if (!created && row.video_media_id === mediaId) throw NOOP;
-    await client.query(`update public.social_posts set video_media_id = $2 where event_date = $1::date`, [date, mediaId]);
+    await client.query(`update public.social_plans set video_media_id = $2 where event_date = $1::date`, [date, mediaId]);
     return {
-      action: "social_post.video",
+      action: "social_plan.video",
       details: { created, eventCreated, before: { video_media_id: row.video_media_id }, after: { video_media_id: mediaId } },
     };
   });
 }
 
 /**
- * Override the promo video's cover with a ready, publicly usable Photo from Event (of
- * any event), or clear it ("" / null) so the cover is the Event Image again.
+ * Override the promo video's Thumbnail with a ready, publicly usable Photo from Event (of
+ * any event), or clear it ("" / null) so the Thumbnail is the Event Image again.
  */
-export async function setCover(actorUserId, date, mediaId) {
+export async function setThumbnail(actorUserId, date, mediaId) {
   checkDate(date);
   const clearing = mediaId === "" || mediaId == null;
-  if (!clearing && !isUuid(mediaId)) throw new ValidationError({ cover: "Choose a photo." });
-  return audited(actorUserId, date, "social_posts", async (client) => {
-    const { eventCreated, created, row } = await lockPost(client, date);
-    const before = row.cover_media_id ?? null;
+  if (!clearing && !isUuid(mediaId)) throw new ValidationError({ thumbnail: "Choose a photo." });
+  return audited(actorUserId, date, "social_plans", async (client) => {
+    const { eventCreated, created, row } = await lockPlan(client, date);
+    const before = row.thumbnail_media_id ?? null;
     const after = clearing ? null : mediaId;
     if (!clearing) {
       const { rows: [m] } = await client.query(
         `select kind, status, publicly_usable from public.event_media where id = $1 for share`, [mediaId]);
-      if (!m || m.kind !== "social_photo" || !m.publicly_usable) throw new ValidationError({ cover: "That isn't a Photo from Event." });
-      if (m.status !== "ready") throw new ValidationError({ cover: "That photo hasn't finished uploading." });
+      if (!m || m.kind !== "event_photo" || !m.publicly_usable) throw new ValidationError({ thumbnail: "That isn't a Photo from Event." });
+      if (m.status !== "ready") throw new ValidationError({ thumbnail: "That photo hasn't finished uploading." });
     }
-    // Nothing to change. Clearing with no post rolls back the post's creation too.
+    // Nothing to change. Clearing with no plan rolls back the plan's creation too.
     if (before === after && (clearing || !created)) throw NOOP;
-    await client.query(`update public.social_posts set cover_media_id = $2 where event_date = $1::date`, [date, after]);
+    await client.query(`update public.social_plans set thumbnail_media_id = $2 where event_date = $1::date`, [date, after]);
     return {
-      action: "social_post.cover",
-      details: { created, eventCreated, before: { cover_media_id: before }, after: { cover_media_id: after } },
+      action: "social_plan.thumbnail",
+      details: { created, eventCreated, before: { thumbnail_media_id: before }, after: { thumbnail_media_id: after } },
     };
   });
 }
 
-/** One channel's caption / first-comment overrides. */
-export async function saveChannel(actorUserId, date, channel, input) {
+/** One social media post's caption / first-comment overrides. */
+export async function saveSocialMediaPost(actorUserId, date, channel, input) {
   checkDate(date);
-  const v = validateChannelInput(channel, input);
-  return audited(actorUserId, date, "social_post_channels", async (client) => {
-    const { eventCreated, created, row: post } = await lockPost(client, date);
+  const v = validateSocialMediaPostInput(channel, input);
+  return audited(actorUserId, date, "social_media_posts", async (client) => {
+    const { eventCreated, created, row: plan } = await lockPlan(client, date);
     const { rows: [luma] } = await client.query(
       `select url from public.event_links where event_date = $1::date and platform = 'luma'`, [date]);
-    // Text equal to the default is no override: the channel keeps following the default.
-    const d0 = defaultTexts(channel, { baseCaption: post.base_caption, lumaUrl: luma?.url ?? null, extraHashtags: post.extra_hashtags });
+    // Text equal to the default is no override: the post keeps following the default.
+    const d0 = defaultTexts(channel, { baseCaption: plan.base_caption, lumaUrl: luma?.url ?? null, extraHashtags: plan.extra_hashtags });
     const after = {
       caption: v.caption === d0.caption ? null : v.caption,
       first_comment: v.firstComment === d0.firstComment ? null : v.firstComment,
     };
     const { rows: [row] } = await client.query(
-      `select caption, first_comment from public.social_post_channels
+      `select caption, first_comment from public.social_media_posts
         where event_date = $1::date and channel = $2 for update`, [date, channel]);
     const d = diff(row, after);
     if (!created && d.changed.length === 0) throw NOOP;
-    if (OFFERED_STATUSES.includes(post.status)) {
+    if (OFFERED_PLAN_STATUSES.includes(plan.status)) {
       const order = await stateIn(client, date, { channel: { channel, values: { caption: after.caption, firstComment: after.first_comment } } });
       const p = order.problems.find((x) => x.key === `caption_${channel}`);
       if (p) throw new ValidationError({ caption: p.message });
     }
     await client.query(
-      `update public.social_post_channels set caption = $3, first_comment = $4
+      `update public.social_media_posts set caption = $3, first_comment = $4
         where event_date = $1::date and channel = $2`, [date, channel, after.caption, after.first_comment]);
-    return { action: "social_post_channel.update", details: { channel, created, eventCreated, before: d.before, after: d.after } };
+    return { action: "social_media_post.update", details: { channel, created, eventCreated, before: d.before, after: d.after } };
   });
 }
 
-// ── Channel results ──────────────────────────────────────────────────────────
+// ── Post results ─────────────────────────────────────────────────────────────
 
 const has = (o, k) => o != null && Object.hasOwn(o, k) && o[k] !== undefined;
 /** A text field that may be null (= clear) or a string; anything else (123, {}, []) is refused. */
@@ -460,7 +474,7 @@ const flag = (v) => {
 };
 
 /**
- * The input of setChannelResult(), checked on its own (before any database work).
+ * The input of setPostResult(), checked on its own (before any database work).
  * @returns {{ status?: string, postUrl?: string|null, notes?: string|null, verified: boolean, commentPosted?: boolean }}
  */
 export function validateResultInput(channel, input) {
@@ -469,7 +483,7 @@ export function validateResultInput(channel, input) {
   const out = { verified: false };
   if (has(input, "status")) {
     const st = typeof input.status === "string" ? input.status.trim() : null;
-    if (!STATUSES.includes(st)) errors.status = `Status must be one of ${STATUSES.join(", ")}.`;
+    if (!POST_STATUSES.includes(st)) errors.status = `Post status must be one of ${POST_STATUSES.join(", ")}.`;
     else out.status = st;
   }
   if (has(input, "postUrl")) {
@@ -510,25 +524,25 @@ export function validateResultInput(channel, input) {
   return out;
 }
 
-/** Record what happened on one channel (see the header). */
-export async function setChannelResult(actorUserId, date, channel, input, { now = new Date() } = {}) {
+/** Record what happened to one social media post (see the header). */
+export async function setPostResult(actorUserId, date, channel, input, { now = new Date() } = {}) {
   checkDate(date);
   const v = validateResultInput(channel, input);
-  return audited(actorUserId, date, "social_post_channels", async (client) => {
-    // The post first, then the channel: the same order as lockPost() (the admin's
-    // writes), so the two can't deadlock. FOR UPDATE keeps the post (status, caption,
+  return audited(actorUserId, date, "social_media_posts", async (client) => {
+    // The plan first, then the post: the same order as lockPlan() (the admin's
+    // writes), so the two can't deadlock. FOR UPDATE keeps the plan (status, caption,
     // video, publish time) from changing under the `actionable` check below until this
-    // commits, and queues this post's channel saves, so the post status that follows
-    // (below) sees every channel as committed.
-    const { rows: [post] } = await client.query(
-      `select status from public.social_posts where event_date = $1::date for update`, [date]);
-    if (!post) throw new NotFoundError({ date: `There is no social post for ${date}.` });
+    // commits, and queues this plan's post saves, so the Plan status that follows
+    // (below) sees every post as committed.
+    const { rows: [plan] } = await client.query(
+      `select status from public.social_plans where event_date = $1::date for update`, [date]);
+    if (!plan) throw new NotFoundError({ date: `There is no Social plan for ${date}.` });
     const { rows: [row] } = await client.query(
       `select status, post_url, notes, verified_at, comment_posted_at
-         from public.social_post_channels
+         from public.social_media_posts
         where event_date = $1::date and channel = $2
           for update`, [date, channel]);
-    if (!row) throw new NotFoundError({ date: `There is no social post for ${date}.` });
+    if (!row) throw new NotFoundError({ date: `There is no Social plan for ${date}.` });
     const label = CHANNELS[channel];
     const status = v.status ?? row.status;
     if (!canTransition(row.status, status)) {
@@ -563,34 +577,34 @@ export async function setChannelResult(actorUserId, date, channel, input, { now 
       const order = await getWorkOrder(client, date);
       if (!order.actionable) {
         const why = order.ready ? order.problems.map((p) => p.message).join(" ")
-          : `The post isn't set to ${POST_STATUS_LABELS.ready} (it is ${order.statusLabel}).`;
+          : `The Social plan isn't set to ${PLAN_STATUS_LABELS.ready} (it is ${order.statusLabel}).`;
         throw new ConflictError({ status: `Can't schedule ${label} yet: ${why}` });
       }
     }
     await client.query(
-      `update public.social_post_channels
+      `update public.social_media_posts
           set status = $3, post_url = $4, notes = $5, verified_at = $6, comment_posted_at = $7
         where event_date = $1::date and channel = $2`,
       [date, channel, after.status, after.post_url, after.notes, after.verified_at, after.comment_posted_at]);
-    await followPostStatus(client, actorUserId, date, post.status, channel, status !== row.status ? status : null);
-    return { action: "social_post_channel.result", details: { channel, before: d.before, after: d.after } };
+    await followPlanStatus(client, actorUserId, date, plan.status, channel, status !== row.status ? status : null);
+    return { action: "social_media_post.result", details: { channel, before: d.before, after: d.after } };
   });
 }
 
 /**
- * After a channel update (in its transaction, the post locked): move the post to
- * Posted or Error when postStatusAfterChannelUpdate() says so, with its own audit row.
+ * After a social media post update (in its transaction, the plan locked): move the
+ * plan to Posted or Error when planStatusAfterPostUpdate() says so, with its own audit row.
  */
-async function followPostStatus(client, actorUserId, date, current, channel, changedTo) {
+async function followPlanStatus(client, actorUserId, date, current, channel, changedTo) {
   if (!changedTo) return;
   const { rows } = await client.query(
-    `select channel, status from public.social_post_channels where event_date = $1::date`, [date]);
+    `select channel, status from public.social_media_posts where event_date = $1::date`, [date]);
   const channels = Object.fromEntries(rows.map((r) => [r.channel, r.status]));
-  const next = postStatusAfterChannelUpdate({ status: current, changedTo, channels });
+  const next = planStatusAfterPostUpdate({ status: current, changedTo, channels });
   if (!next) return;
-  await client.query(`update public.social_posts set status = $2 where event_date = $1::date`, [date, next]);
+  await client.query(`update public.social_plans set status = $2 where event_date = $1::date`, [date, next]);
   await writeAudit(client, actorUserId, {
-    action: "social_post.status", targetTable: "social_posts", targetId: date,
+    action: "social_plan.status", targetTable: "social_plans", targetId: date,
     details: { before: { status: current }, after: { status: next }, automatic: true, channel, channelStatus: changedTo },
   });
 }
@@ -603,11 +617,11 @@ const addDays = (date, n) => {
   return d.toISOString().slice(0, 10);
 };
 
-/** The post for the Wednesday task (see the header). */
+/** The Social plan for the Wednesday task (see the header). */
 export async function findNext(db, { now = new Date(), today = todayEastern(now) } = {}) {
-  // Every upcoming events row with its post (a post always has its events row:
-  // lockPost creates it). Rows are made on demand, so a Tuesday without one is still
-  // an event (scheduled, no post yet), EXCEPT in the holiday break (Dec 22 to Jan 4,
+  // Every upcoming events row with its plan (a plan always has its events row:
+  // lockPlan creates it). Rows are made on demand, so a Tuesday without one is still
+  // an event (scheduled, no plan yet), EXCEPT in the holiday break (Dec 22 to Jan 4,
   // ../holiday-weeks.mjs): a holiday Tuesday without a row doesn't exist and is
   // skipped like a cancelled one. A row always counts (unless cancelled), holiday or
   // not: a scheduled row on a holiday date is the deliberate override for an unusual
@@ -616,10 +630,10 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   const { rows } = await db.query(
     `select e.event_date::text as date, e.status, p.event_date is not null as "hasPost", p.status as "postStatus",
             p.publish_at as "publishAt",
-            (select count(*)::int from public.social_post_channels c
+            (select count(*)::int from public.social_media_posts c
               where c.event_date = e.event_date and c.status = 'pending') as pending
        from public.events e
-       left join public.social_posts p on p.event_date = e.event_date
+       left join public.social_plans p on p.event_date = e.event_date
       where e.event_date >= $1::date
       order by e.event_date`, [today]);
   const byDate = new Map(rows.map((r) => [r.date, r]));
@@ -630,13 +644,13 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   const events = [...dates].sort().map((d) => byDate.get(d) ?? { date: d, status: "scheduled", hasPost: false })
     .filter((r) => r.status !== "cancelled");
 
-  // Still open for scheduling: its publish time (the default one without a post) ahead.
+  // Still open for scheduling: its publish time (the default one without a plan) ahead.
   const open = (r) => (r.hasPost ? new Date(r.publishAt) : defaultPublishAt(r.date)).getTime() > now.getTime();
   const upcoming = events.filter((r) => r.hasPost && open(r)).slice(0, 10)
-    .map((r) => ({ date: r.date, status: r.postStatus, statusLabel: POST_STATUS_LABELS[r.postStatus], pendingChannels: r.pending }));
-  // The EARLIEST open event with work left (no post, To do, or a channel still pending
+    .map((r) => ({ date: r.date, status: r.postStatus, statusLabel: PLAN_STATUS_LABELS[r.postStatus], pendingChannels: r.pending }));
+  // The EARLIEST open event with work left (no plan, To do, or a post still pending
   // unless an Admin set it Posted). A later week is never handed out while this one is
-  // stuck; once every channel of it is done (scheduled, live or failed), or it is
+  // stuck; once every post of it is done (scheduled, live or failed), or it is
   // Posted, the next week's turn comes.
   const work = (r) => !r.hasPost || r.postStatus === "todo" || (r.pending > 0 && r.postStatus !== "posted");
   let target = events.find((r) => open(r) && work(r));
@@ -652,7 +666,7 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   if (!target.hasPost) {
     return {
       ...base, reason: "no_post", problems: [],
-      message: `No social post is set up for ${target.date} yet. ${wait}`,
+      message: `No Social plan is set up for ${target.date} yet. ${wait}`,
     };
   }
   const order = await getWorkOrder(db, target.date);
@@ -660,16 +674,16 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   if (!order.ready) {
     return {
       ...base, reason: "not_ready", problems: order.problems,
-      message: `The social post for ${target.date} isn't set to ${POST_STATUS_LABELS.ready} yet (it is ${order.statusLabel}). ${wait}`,
+      message: `The Social plan for ${target.date} isn't set to ${PLAN_STATUS_LABELS.ready} yet (it is ${order.statusLabel}). ${wait}`,
     };
   }
   return {
     ...base, reason: "problems", problems: order.problems,
-    message: `The social post for ${target.date} is set to ${order.statusLabel}, but something needs fixing first. ${wait}`,
+    message: `The Social plan for ${target.date} is set to ${order.statusLabel}, but something needs fixing first. ${wait}`,
   };
 }
 
-/** What the Monday task still has to do on each channel of `order`. */
+/** What the Monday task still has to do on each social media post of `order`. */
 export function verifyTodo(order) {
   const todo = [];
   for (const c of order.channels) {
@@ -682,22 +696,22 @@ export function verifyTodo(order) {
   return todo;
 }
 
-/** The post for the Monday task (see the header). */
+/** The Social plan for the Monday task (see the header). */
 export async function findVerify(db, { now = new Date(), today = todayEastern(now) } = {}) {
   const { rows: [r] } = await db.query(
-    `select p.event_date::text as date from public.social_posts p
+    `select p.event_date::text as date from public.social_plans p
        join public.events e on e.event_date = p.event_date
       where p.publish_at <= $2 and p.event_date >= $1::date and e.status <> 'cancelled'
       order by p.publish_at desc, p.event_date desc limit 1`, [today, now]);
   if (!r) {
     const { rows: [n] } = await db.query(
-      `select p.event_date::text as date, p.publish_at as "publishAt" from public.social_posts p
+      `select p.event_date::text as date, p.publish_at as "publishAt" from public.social_plans p
          join public.events e on e.event_date = p.event_date
         where p.publish_at > $2 and p.event_date >= $1::date and e.status <> 'cancelled'
         order by p.publish_at limit 1`, [today, now]);
     return {
       state: "nothing",
-      message: "Nothing to verify: no social post's publish time has passed for an event that is still ahead (or today).",
+      message: "Nothing to verify: no Social plan's publish time has passed for an event that is still ahead (or today).",
       nextPublish: n ? { date: n.date, publishAt: n.publishAt } : null,
     };
   }

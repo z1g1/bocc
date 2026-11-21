@@ -43,6 +43,10 @@ describe("migrations", () => {
       "20261130120000_linkedin_events_post_claim.sql",
       "20261201120000_social_post_status.sql",
       "20261202120000_event_media_cover_outdated.sql",
+      "20261203120000_glossary_rename_expand.sql",
+      "20261203130000_event_status_reported.sql",
+      "20261203150000_event_photo_kind.sql",
+      "20261203190000_held_from_events.sql",
     ]);
   });
 
@@ -179,7 +183,7 @@ describe("social_checker and the auth schema (#24)", () => {
   });
 });
 
-describe("checkin_writer is unchanged", () => {
+describe("checkin_writer keeps least privilege", () => {
   test("table grants are exactly what migration 0003 gave it", async () => {
     const { rows } = await owner.query(
       `select table_schema || '.' || table_name || ':' || privilege_type as g
@@ -193,6 +197,17 @@ describe("checkin_writer is unchanged", () => {
     const { rows: cols } = await owner.query(
       "select count(*)::int as n from information_schema.column_privileges where grantee = 'checkin_writer' and privilege_type = 'UPDATE'");
     assert.equal(cols[0].n, 0, "no column-level UPDATE leaked to checkin_writer");
+  });
+
+  test("column grants: SELECT on events.event_date and events.status only (Held, migration 20261203190000)", async () => {
+    const { rows } = await owner.query(
+      `select table_schema || '.' || table_name || '.' || column_name || ':' || privilege_type as g
+         from information_schema.column_privileges
+        where grantee = 'checkin_writer'
+          and (table_schema, table_name) not in (select table_schema, table_name from information_schema.role_table_grants
+                                                  where grantee = 'checkin_writer' and privilege_type = column_privileges.privilege_type)
+        order by 1`);
+    assert.deepEqual(rows.map((r) => r.g), ["public.events.event_date:SELECT", "public.events.status:SELECT"]);
   });
 
   test("cannot reach the auth schema, user_roles or audit_log", () =>

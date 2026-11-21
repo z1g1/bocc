@@ -2,10 +2,11 @@
 // Origin-checked, JSON in and out. The browser has already made the display copy and
 // thumbnail; it declares the three files' types and sizes and gets back three
 // presigned PUTs for them (src/lib/admin/media.mjs startUpload). The server sets
-// publicly_usable from the kind (social_photo true, signin_board false); a
-// `publiclyUsable` field in the request is ignored.
+// publicly_usable from the kind (event_photo true, signin_board false); a
+// `publiclyUsable` field in the request is ignored. The old kind "social_photo" (a tab
+// opened before #54 deployed) is taken as event_photo.
 //
-//   request  { eventDate: "2026-11-24", kind: "signin_board" | "social_photo",
+//   request  { eventDate: "2026-11-24", kind: "signin_board" | "event_photo",
 //              original: { contentType: "image/jpeg", size },
 //              display: { size }, thumb: { size } }
 //            or, for the promo video (Phase 5; one file, no copies):

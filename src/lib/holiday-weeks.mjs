@@ -8,7 +8,7 @@
 // break only decides what a Tuesday WITHOUT a row means: in a normal week it is an
 // event (scheduled, nothing set up yet); in a holiday week it does not exist.
 //
-// Used by src/lib/admin (events.mjs nextTuesday, social.mjs findNext), the Thursday
+// Used by src/lib/admin (events.mjs nextTuesday, social-plan.mjs findNext), the Thursday
 // check (src/lib/social-alert/) and the public /events/<date>/ page. Pure, no imports:
 // the Netlify function bundler (esbuild) follows the relative import like any other.
 

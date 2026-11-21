@@ -1,5 +1,5 @@
 // POST /api/admin/linkedin/disconnect (form: return=account|YYYY-MM-DD): delete the
-// signed-in Admin's LinkedIn connection, audited (src/lib/linkedin/linkedin.mjs
+// signed-in Admin's LinkedIn authentication, audited (src/lib/linkedin/linkedin.mjs
 // disconnect). Admin only, Origin-checked. 303 back with ?linkedin=disconnected
 // (or unchanged)#linkedin; the page links to LinkedIn's Permitted services page, where
 // the member removes the app's access on LinkedIn's side.

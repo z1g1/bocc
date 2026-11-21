@@ -2,7 +2,7 @@
  * Streak celebration — pure decision of which toast (if any) an attendee sees after a
  * successful check-in. No I/O; the check-in use-case feeds it the Streak read from
  * Postgres (utils/pg-store.js getStreak) and returns the result to the frontend, which
- * owns the copy and emoji. See CONTEXT.md → "Celebration".
+ * owns the copy and emoji. See GLOSSARY.md → "Celebration".
  *
  * Priority (first match wins):
  *   first_visit   weeksAttended = 1

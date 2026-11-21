@@ -2,14 +2,14 @@
 // small interface that owns every LinkedIn database write. Routes stay thin: they
 // parse the request, call one function here and turn the result into a response.
 //
-// Interface (this ticket, #23: the per-user connection):
+// Interface (this ticket, #23: the per-Admin LinkedIn authentication; GLOSSARY.md):
 //   startConnect(userId, { returnTo })                    -> { location, cookie }
 //   finishConnect(userId, { code, state, error, cookie }) -> { ok, returnTo, notice } | { ok: false, status: 400 }
 //   disconnect(userId)                                    -> { changed }
-//   connectionStatus(db, userId)                          -> null | { name, memberUrn, expiresAt, level, daysLeft }
+//   authenticationStatus(db, userId)                      -> null | { name, memberUrn, expiresAt, level, daysLeft }
 //   accessToken(db, userId)                               -> the decrypted token (for the create flow)
 // The weekly event (#25):
-//   linkedInEventPreview(db, userId, date)                -> { mode, action, refusals, ledger, connection, image, spec, payloads }
+//   linkedInEventPreview(db, userId, date)                -> { mode, action, refusals, ledger, authentication, image, spec, payloads }
 //   createLinkedInEvent(userId, date, { confirm })        -> { ok: true, mode: "dry_run", requests, image, duplicateCheck }
 //                                                            | { ok: false, refusals, preview }
 //   The dry run sends nothing and writes no ledger row.
@@ -17,7 +17,7 @@
 //   createLinkedInEvent, live (LINKEDIN_LIVE=1)          -> { ok: true, mode: "live", status: "posted", ledger, preview }
 //                                                            | { ok: false, mode: "live", status, failure, refusals: [], preview }
 //     commits the ledger row `pending` (audited) BEFORE anything is sent, then uploads
-//     the cover, creates the event, moves the row to `created` (audited), creates the
+//     the 16:9 Event Image, creates the event, moves the row to `created` (audited), creates the
 //     member post and moves the row to `posted` (audited) with the event's
 //     `linkedin_event` listing filled in the same transaction (event_link.set). A
 //     failure leaves the last committed state; `failure` says which step and why.
@@ -42,11 +42,17 @@
 // client.mjs and baseURL from BETTER_AUTH_URL (the per-context origin, never Netlify's
 // URL / DEPLOY_PRIME_URL).
 //
-// Tables (migration 20261124120000_linkedin_connections.sql; admin_app has
-// SELECT/INSERT/UPDATE/DELETE): linkedin_connections, one row per user, the token
-// AES-256-GCM encrypted (crypto.mjs). Audit actions: linkedin_connection.connect
-// (details { reconnect, expires_at }) and linkedin_connection.disconnect. Never a
-// token, code or state in an audit row, log line or span attribute.
+// The function and route names say "connect" (the OAuth redirect URI registered with
+// LinkedIn is /api/admin/linkedin/callback and can't change); the thing itself is the
+// Admin's LinkedIn authentication.
+//
+// Tables (migration 20261124120000_linkedin_connections.sql, renamed by
+// 20261203120000; admin_app has SELECT/INSERT/UPDATE/DELETE): linkedin_authentications,
+// one row per user, the token AES-256-GCM encrypted (crypto.mjs). Audit actions:
+// linkedin_connection.connect (details { reconnect, expires_at }) and
+// linkedin_connection.disconnect, target table "linkedin_connections": these audit
+// labels predate the rename and are kept, so the trail reads the same before and after
+// (AUDIT_TARGET). Never a token, code or state in an audit row, log line or span attribute.
 
 import { adminEnv } from "../auth/auth.mjs";
 import { pool, withAudit } from "../admin/db.mjs";
@@ -56,13 +62,20 @@ import { API_BASE, LinkedInError, authorizationUrl, linkedInClient } from "./cli
 import { readLinkedInEnv } from "./env.mjs";
 import {
   ORGANIZER_URN, REFUSALS, allowedActions, buildEventPayload, buildEventSpec, buildImageUploadPayload,
-  buildPostPayload, checkCoverImage, createRefusals, eventUrl, expiryLevel, findDuplicates, linkedInFollowUp, missingScopes, postUrl,
+  buildPostPayload, checkImage16x9, createRefusals, eventUrl, expiryLevel, findDuplicates, followUpComparesImage, linkedInFollowUp, missingScopes, postUrl,
   publishRefusals,
 } from "./rules.mjs";
 import { setLinkInTransaction } from "../admin/event-links.mjs";
 import { LINKEDIN_TAB } from "../admin/event-tabs.mjs";
 import { ConflictError, getEvent } from "../admin/events.mjs";
-import { getEventImage, loadCoverBytes } from "../admin/event-image.mjs";
+import { getEventImage, load16x9Bytes } from "../admin/event-image.mjs";
+
+/**
+ * The audit_log target_table of a LinkedIn authentication's connect and disconnect rows.
+ * The table's name before migration 20261203120000; kept so old and new audit rows read
+ * alike (the audit trail is unchanged by the rename, #58). A label, not a table name.
+ */
+const AUDIT_TARGET = "linkedin_connections";
 
 /** The state cookie, scoped to the LinkedIn routes. */
 export const STATE_COOKIE = "bocc_linkedin_state";
@@ -171,7 +184,7 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
   const box = encryptToken(token.accessToken, { key: cfg.tokenKey, userId });
   await withAudit(userId, async (c) => {
     const { rows } = await c.query(
-      `insert into public.linkedin_connections (user_id, token_ciphertext, expires_at, member_urn, display_name, scope, connected_at)
+      `insert into public.linkedin_authentications (user_id, token_ciphertext, expires_at, member_urn, display_name, scope, connected_at)
        values ($1, $2, $3, $4, $5, $6, $7)
        on conflict (user_id) do update
           set token_ciphertext = excluded.token_ciphertext, expires_at = excluded.expires_at,
@@ -183,7 +196,7 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
     return rows[0].reconnect;
   }, (reconnect) => ({
     action: "linkedin_connection.connect",
-    targetTable: "linkedin_connections",
+    targetTable: AUDIT_TARGET,
     targetId: userId,
     details: { reconnect, expires_at: expiresAt.toISOString() },
   }));
@@ -191,7 +204,7 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
 }
 
 /**
- * Delete the user's connection (audited). LinkedIn's own grant is revoked by the member
+ * Delete the user's LinkedIn authentication (audited). LinkedIn's own grant is revoked by the member
  * on PERMITTED_SERVICES_URL (rules.mjs); the app has no revoke endpoint.
  * @param {string} userId
  * @returns {Promise<{ changed: boolean }>}
@@ -199,9 +212,9 @@ export async function finishConnect(userId, { code, state, error, cookie }, { co
 export async function disconnect(userId) {
   try {
     await withAudit(userId, async (c) => {
-      const { rowCount } = await c.query(`delete from public.linkedin_connections where user_id = $1`, [userId]);
+      const { rowCount } = await c.query(`delete from public.linkedin_authentications where user_id = $1`, [userId]);
       if (rowCount === 0) throw NOOP;
-    }, { action: "linkedin_connection.disconnect", targetTable: "linkedin_connections", targetId: userId });
+    }, { action: "linkedin_connection.disconnect", targetTable: AUDIT_TARGET, targetId: userId });
     return { changed: true };
   } catch (err) {
     if (err === NOOP) return { changed: false };
@@ -210,14 +223,14 @@ export async function disconnect(userId) {
 }
 
 /**
- * The user's connection as the page shows it, or null when not connected.
+ * The user's LinkedIn authentication as the page shows it, or null when not authenticated.
  * @param {{ query: Function }} db
  * @param {string} userId
  * @param {{ now?: Date }} [opts]
  */
-export async function connectionStatus(db, userId, { now = new Date() } = {}) {
+export async function authenticationStatus(db, userId, { now = new Date() } = {}) {
   const { rows } = await db.query(
-    `select display_name, member_urn, expires_at from public.linkedin_connections where user_id = $1`, [userId]);
+    `select display_name, member_urn, expires_at from public.linkedin_authentications where user_id = $1`, [userId]);
   if (!rows[0]) return null;
   const { display_name: name, member_urn: memberUrn, expires_at: expiresAt } = rows[0];
   return { name, memberUrn, expiresAt, ...expiryLevel(expiresAt, now) };
@@ -229,14 +242,14 @@ export async function connectionStatus(db, userId, { now = new Date() } = {}) {
  * @param {{ query: Function }} db
  * @param {string} userId
  * @param {{ config?: any, now?: Date }} [opts]
- * @throws {LinkedInError} kind "expired" when not connected or expired
+ * @throws {LinkedInError} kind "expired" when not authenticated or expired
  */
 export async function accessToken(db, userId, { config, now = new Date() } = {}) {
   const cfg = requireConfig(config);
   const { rows } = await db.query(
-    `select token_ciphertext, expires_at from public.linkedin_connections where user_id = $1`, [userId]);
-  if (!rows[0]) throw new LinkedInError("expired", "linkedin: not connected");
-  if (expiryLevel(rows[0].expires_at, now).level === "red") throw new LinkedInError("expired", "linkedin: connection expired");
+    `select token_ciphertext, expires_at from public.linkedin_authentications where user_id = $1`, [userId]);
+  if (!rows[0]) throw new LinkedInError("expired", "linkedin: not authenticated");
+  if (expiryLevel(rows[0].expires_at, now).level === "red") throw new LinkedInError("expired", "linkedin: authentication expired");
   return decryptToken(rows[0].token_ciphertext, { key: cfg.tokenKey, userId });
 }
 
@@ -251,14 +264,16 @@ export const PLACEHOLDERS = Object.freeze({
   postUrn: "<post id from the post>",
 });
 
+/** A ledger row's columns, as activeLedgerRow (and linkedInFollowUpsFor) return them. */
+const LEDGER_COLUMNS = `id, status, name, commentary, location, image_source as "imageSource", image_ref as "imageRef",
+  linkedin_event_id as "linkedinEventId", event_url as "eventUrl", post_urn as "postUrn", post_url as "postUrl",
+  created_by as "createdBy", attempted_at as "attemptedAt", posted_at as "postedAt",
+  cancelled_on_linkedin_at as "cancelledOnLinkedInAt"`;
+
 /** The date's active (not retired) ledger row, or null. */
 async function activeLedgerRow(db, date) {
   const { rows } = await db.query(
-    `select id, status, name, commentary, location, image_source as "imageSource", image_ref as "imageRef",
-            linkedin_event_id as "linkedinEventId", event_url as "eventUrl", post_urn as "postUrn", post_url as "postUrl",
-            created_by as "createdBy", attempted_at as "attemptedAt", posted_at as "postedAt",
-            cancelled_on_linkedin_at as "cancelledOnLinkedInAt"
-       from public.linkedin_events where event_date = $1 and status <> 'retired'`, [date]);
+    `select ${LEDGER_COLUMNS} from public.linkedin_events where event_date = $1 and status <> 'retired'`, [date]);
   return rows[0] ?? null;
 }
 
@@ -272,7 +287,7 @@ function payloadsFor(spec, memberUrn) {
 }
 
 const describeBytes = (bytes, contentType) => {
-  const c = checkCoverImage(bytes);
+  const c = checkImage16x9(bytes);
   return `${bytes.length} bytes of ${contentType}${c.width ? ` (${c.width}×${c.height})` : ""}`;
 };
 
@@ -303,14 +318,14 @@ function recordingClient() {
 }
 
 /**
- * The write calls in order: upload the cover, create the event, publish the post. The
+ * The write calls in order: upload the 16:9 Event Image, create the event, publish the post. The
  * dry run runs it against recordingClient(). #26 runs the same steps against the real
  * client with the ledger transitions between them (pending committed first, then
  * created after createEvent, posted after createPost).
  */
-async function sendSequence(writer, token, { spec, memberUrn, cover }) {
+async function sendSequence(writer, token, { spec, memberUrn, image16x9 }) {
   const upload = await writer.initializeImageUpload(token, memberUrn);
-  await writer.uploadImage(token, upload.uploadUrl, cover.bytes, cover.contentType);
+  await writer.uploadImage(token, upload.uploadUrl, image16x9.bytes, image16x9.contentType);
   const created = await writer.createEvent(token, buildEventPayload(spec, upload.assetUrn));
   const posted = await writer.createPost(token, buildPostPayload(memberUrn, created.id, spec.commentary));
   return { upload, created, posted };
@@ -318,7 +333,7 @@ async function sendSequence(writer, token, { spec, memberUrn, cover }) {
 
 /**
  * Everything the LinkedIn section shows for one date: the mode, the action on offer and
- * why create can't run, the ledger row, the connection, the cover, and the payloads.
+ * why create can't run, the ledger row, the LinkedIn authentication, the 16:9 Event Image, and the payloads.
  * @param {{ query: Function }} db
  * @param {string} userId  the signed-in Admin
  * @param {string} date
@@ -326,24 +341,24 @@ async function sendSequence(writer, token, { spec, memberUrn, cover }) {
  */
 export async function linkedInEventPreview(db, userId, date, { config, now = new Date() } = {}) {
   const cfg = requireConfig(config);
-  const [event, ledger, connection, image] = await Promise.all([
-    getEvent(db, date), activeLedgerRow(db, date), connectionStatus(db, userId, { now }), getEventImage(db, date),
+  const [event, ledger, authentication, image] = await Promise.all([
+    getEvent(db, date), activeLedgerRow(db, date), authenticationStatus(db, userId, { now }), getEventImage(db, date),
   ]);
-  const ctx = { date, now, event: { status: event.status, location: event.location }, ledger, connection, live: cfg.live };
+  const ctx = { date, now, event: { status: event.status, location: event.location }, ledger, authentication, live: cfg.live };
   const { action, mode, refusals } = allowedActions(ctx);
   const built = buildEventSpec({ date, location: event.location });
   const spec = built.ok ? built.spec : null;
   return {
-    date, mode, action, refusals, ctx, ledger, connection, image, spec,
-    payloads: spec ? payloadsFor(spec, connection?.memberUrn ?? PLACEHOLDERS.member) : null,
+    date, mode, action, refusals, ctx, ledger, authentication, image, spec,
+    payloads: spec ? payloadsFor(spec, authentication?.memberUrn ?? PLACEHOLDERS.member) : null,
   };
 }
 
 /**
  * The Create live event button. Refused unless the request carries confirm=live (the
- * dialog) and the allowed-actions matrix allows create. When connected, the read-only
+ * dialog) and the allowed-actions matrix allows create. When authenticated, the read-only
  * organizer listing refuses a duplicate (same name, old or new style, or the same
- * Eastern day). The cover's bytes are read and checked. Then:
+ * Eastern day). The 16:9 Event Image's bytes are read and checked. Then:
  *   dry run (no LINKEDIN_LIVE): the requests that would be sent; nothing is sent to
  *     LinkedIn and no ledger row or audit row is written
  *   live: the ledger-guarded sequence (liveSequence)
@@ -359,12 +374,12 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
 
   const refusals = createRefusals(preview.ctx, { confirm });
   if (refusals.length) return refuse(refusals);
-  const { spec, connection } = preview;
+  const { spec, authentication } = preview;
 
   const li = client ?? linkedInClient(cfg);
   let token = null;
   let duplicateCheck = "skipped";
-  if (connection && connection.level !== "red") {
+  if (authentication && authentication.level !== "red") {
     try {
       token = await accessToken(pool, userId, { config: cfg, now });
       const duplicates = findDuplicates(await li.listOrganizerEvents(token, ORGANIZER_URN), spec);
@@ -381,26 +396,26 @@ export async function createLinkedInEvent(userId, date, { confirm }, { config, c
     }
   }
 
-  if (preview.image.coverOutdated) {
+  if (preview.image.image16x9Outdated) {
     // Made under the old centre-crop rule (ticket #40): wait for the event page to remake it.
-    return refuse([{ code: "image", message: `${REFUSALS.image} Its 16:9 version is being remade: open this event's Event Info tab, let it finish, then try again.` }]);
+    return refuse([{ code: "image", message: `${REFUSALS.image} Its 16:9 Event Image is being remade: open this event's Event Info tab, let it finish, then try again.` }]);
   }
-  let cover;
+  let image16x9;
   try {
-    cover = await loadCoverBytes(preview.image, { storage, readAsset });
+    image16x9 = await load16x9Bytes(preview.image, { storage, readAsset });
   } catch (err) {
-    log("error", `linkedin cover unreadable: ${describeError(err)}`, { date });
+    log("error", `linkedin 16:9 Event Image unreadable: ${describeError(err)}`, { date });
     return refuse([{ code: "image", message: `${REFUSALS.image} It couldn't be read: try again, or set the Event Image again.` }]);
   }
-  const image = checkCoverImage(cover.bytes);
+  const image = checkImage16x9(image16x9.bytes);
   if (!image.ok) return refuse([{ code: "image", message: `${REFUSALS.image} ${image.errors.join(" ")}` }], { image });
 
   if (cfg.live) {
-    return liveSequence({ userId, date, token, li, spec, memberUrn: connection.memberUrn, cover, image, eventImage: preview.image, cfg, now, duplicateCheck });
+    return liveSequence({ userId, date, token, li, spec, memberUrn: authentication.memberUrn, image16x9, image, eventImage: preview.image, cfg, now, duplicateCheck });
   }
 
   const recorder = recordingClient();
-  await sendSequence(recorder, token, { spec, memberUrn: connection?.memberUrn ?? PLACEHOLDERS.member, cover });
+  await sendSequence(recorder, token, { spec, memberUrn: authentication?.memberUrn ?? PLACEHOLDERS.member, image16x9 });
   return { ok: true, mode: "dry_run", duplicateCheck, image, requests: recorder.requests, preview };
 }
 
@@ -463,8 +478,8 @@ async function succeeded(userId, date, cfg, now, extra = {}) {
  * The live create: pending (committed first), upload, create, created, post, posted.
  * Never retried automatically: a failure stops at the last committed state.
  */
-async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, image, eventImage, cfg, now, duplicateCheck }) {
-  const c = eventImage.cover;
+async function liveSequence({ userId, date, token, li, spec, memberUrn, image16x9, image, eventImage, cfg, now, duplicateCheck }) {
+  const c = eventImage.image16x9;
   let row;
   try {
     row = await withAudit(userId, async (client) => {
@@ -491,13 +506,13 @@ async function liveSequence({ userId, date, token, li, spec, memberUrn, cover, i
   try {
     const upload = await li.initializeImageUpload(token, memberUrn);
     step = "image_upload";
-    await li.uploadImage(token, upload.uploadUrl, cover.bytes, cover.contentType);
+    await li.uploadImage(token, upload.uploadUrl, image16x9.bytes, image16x9.contentType);
     step = "create";
     created = await li.createEvent(token, buildEventPayload(spec, upload.assetUrn));
     url = eventUrl(created.id, created.vanityName);
     await withAudit(userId, async (client) => {
       const { rowCount } = await client.query(
-        // Claimed for this request's own post (claimPost), so a Publish event can't race it.
+        // Claimed for this request's own post (claimPost), so a Publish the LinkedIn post can't race it.
         `update public.linkedin_events
             set status = 'created', linkedin_event_id = $2, event_url = $3, event_created_at = $4, image_asset_urn = $5,
                 post_claimed_at = now()
@@ -532,7 +547,7 @@ async function claimPost(rowId) {
   return rowCount === 1;
 }
 
-/** Release the claim after a failed post, so the Admin can Publish event again. */
+/** Release the claim after a failed post, so the Admin can Publish the LinkedIn post again. */
 async function releasePost(rowId) {
   try {
     await pool.query(`update public.linkedin_events set post_claimed_at = null where id = $1 and status = 'created'`, [rowId]);
@@ -563,7 +578,7 @@ async function postAndMark({ userId, date, token, li, memberUrn, row, cfg, now, 
 }
 
 /**
- * Publish event: retry only the member post of a `created` row (LinkedIn hides an
+ * Publish the LinkedIn post: retry only the member post of a `created` row (LinkedIn hides an
  * unposted event and can't delete it, so the event is never created twice).
  * Refused like create for a past date or a cancelled event (rules.mjs publishRefusals).
  * Live, the row is claimed first (claimPost): of two concurrent requests one posts and
@@ -578,11 +593,11 @@ export async function publishRetry(userId, date, { confirm }, { config, client, 
   const cfg = requireConfig(config);
   const preview = await linkedInEventPreview(pool, userId, date, { config: cfg, now });
   const refuse = (refusals) => ({ ok: false, mode: preview.mode, refusals, preview });
-  const { ledger, connection } = preview;
+  const { ledger, authentication } = preview;
   const refusals = publishRefusals(preview.ctx, { confirm });
   if (refusals.length) return refuse(refusals);
 
-  const memberUrn = connection?.memberUrn ?? PLACEHOLDERS.member;
+  const memberUrn = authentication?.memberUrn ?? PLACEHOLDERS.member;
   if (!cfg.live) {
     const recorder = recordingClient();
     await recorder.createPost(null, buildPostPayload(memberUrn, ledger.linkedinEventId, ledger.commentary));
@@ -635,6 +650,28 @@ export async function linkedInFollowUpFor(db, date, { event, eventImage } = {}) 
     activeLedgerRow(db, date), event ?? getEvent(db, date), eventImage ?? getEventImage(db, date),
   ]);
   return linkedInFollowUp({ ledger, event: e, eventImage: image });
+}
+
+/**
+ * linkedInFollowUpFor for several Events at once (the events list and home tags): the
+ * ledger rows in one query, and the Event Image read only when rules.mjs
+ * followUpComparesImage says the drift compares it.
+ * @param {{ query: Function }} db
+ * @param {Array<{ date: string, status: string, location: string|null }>} events
+ * @returns {Promise<Map<string, ReturnType<typeof linkedInFollowUp>>>} by date
+ */
+export async function linkedInFollowUpsFor(db, events) {
+  const dates = events.map((e) => e.date);
+  const { rows } = dates.length ? await db.query(
+    `select event_date::text as date, ${LEDGER_COLUMNS}
+       from public.linkedin_events where event_date = any($1::date[]) and status <> 'retired'`, [dates]) : { rows: [] };
+  const ledgers = new Map(rows.map(({ date, ...ledger }) => [date, ledger]));
+  const out = await Promise.all(events.map(async (event) => {
+    const ledger = ledgers.get(event.date) ?? null;
+    const eventImage = followUpComparesImage({ ledger, event }) ? await getEventImage(db, event.date) : null;
+    return [event.date, linkedInFollowUp({ ledger, event, eventImage })];
+  }));
+  return new Map(out);
 }
 
 /**

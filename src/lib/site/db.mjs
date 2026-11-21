@@ -79,7 +79,7 @@ const PLATFORMS = new Set(["luma", "eventbrite", "facebook_event", "linkedin_eve
 /**
  * @typedef {object} SiteEvent
  * @property {string} date              YYYY-MM-DD
- * @property {"scheduled"|"held"|"cancelled"} status
+ * @property {"scheduled"|"reported"|"cancelled"} status
  * @property {"lobby"|"food_hall"|"other"|null} location
  * @property {string|null} locationOther
  * @property {Date} updatedAt            latest of the event row and its links

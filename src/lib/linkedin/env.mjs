@@ -1,4 +1,4 @@
-// Environment contract for the LinkedIn connection (ADR 0012 decision 4, issue #23).
+// Environment contract for the LinkedIn authentication (ADR 0012 decision 4, issue #23).
 // Plain ESM, no Astro APIs, no imports.
 //
 // Variables (Netlify env, both Production and Branch deploys unless noted):

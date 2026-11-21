@@ -5,7 +5,7 @@
  * validate → record the Check-in in Postgres → read the streak.
  * It returns a discriminated result for the three EXPECTED outcomes and lets
  * UNEXPECTED infrastructure failures from the store propagate (the handler maps
- * those to 500). See CONTEXT.md → "Check-in use-case" seam.
+ * those to 500).
  *
  * Neon Postgres is the only place check-in data is written (ADR 0006).
  *

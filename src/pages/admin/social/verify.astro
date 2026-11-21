@@ -3,8 +3,8 @@
 // decisions 3, 4; plan Phase 5 part B). Admin and social. Plain server-rendered HTML,
 // no script, one <section id="channel-<key>"> per channel.
 //
-// Which post: the one whose publish time passed most recently, while its event is
-// today or still ahead (findVerify, src/lib/admin/social.mjs); otherwise a "Nothing to
+// Which Social plan: the one whose publish time passed most recently, while its event is
+// today or still ahead (findVerify, src/lib/admin/social-plan.mjs); otherwise a "Nothing to
 // verify" section (id="nothing"). Per channel: its post URL as a link to open, a form
 // with "Mark <Channel> live" / "Mark <Channel> failed" (post URL and notes), and on
 // Instagram and TikTok the first comment to paste with a "First comment posted on
@@ -24,7 +24,7 @@ if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const sp = await import("../../../lib/admin/social-pages.mjs");
-const so = await import("../../../lib/admin/social.mjs");
+const so = await import("../../../lib/admin/social-plan.mjs");
 const PAGE = "/admin/social/verify/";
 
 let errors: Record<string, string> = {};
@@ -49,7 +49,7 @@ const errFor = (c: string) => (posted?.channel === c ? errors : {});
 const hasComment = (c: string) => so.COMMENT_CHANNELS.includes(c);
 ---
 <Admin title="Social: verify" user={user} roles={roles}>
-  <h1 id="title">Verify social posts</h1>
+  <h1 id="title">Verify social media posts</h1>
   {notice && <p class="notice" role="status" id="notice">{notice}</p>}
   {posted && (errors.date || errors.channel) && <p class="error" role="alert">{errors.date ?? errors.channel}</p>}
 
@@ -58,7 +58,7 @@ const hasComment = (c: string) => so.COMMENT_CHANNELS.includes(c);
       <h2 id="h-nothing">Nothing to verify</h2>
       <p id="nothing-reason">{pick.message}</p>
       {pick.nextPublish && (
-        <p id="next-publish">The next post ({pick.nextPublish.date}) publishes {so.formatPublishAt(pick.nextPublish.publishAt).et} ({so.formatPublishAt(pick.nextPublish.publishAt).utc}).</p>
+        <p id="next-publish">The next Social plan ({pick.nextPublish.date}) publishes {so.formatPublishAt(pick.nextPublish.publishAt).et} ({so.formatPublishAt(pick.nextPublish.publishAt).utc}).</p>
       )}
       <p>Stop here and report: "Nothing to verify."</p>
     </section>
@@ -67,13 +67,13 @@ const hasComment = (c: string) => so.COMMENT_CHANNELS.includes(c);
   {order && (
     <>
       <section id="summary" aria-labelledby="h-summary">
-        <h2 id="h-summary">Post to verify</h2>
+        <h2 id="h-summary">Social plan to verify</h2>
         <dl>
           <dt>Event date</dt><dd id="event-date" data-date={order.date}>{order.date} ({longDay(order.date)})</dd>
           <dt>Published at (Eastern)</dt><dd id="publish-at-eastern">{order.publishAtDisplay.et}</dd>
           <dt>Published at (UTC)</dt><dd id="publish-at-utc" data-iso={order.publishAtDisplay.iso}>{order.publishAtDisplay.utc}</dd>
         </dl>
-        {order.status === "todo" && <p class="error" id="not-ready">This post is To do (not Ready for Posting), so it may never have been scheduled.</p>}
+        {order.status === "todo" && <p class="error" id="not-ready">This Social plan is To do (not Ready for Posting), so it may never have been scheduled.</p>}
       </section>
 
       <section id="todo" aria-labelledby="h-todo" data-all-done={pick.allDone ? "true" : "false"}>

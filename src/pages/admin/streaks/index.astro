@@ -1,6 +1,6 @@
 ---
 // /admin/streaks/: everyone whose streak is still active, i.e. who attended the
-// event's most recent held week (the streaks view's current_streak > 0). Test
+// event's most recent Held week (the streaks view's current_streak > 0). Debug
 // attendees are left out. Admin only.
 import Admin from "../../../layouts/Admin.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
@@ -17,7 +17,7 @@ const streaks = await listActiveStreaks(pool);
 ---
 <Admin title="Active streaks" user={user} roles={roles} wide>
   <h1>Active streaks</h1>
-  <p class="muted">Consecutive held weeks, up to and including the most recent one. A cancelled week (no check-ins) doesn't break a streak.</p>
+  <p class="muted">Consecutive Held Events, up to and including the most recent one. An Event is Held when someone checked in or its Event Report is in, and never when it was Cancelled. A Cancelled Event, or a week with no Event, doesn't break a streak; a Reported Event nobody checked in to does.</p>
 
   {streaks.length === 0
     ? <p class="muted">No active streaks.</p>

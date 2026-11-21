@@ -138,3 +138,25 @@ Settled while building Phase 4 on `dev`. Code: `src/pages/events/[date].astro`,
 9. **Dependency.** `purge.mjs` imports `@netlify/cache`, at the version 4.2.1 that
    `@astrojs/netlify` already brings in. It is pinned in the root `package.json` once that
    version is two weeks old (on or after 2026-11-20).
+
+## Amendment (2026-12-03, Event status: Scheduled / Reported / Cancelled, #51)
+
+Follows GLOSSARY.md (spec #49). Supersedes the `held` value in decisions 1 and 2 and the
+"held" wording in amendment 3 above (the Public event page rules are unchanged).
+
+1. **`events.status` is `scheduled` / `reported` / `cancelled`**, labelled Scheduled,
+   Reported and Cancelled in the admin app (Admin event page, events list, admin home).
+   Saving an Event Report moves the event from Scheduled to Reported in the same
+   transaction, and its audit row records `eventStatus: { before, after: "reported" }`.
+   "Report missing" is still a past date that is still `scheduled`.
+2. **"Held" is no longer a status.** It means the Event took place (GLOSSARY.md), which is
+   what Streaks count; deciding Held is not the status column's job.
+3. **Public event page**: a Reported event's page behaves exactly as a held one did (past
+   date: "this one has passed"); the page only branches on `cancelled`.
+4. **Data**: migration `20261203130000_event_status_reported.sql` backfills `held` rows to
+   `reported` and, until the contract migration, rewrites any write of `held` to `reported`
+   for the code live between migrate and deploy. The Google Form import writes
+   `reported`. The sign-in photo import writes `scheduled`: a photo is no Event Report, so
+   those dates show "Report missing" (their imported check-ins still make them Held). The
+   Airtable backfill never touched events. Audit rows
+   that already say `held` are history and stay.

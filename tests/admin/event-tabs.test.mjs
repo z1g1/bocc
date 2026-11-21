@@ -1,7 +1,7 @@
 // The tabs of /admin/events/YYYY-MM-DD/ (ADR 0012 decision 1, issue #19) over HTTP
 // through a real `astro dev` server, against the throwaway database (npm run test:db):
 // - which tab renders (?tab=, the date default, unknown values) and which sections it has,
-//   with Readiness above the tabs on every tab
+//   with Event readiness and Social plan readiness above the tabs on every tab
 // - every form redirecting back to its tab (post/redirect/get), validation errors on the
 //   form's tab, and the media delete route landing on the photo's or video's tab
 // - the two renames (Online Event Listings, Photos from Event)
@@ -86,7 +86,7 @@ async function insertMedia(d, kind) {
     `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
      values ($1, $2, $3, $4, $5, $6, $7, 4800000, 'ready', $8)`,
     [id, d, kind, `${base}/original.${video ? "mp4" : "jpg"}`, video ? null : `${base}/display.jpg`, video ? null : `${base}/thumb.jpg`,
-      video ? "video/mp4" : "image/jpeg", kind === "social_photo"]);
+      video ? "video/mp4" : "image/jpeg", kind === "event_photo"]);
   return id;
 }
 
@@ -123,27 +123,51 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     return res.text();
   };
 
-  test("?tab picks the tab; each tab has its sections, and Readiness sits above the tabs on every one", async () => {
+  test("?tab picks the tab; each tab has its sections, and Event readiness and Social plan readiness sit above the tabs on every one", async () => {
     const d = futureDate();
     for (const tab of ["info", "social", "post"]) {
       const html = await page(`/admin/events/${d}/?tab=${tab}`);
       expectTab(html, tab, tab);
-      assert.ok(html.includes('id="h-ready"'), `${tab}: readiness`);
-      assert.ok(html.indexOf('id="h-ready"') < html.indexOf('aria-label="Event page tabs"'), `${tab}: readiness above the tabs`);
-      // #42: an H2 section with two bullets.
-      const ready = html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('aria-label="Event page tabs"'));
-      assert.match(ready, /<h2 id="h-ready"[^>]*>Readiness<\/h2>/, `${tab}: the H2`);
-      const bullets = [...ready.matchAll(/<li\b[^>]*class="[^"]*\bbullet\b[^"]*"[^>]*>/g)];
-      assert.equal(bullets.length, 2, `${tab}: two bullets`);
-      assert.match(ready, /Online Event Listings \d\/5 \(Default Cover Image\)/, `${tab}: the listings bullet`);
-      assert.match(ready, /Social Posts: not set up yet/, `${tab}: the social bullet`);
-      for (const [key, label] of [["info", "Event Info"], ["social", "Social Posts"], ["post", "Post Event"]]) {
+      const tabs = html.indexOf('aria-label="Event page tabs"');
+      for (const id of ["h-ready", "h-social-ready"]) {
+        assert.ok(html.includes(`id="${id}"`), `${tab}: ${id}`);
+        assert.ok(html.indexOf(`id="${id}"`) < tabs, `${tab}: ${id} above the tabs`);
+      }
+      assert.ok(html.indexOf('id="h-ready"') < html.indexOf('id="h-social-ready"'), `${tab}: Event readiness first`);
+      // #59: two H2 sections. An unsaved date: no Location, no Social plan.
+      const ready = html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('<section aria-labelledby="h-social-ready"'));
+      assert.match(ready, /<h2 id="h-ready"[^>]*>Event readiness<\/h2>/, `${tab}: the Event readiness H2`);
+      assert.match(ready, /Listings 0\/5/, `${tab}: the Listings bullet`);
+      assert.match(ready, /Location: not set \(Lobby assumed\)/, `${tab}: the Location bullet`);
+      assert.match(ready, /Event Image: Default \(BOCC logo\)/, `${tab}: the Event Image, information only`);
+      const social = html.slice(html.indexOf('<section aria-labelledby="h-social-ready"'), tabs);
+      assert.match(social, /<h2 id="h-social-ready"[^>]*>Social plan readiness<\/h2>/, `${tab}: the Social plan readiness H2`);
+      assert.match(social, /No Social plan yet/, `${tab}: no Social plan`);
+      assert.doesNotMatch(html, /Online Event Listings \d\/5|Social Posts:|Cover Image/, `${tab}: the old wording is gone`);
+      for (const [key, label] of [["info", "Event Info"], ["social", "Social plan"], ["post", "Post Event"]]) {
         assert.match(html, new RegExp(`<a\\b[^>]*href="\\?tab=${key}"[^>]*>${label}</a>`), `${tab}: a plain link to ${label}`);
       }
     }
   });
 
-  test("the title and the tabs are pinned to the top on scroll; Readiness is not (#36)", async () => {
+  test("Event readiness: a Location set and a Cancelled Event", async () => {
+    const d = futureDate();
+    const save = (form) => req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "save", ...form } });
+    assert.equal((await save({ status: "scheduled", location: "other", locationOther: "Room 5" })).status, 303);
+    const set = await page(`/admin/events/${d}/?tab=info`);
+    const readyOf = (html) => html.slice(html.indexOf('<section aria-labelledby="h-ready"'), html.indexOf('<section aria-labelledby="h-social-ready"'));
+    assert.match(readyOf(set), /✓<\/span>\s*<strong[^>]*>Location: Other \(Room 5\)<\/strong>/);
+    assert.match(readyOf(set), /Listings 1\/5/, "saved: the Public event page counts");
+
+    assert.equal((await save({ status: "cancelled", location: "lobby", cancelReason: "weather" })).status, 303);
+    const off = readyOf(await page(`/admin/events/${d}/?tab=info`));
+    assert.match(off, /✗<\/span>\s*<strong[^>]*>Cancellation: not announced on all socials yet<\/strong>/);
+    assert.doesNotMatch(off, /Listings|Location:|Event Image:/, "no Listings, Location or Event Image for a Cancelled Event");
+    assert.equal((await save({ status: "cancelled", location: "lobby", cancelReason: "weather", cancelAnnounced: "on" })).status, 303);
+    assert.match(readyOf(await page(`/admin/events/${d}/?tab=info`)), /✓<\/span>\s*<strong[^>]*>Cancellation: announced on all socials<\/strong>/);
+  });
+
+  test("the title and the tabs are pinned to the top on scroll; the readiness sections are not (#36)", async () => {
     const d = futureDate();
     for (const tab of ["info", "social", "post"]) {
       const html = await page(`/admin/events/${d}/?tab=${tab}`);
@@ -166,14 +190,14 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     assert.ok(at("h-links") < at("h-linkedin"), "after the Online Event Listings");
     assert.ok(at("h-event-image") > 0 && at("h-event-image") < at("h-linkedin"), "after the Event Image");
     const social = await page(`/admin/events/${d}/?tab=social`);
-    assert.ok(!social.includes('id="h-linkedin"'), "not on Social Posts");
+    assert.ok(!social.includes('id="h-linkedin"'), "not on Social plan");
     assert.ok(!social.includes('id="linkedin-event"'), "nor its form");
   });
 
   test("a LinkedIn listing made outside the app: a caution line, a 'Listed' note, and the create tools folded away", async () => {
     const d = futureDate();
     const before = await page(`/admin/events/${d}/?tab=info`);
-    assert.match(before, /✗<\/span>\s*LinkedIn event posted/, "no listing: the red cross");
+    assert.match(before, /✗<\/span>\s*<a href="\?tab=info#h-linkedin"[^>]*>LinkedIn listing<\/a>[\s\S]{0,600}not posted yet/, "no listing: the red cross");
     assert.doesNotMatch(before, /<details\b[^>]*class="linkedin-tools"/, "no listing: the tools are not folded");
 
     const url = "https://www.linkedin.com/events/7000000000000000001/";
@@ -182,7 +206,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
 
     const info = await page(`/admin/events/${d}/?tab=info`);
     assert.match(info, /<li\b[^>]*class="caution"[^>]*>\s*<span class="mark"[^>]*>⚠<\/span>/, "a caution mark, not a cross");
-    assert.match(info, /LinkedIn event posted<\/a>[\s\S]{0,600}created manually outside the app/, "the readiness note");
+    assert.match(info, /LinkedIn listing<\/a>[\s\S]{0,600}created manually outside the app/, "the Event readiness note");
     assert.match(info, /Listed: <a href="https:\/\/www\.linkedin\.com\/events\/7000000000000000001\/"/);
     assert.match(info, /<details\b(?![^>]*\bopen\b)[^>]*class="linkedin-tools"[^>]*>|<details\b[^>]*class="linkedin-tools"(?![^>]*\bopen\b)[^>]*>/, "the tools start folded");
     const notice = await page(`/admin/events/${d}/?tab=info&notice=linkedin_retry`);
@@ -196,8 +220,11 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       expectTab(await page(`/admin/events/${future}/${q}`), "info", `future ${q}`);
       expectTab(await page(`/admin/events/${past}/${q}`), "post", `past ${q}`);
     }
-    // A past event has no readiness block, on any tab.
-    for (const tab of ["info", "social", "post"]) assert.ok(!(await page(`/admin/events/${past}/?tab=${tab}`)).includes('id="h-ready"'));
+    // A past event has no readiness sections, on any tab.
+    for (const tab of ["info", "social", "post"]) {
+      const html = await page(`/admin/events/${past}/?tab=${tab}`);
+      assert.ok(!html.includes('id="h-ready"') && !html.includes('id="h-social-ready"'));
+    }
   });
 
   test("the renames: Online Event Listings and Photos from Event, and the old labels are gone", async () => {
@@ -209,12 +236,12 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       const post = await page(`/admin/events/${d}/?tab=post`);
       assert.match(post, /<h2 id="h-media-social"[^>]*>Photos from Event<\/h2>/);
       assert.ok(!/[Ss]ocial photos?/.test(post), "no 'social photo' label left");
-      assert.ok(post.includes('data-kind="social_photo"'), "the media kind is unchanged");
+      assert.ok(post.includes('data-kind="event_photo"'), "the media kind is event_photo");
     }
-    // The social post's "no Luma link" reason names the renamed section.
-    await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_post", baseCaption: "Renames" } });
+    // The Social plan's "no Luma link" reason names the renamed section.
+    await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST", form: { action: "social_plan", baseCaption: "Renames" } });
     const social = await page(`/admin/events/${d}/?tab=social`);
-    assert.ok(social.includes("Add the Luma listing (under Online Event Listings)"), "the social post's missing-Luma reason");
+    assert.ok(social.includes("Add the Luma listing (under Online Event Listings)"), "the Social plan's missing-Luma reason");
   });
 
   test("every form redirects back to its own tab", async () => {
@@ -227,10 +254,10 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "unlink", platform: "luma" }, "info", "unlink"],
       [future, { action: "save", status: "cancelled", location: "lobby", cancelReason: "weather" }, "info", "saved"],
       [future, { action: "save", status: "scheduled", location: "lobby" }, "info", "saved"],
-      [future, { action: "social_post", baseCaption: "Tabs caption" }, "social", "social_post", "#social"],
+      [future, { action: "social_plan", baseCaption: "Tabs caption" }, "social", "social_plan", "#social"],
       [future, { action: "social_video", videoMediaId: video }, "social", "social_video", "#social"],
-      [future, { action: "social_channel", channel: "threads", caption: "Threads tabs", firstComment: "" }, "social", "social_channel", "#social"],
-      [past, { action: "report", givesAsksCount: "12", blingGiven: "no", notes: "", blingDetails: "" }, "post", "report"],
+      [future, { action: "social_media_post", channel: "threads", caption: "Threads tabs", firstComment: "" }, "social", "social_media_post", "#social"],
+      [past, { action: "report", attendeeCount: "12", blingGiven: "no", notes: "", blingDetails: "" }, "post", "report"],
     ];
     for (const [d, form, tab, notice, anchor = ""] of cases) {
       // Posted from a different tab's URL: the form's own tab still wins.
@@ -251,9 +278,9 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
       [future, { action: "save", location: "basement" }, "info"],
       [future, { action: "link", platform: "luma", url: "https://evil.example/x" }, "info"],
       [future, { action: "save", status: "cancelled", cancelReason: "" }, "info"],
-      [future, { action: "social_post", baseCaption: "x", status: "ready" }, "social"],
+      [future, { action: "social_plan", baseCaption: "x", status: "ready" }, "social"],
       [future, { action: "social_video", videoMediaId: "nope" }, "social"],
-      [past, { action: "report", givesAsksCount: "-1", blingGiven: "" }, "post"],
+      [past, { action: "report", attendeeCount: "-1", blingGiven: "" }, "post"],
     ];
     for (const [d, form, tab] of cases) {
       const res = await req(`/admin/events/${d}/?tab=${tab === "info" ? "social" : "info"}`, { cookie: admin.cookie, method: "POST", form });
@@ -266,7 +293,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
 
   test("the media delete route lands on the tab of what was deleted", { skip: !STORAGE && "storage not configured" }, async () => {
     const past = pastDate();
-    const photo = await insertMedia(past, "social_photo");
+    const photo = await insertMedia(past, "event_photo");
     const del = await req(`/api/admin/media/${photo}/delete`, { cookie: admin.cookie, method: "POST" });
     assert.equal(del.status, 303);
     assert.equal(del.headers.get("location"), `/admin/events/${past}/?tab=post&media=deleted#event-media`);
@@ -283,7 +310,7 @@ describe("event page tabs over HTTP", { timeout: 300_000 }, () => {
     for (const who of [social, noRole]) {
       for (const q of ["", "?tab=info", "?tab=social", "?tab=post"]) {
         assert.equal((await req(`/admin/events/${d}/${q}`, { cookie: who.cookie })).status, 403, q);
-        const posted = await req(`/admin/events/${d}/${q}`, { cookie: who.cookie, method: "POST", form: { action: "social_post", baseCaption: "x" } });
+        const posted = await req(`/admin/events/${d}/${q}`, { cookie: who.cookie, method: "POST", form: { action: "social_plan", baseCaption: "x" } });
         assert.equal(posted.status, 403, `POST ${q}`);
       }
     }
