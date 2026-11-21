@@ -155,6 +155,8 @@ Follows GLOSSARY.md (spec #49). Supersedes the `held` value in decisions 1 and 2
    date: "this one has passed"); the page only branches on `cancelled`.
 4. **Data**: migration `20261203130000_event_status_reported.sql` backfills `held` rows to
    `reported` and, until the contract migration, rewrites any write of `held` to `reported`
-   for the code live between migrate and deploy. The Google Form import and the sign-in
-   photo import write `reported`; the Airtable backfill never touched events. Audit rows
+   for the code live between migrate and deploy. The Google Form import writes
+   `reported`. The sign-in photo import writes `scheduled`: a photo is no Event Report, so
+   those dates show "Report missing" (their imported check-ins still make them Held). The
+   Airtable backfill never touched events. Audit rows
    that already say `held` are history and stay.

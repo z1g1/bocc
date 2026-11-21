@@ -1,7 +1,7 @@
 // The sign-in board photo import's --apply step (scripts/signin-photos/import.mjs,
 // ADR 0010 decision 4) against the throwaway database and MinIO, with tiny generated
 // images only (never real photos):
-//   - a fake converter: rows, events created as `reported`, one summary audit row, objects
+//   - a fake converter: rows, events created as `scheduled` (no Event Report comes with a photo), one summary audit row, objects
 //     in the bucket (a HEIC original stored as image/heic, untouched), and a re-run that
 //     imports nothing (idempotent)
 //   - the photo folder: symlinks and files over the size cap are refused
@@ -67,7 +67,7 @@ describe("the photo folder is untrusted", () => {
 });
 
 describe("photo import --apply against MinIO", { skip }, () => {
-  test("uploads, inserts ready signin_board rows, creates reported events, one audit row; a re-run does nothing", async () => {
+  test("uploads, inserts ready signin_board rows, creates scheduled events, one audit row; a re-run does nothing", async () => {
     // Unique bytes per run, so the derived ids are new even on a reused database.
     const salt = `${Date.now()}-${Math.random()}`;
     const photos = [
@@ -102,7 +102,7 @@ describe("photo import --apply against MinIO", { skip }, () => {
 
     const { rows: ev } = await owner.query(
       "select event_date::text as d, status from events where event_date in ('2019-02-05', '2019-02-12') order by 1");
-    assert.deepEqual(ev, [{ d: "2019-02-05", status: "reported" }, { d: "2019-02-12", status: "scheduled" }], "existing events untouched");
+    assert.deepEqual(ev, [{ d: "2019-02-05", status: "scheduled" }, { d: "2019-02-12", status: "scheduled" }], "existing events untouched");
 
     const ids = [importId(sha(photos[0].bytes)), importId(sha(photos[1].bytes))];
     const { rows: media } = await owner.query(
