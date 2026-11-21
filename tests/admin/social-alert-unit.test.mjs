@@ -22,7 +22,7 @@ function order({ date = DATE, exists = true, status = "ready", statuses = {}, ev
   return buildWorkOrder({
     date,
     event: { status: eventStatus, exists: true },
-    post: exists ? { videoMediaId: video ? "v" : null, thumbnailTimecode: null, baseCaption, extraHashtags: [], publishAt: new Date("2026-11-23T12:00:00Z"), status, channels } : null,
+    plan: exists ? { videoMediaId: video ? "v" : null, thumbnailTimecode: null, baseCaption, extraHashtags: [], publishAt: new Date("2026-11-23T12:00:00Z"), status, channels } : null,
     lumaUrl: luma,
     video: video ? { id: "v", kind: "promo_video", status: "ready" } : null,
   });

@@ -158,7 +158,7 @@ describe("ready and the work order", () => {
   });
 
   test("everything in place: actionable, with every channel's final text", () => {
-    const w = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored(), lumaUrl: LUMA, video });
+    const w = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, plan: stored(), lumaUrl: LUMA, video });
     assert.deepEqual([w.exists, w.ready, w.problems, w.actionable, w.publishAtIsDefault], [true, true, [], true, true]);
     assert.deepEqual(w.channels.map((c) => c.channel), ["facebook", "instagram", "threads", "tiktok", "linkedin_page"]);
     assert.equal(w.channels[0].caption, `Coffee!\n\nRSVP: ${LUMA}`);
@@ -169,23 +169,23 @@ describe("ready and the work order", () => {
   });
 
   test("not actionable without video, caption, Luma; cancelled; over a limit; or not marked ready", () => {
-    const keys = (s) => r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored(), lumaUrl: LUMA, video, ...s })
+    const keys = (s) => r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, plan: stored(), lumaUrl: LUMA, video, ...s })
       .problems.map((p) => p.key);
     assert.deepEqual(keys({ video: null }), ["video"]);
     assert.deepEqual(keys({ video: { ...video, status: "pending" } }), ["video"]);
     assert.deepEqual(keys({ video: { ...video, kind: "event_photo" } }), ["video"]);
-    assert.deepEqual(keys({ post: stored({ baseCaption: null }) }), ["baseCaption"]);
+    assert.deepEqual(keys({ plan: stored({ baseCaption: null }) }), ["baseCaption"]);
     assert.deepEqual(keys({ lumaUrl: null }), ["luma"]);
     assert.deepEqual(keys({ event: { status: "cancelled" } }), ["event"]);
-    assert.deepEqual(keys({ post: stored({ baseCaption: "y".repeat(495) }) }), ["caption_threads"]);
-    const notReady = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored({ status: "todo" }), lumaUrl: LUMA, video });
+    assert.deepEqual(keys({ plan: stored({ baseCaption: "y".repeat(495) }) }), ["caption_threads"]);
+    const notReady = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, plan: stored({ status: "todo" }), lumaUrl: LUMA, video });
     assert.deepEqual([notReady.problems, notReady.actionable], [[], false]);
-    const msgs = r.readyProblems({ event: { status: "scheduled" }, post: null, video: null, lumaUrl: null }).map((p) => p.message);
+    const msgs = r.readyProblems({ event: { status: "scheduled" }, plan: null, video: null, lumaUrl: null }).map((p) => p.message);
     assert.deepEqual(msgs, ["Upload the promo video.", "Write the base caption.", "Add the Luma listing (under Online Event Listings): it is the only link the posts use."]);
   });
 
   test("a date with no post: defaults, not actionable", () => {
-    const w = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled", exists: false }, post: null, lumaUrl: null, video: null });
+    const w = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled", exists: false }, plan: null, lumaUrl: null, video: null });
     assert.deepEqual([w.exists, w.ready, w.actionable, w.publishAt.toISOString()], [false, false, false, "2026-11-23T12:00:00.000Z"]);
     assert.ok(w.channels.every((c) => c.status === null && c.caption === null));
   });
@@ -233,11 +233,11 @@ describe("the Social plan Thumbnail", () => {
   });
 
   test("the work order carries the Thumbnail; the Thumbnail never changes what blocks ready", () => {
-    const post = {
+    const plan = {
       videoMediaId: "v1", thumbnailMediaId: photo.id, thumbnailTimecode: null, baseCaption: "Coffee!", extraHashtags: [],
       publishAt: new Date("2026-11-23T12:00:00Z"), status: "ready", channels: {},
     };
-    const base = { date: "2026-11-24", event: { status: "scheduled" }, post, lumaUrl: LUMA, video };
+    const base = { date: "2026-11-24", event: { status: "scheduled" }, plan, lumaUrl: LUMA, video };
     const w = r.buildWorkOrder({ ...base, thumbnailMedia: photo, eventImage: uploaded });
     assert.equal(w.thumbnail.source, "override");
     assert.deepEqual([w.problems, w.actionable], [[], true]);
@@ -257,7 +257,7 @@ describe("the post status (ticket #39)", () => {
     }])),
   });
   const order = (status, over = {}) =>
-    r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: stored(status), lumaUrl: LUMA, video, ...over });
+    r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, plan: stored(status), lumaUrl: LUMA, video, ...over });
 
   test("four Plan statuses, in dropdown order, with their labels", () => {
     assert.deepEqual(r.PLAN_STATUSES, ["todo", "ready", "posted", "error"]);
@@ -282,7 +282,7 @@ describe("the post status (ticket #39)", () => {
       ["error", "error", "Error", true],
     ]);
     assert.equal(order("ready", { lumaUrl: null }).actionable, false);
-    const none = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, post: null, lumaUrl: null, video: null });
+    const none = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled" }, plan: null, lumaUrl: null, video: null });
     assert.deepEqual([none.status, none.statusLabel, none.actionable], ["todo", "To do", false]);
   });
 

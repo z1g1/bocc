@@ -22,7 +22,7 @@
 //       `actionable` (Plan status Ready for Posting or Error, and no problems). For a date
 //       with no Social plan, `exists: false`
 //       and the defaults.
-//   readState(db, date)                  -> { event, post: the plan, lumaUrl, video, thumbnailMedia, eventImage }
+//   readState(db, date)                  -> { event, plan, lumaUrl, video, thumbnailMedia, eventImage }
 //       (its inputs; the work order's `thumbnail` is resolveThumbnail(): the override
 //       photo, else the Event Image, event-image.mjs getEventImage)
 //   listThumbnailChoices(db, date)       -> the photos the Thumbnail can be set to
@@ -147,19 +147,19 @@ export async function getSocialPlan(db, date) {
 /** Everything buildWorkOrder() needs for one date. */
 export async function readState(db, date) {
   requireDate(date, "readState");
-  const [{ rows: [event] }, { rows: [luma] }, post, eventImage] = await Promise.all([
+  const [{ rows: [event] }, { rows: [luma] }, plan, eventImage] = await Promise.all([
     db.query(`select status from public.events where event_date = $1::date`, [date]),
     db.query(`select url from public.event_links where event_date = $1::date and platform = 'luma'`, [date]),
     getSocialPlan(db, date),
     getEventImage(db, date),
   ]);
   const [video, thumbnailMedia] = await Promise.all([
-    post?.videoMediaId ? getVideo(db, post.videoMediaId) : null,
-    post?.thumbnailMediaId ? getThumbnailMedia(db, post.thumbnailMediaId) : null,
+    plan?.videoMediaId ? getVideo(db, plan.videoMediaId) : null,
+    plan?.thumbnailMediaId ? getThumbnailMedia(db, plan.thumbnailMediaId) : null,
   ]);
   return {
     event: event ? { status: event.status, exists: true } : { status: "scheduled", exists: false },
-    post,
+    plan,
     lumaUrl: luma?.url ?? null,
     video,
     thumbnailMedia,
@@ -339,12 +339,12 @@ function diff(before, after) {
 /** The work order of the plan as getSocialPlan() would return it, read inside the transaction, with `over` applied. */
 async function stateIn(client, date, over = {}) {
   const s = await readState(client, date);
-  const post = { ...s.post, ...over.post };
-  if (over.channel) post.channels = { ...post.channels, [over.channel.channel]: { ...post.channels[over.channel.channel], ...over.channel.values } };
-  const video = over.post && "videoMediaId" in over.post
-    ? (over.post.videoMediaId ? await getVideo(client, over.post.videoMediaId) : null)
+  const plan = { ...s.plan, ...over.plan };
+  if (over.channel) plan.channels = { ...plan.channels, [over.channel.channel]: { ...plan.channels[over.channel.channel], ...over.channel.values } };
+  const video = over.plan && "videoMediaId" in over.plan
+    ? (over.plan.videoMediaId ? await getVideo(client, over.plan.videoMediaId) : null)
     : s.video;
-  return buildWorkOrder({ date, ...s, post, video });
+  return buildWorkOrder({ date, ...s, plan, video });
 }
 
 /** The Social plan form: caption, hashtags, Thumbnail timecode, publish time, Plan status. */
@@ -366,7 +366,7 @@ export async function savePlan(actorUserId, date, input, { now = new Date() } = 
     }
     if (status === "ready") {
       const order = await stateIn(client, date, {
-        post: { baseCaption: v.baseCaption, extraHashtags: v.extraHashtags, thumbnailTimecode: v.thumbnailTimecode, publishAt: v.publishAt },
+        plan: { baseCaption: v.baseCaption, extraHashtags: v.extraHashtags, thumbnailTimecode: v.thumbnailTimecode, publishAt: v.publishAt },
       });
       if (order.problems.length) {
         throw new ValidationError({ status: `Not ready yet: ${order.problems.map((p) => p.message).join(" ")}` });

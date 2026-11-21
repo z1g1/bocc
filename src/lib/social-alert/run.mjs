@@ -78,7 +78,7 @@ export async function readWorkOrder(db, date) {
   return buildWorkOrder({
     date,
     event: { status: event.status, exists: true },
-    post: plan ? { ...plan, channels: byChannel } : null,
+    plan: plan ? { ...plan, channels: byChannel } : null,
     lumaUrl: luma?.url ?? null,
     video,
   });

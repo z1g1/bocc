@@ -17,7 +17,7 @@
 // strictly before the event date (a Tuesday event: the day before), DST-correct.
 // Shown both in Eastern and in UTC (formatPublishAt).
 //
-// Ready (readyProblems, publishAtProblems): a post may be set to Ready for Posting only with a
+// Ready (readyProblems, publishAtProblems): a Social plan may be set to Ready for Posting only with a
 // ready promo video, a base caption, a Luma listing, every final caption within its
 // channel's limit, an event that isn't cancelled, and a publish time that is in the
 // future and not after the event day. buildWorkOrder() puts it all together.
@@ -147,7 +147,7 @@ export const tiktokHashtags = (extra = []) => [...TIKTOK_HASHTAGS, ...extra].joi
 /**
  * The code default caption and first comment for one channel.
  * @param {string} channel
- * @param {{ baseCaption: string|null, lumaUrl: string|null, extraHashtags?: string[] }} post
+ * @param {{ baseCaption: string|null, lumaUrl: string|null, extraHashtags?: string[] }} texts
  * @returns {{ caption: string|null, firstComment: string|null }}  caption null = no base caption yet
  */
 export function defaultTexts(channel, { baseCaption, lumaUrl, extraHashtags = [] }) {
@@ -165,11 +165,11 @@ export function defaultTexts(channel, { baseCaption, lumaUrl, extraHashtags = []
 /**
  * One channel's final texts: the override when set, else the default.
  * @param {string} channel
- * @param {{ baseCaption: string|null, lumaUrl: string|null, extraHashtags?: string[] }} post
+ * @param {{ baseCaption: string|null, lumaUrl: string|null, extraHashtags?: string[] }} texts
  * @param {{ caption?: string|null, firstComment?: string|null }} [override]  the channel row
  */
-export function channelTexts(channel, post, override = {}) {
-  const d = defaultTexts(channel, post);
+export function channelTexts(channel, texts, override = {}) {
+  const d = defaultTexts(channel, texts);
   const captionOverridden = typeof override.caption === "string" && override.caption !== "";
   const firstCommentOverridden = typeof override.firstComment === "string" && override.firstComment !== "";
   const caption = captionOverridden ? override.caption : d.caption;
@@ -270,20 +270,20 @@ export function formatPublishAt(date) {
 // ── Ready ────────────────────────────────────────────────────────────────────
 
 /**
- * What stops a post being ready (empty = nothing). Checked when ready is switched on
- * and on every save of a ready post; the social role's pages show it too, since the
+ * What stops a Social plan being Ready for Posting (empty = nothing). Checked when it is set
+ * Ready for Posting and on every save of a ready plan; the social role's pages show it too, since the
  * Luma listing can change afterwards.
- * @param {{ event: { status: string }, post: { baseCaption: string|null } | null,
+ * @param {{ event: { status: string }, plan: { baseCaption: string|null } | null,
  *           video: { kind: string, status: string } | null, lumaUrl: string|null,
  *           channels: Array<{ channel: string, caption: string|null, overLimit: boolean, captionLength: number, captionLimit: number }> }} s
  * @returns {Array<{ key: string, message: string }>}
  */
-export function readyProblems({ event, post, video, lumaUrl, channels = [] }) {
+export function readyProblems({ event, plan, video, lumaUrl, channels = [] }) {
   const out = [];
   if (event?.status === "cancelled") out.push({ key: "event", message: "The event is cancelled." });
   if (!video) out.push({ key: "video", message: "Upload the promo video." });
   else if (video.kind !== "promo_video" || video.status !== "ready") out.push({ key: "video", message: "The promo video hasn't finished uploading." });
-  if (!post?.baseCaption) out.push({ key: "baseCaption", message: "Write the base caption." });
+  if (!plan?.baseCaption) out.push({ key: "baseCaption", message: "Write the base caption." });
   if (!lumaUrl) out.push({ key: "luma", message: "Add the Luma listing (under Online Event Listings): it is the only link the posts use." });
   for (const c of channels) {
     if (c.overLimit) {
@@ -341,19 +341,19 @@ export function resolveThumbnail({ override = null, eventImage }) {
 /**
  * The whole work order for one event, calculated (nothing here is stored).
  * @param {{ date: string, event: { status: string, exists?: boolean },
- *           post: null | { videoMediaId: string|null, thumbnailTimecode: string|null, baseCaption: string|null,
+ *           plan: null | { videoMediaId: string|null, thumbnailTimecode: string|null, baseCaption: string|null,
  *                          extraHashtags: string[], publishAt: Date, status: string, updatedAt?: Date,
  *                          channels: Record<string, { caption: string|null, firstComment: string|null, status: string,
  *                            postUrl: string|null, verifiedAt: Date|null, commentPostedAt: Date|null, notes: string|null }> },
  *           lumaUrl: string|null, video: null | { id: string, kind: string, status: string, contentType: string, sizeBytes: number },
  *           thumbnailMedia?: object|null, eventImage?: object|null }} s
- *   thumbnailMedia: the event_media row of post.thumbnailMediaId (null = none); eventImage: the
+ *   thumbnailMedia: the event_media row of plan.thumbnailMediaId (null = none); eventImage: the
  *   resolved Event Image. Both only feed `thumbnail` (resolveThumbnail).
  */
-export function buildWorkOrder({ date, event, post, lumaUrl, video, thumbnailMedia = null, eventImage = null }) {
-  const texts = { baseCaption: post?.baseCaption ?? null, lumaUrl, extraHashtags: post?.extraHashtags ?? [] };
+export function buildWorkOrder({ date, event, plan, lumaUrl, video, thumbnailMedia = null, eventImage = null }) {
+  const texts = { baseCaption: plan?.baseCaption ?? null, lumaUrl, extraHashtags: plan?.extraHashtags ?? [] };
   const channels = CHANNEL_KEYS.map((channel) => {
-    const row = post?.channels?.[channel] ?? null;
+    const row = plan?.channels?.[channel] ?? null;
     return {
       channel,
       label: CHANNELS[channel],
@@ -365,14 +365,14 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, thumbnailMed
       ...channelTexts(channel, texts, { caption: row?.caption ?? null, firstComment: row?.firstComment ?? null }),
     };
   });
-  const publishAt = post?.publishAt ? new Date(post.publishAt) : defaultPublishAt(date);
-  const problems = readyProblems({ event, post, video, lumaUrl, channels });
-  const status = isPlanStatus(post?.status) ? post.status : "todo";
+  const publishAt = plan?.publishAt ? new Date(plan.publishAt) : defaultPublishAt(date);
+  const problems = readyProblems({ event, plan, video, lumaUrl, channels });
+  const status = isPlanStatus(plan?.status) ? plan.status : "todo";
   /** Offered to the Chrome tasks (Ready for Posting or Error): what the old `ready` flag meant. */
   const ready = OFFERED_PLAN_STATUSES.includes(status);
   return {
     date,
-    exists: Boolean(post),
+    exists: Boolean(plan),
     eventStatus: event?.status ?? "scheduled",
     status,
     statusLabel: PLAN_STATUS_LABELS[status],
@@ -383,15 +383,15 @@ export function buildWorkOrder({ date, event, post, lumaUrl, video, thumbnailMed
     publishAt,
     publishAtDisplay: formatPublishAt(publishAt),
     publishAtIsDefault: publishAt.getTime() === defaultPublishAt(date).getTime(),
-    thumbnailTimecode: post?.thumbnailTimecode ?? null,
-    baseCaption: post?.baseCaption ?? null,
-    extraHashtags: post?.extraHashtags ?? [],
-    tiktokHashtags: tiktokHashtags(post?.extraHashtags ?? []),
+    thumbnailTimecode: plan?.thumbnailTimecode ?? null,
+    baseCaption: plan?.baseCaption ?? null,
+    extraHashtags: plan?.extraHashtags ?? [],
+    tiktokHashtags: tiktokHashtags(plan?.extraHashtags ?? []),
     lumaUrl,
     video,
     /** resolveThumbnail(); null only when the caller passed no Event Image. Never a ready problem. */
     thumbnail: eventImage ? resolveThumbnail({ override: thumbnailMedia, eventImage }) : null,
-    updatedAt: post?.updatedAt ?? null,
+    updatedAt: plan?.updatedAt ?? null,
     channels,
   };
 }

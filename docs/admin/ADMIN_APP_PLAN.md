@@ -383,7 +383,7 @@ on-device checks and production are open.
   - a gallery shown through short-lived GET URLs
   - each photo tagged `signin_board` / `social_photo` (renamed `event_photo`, Photo from
     Event, by #54, ADR 0010 amendment 2026-12-03), with `publicly_usable`. Since
-    2026-11-18 that is not a choice: social photos are always publicly usable (the posted
+    2026-11-18 that is not a choice: Photos from Event are always publicly usable (the posted
     photo waiver), sign-in board photos never (ADR 0010 decision 2, migration `20261120120000`)
   - pending uploads over a day old are listed on the event page for deletion; no storage
     configured shows a message and the APIs answer 503
@@ -507,10 +507,10 @@ work (to save deploy credits); everything is verified on staging first.
       `event_links` slots are unchanged)
 - [ ] Event Image (`event_image` media: upload or reference a recent publicly usable photo,
       the logo as the default, a 16:9 Event Image), previews and downloads for the hand-entered
-      listings, and the Social Post cover image defaulting to it
+      listings, and the Social plan's Thumbnail defaulting to it
 - [ ] Migrations: `linkedin_connections`, now `linkedin_authentications` (#50; token encrypted under `LINKEDIN_TOKEN_KEY`),
       `linkedin_events` (the ledger, unique on `event_date`), the `event_media` changes and the
-      social post's cover. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
+      Social plan's Thumbnail. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
       connections only), `social_checker` the connection expiry only, nothing for
       `site_reader`/`checkin_writer`
 - [x] LinkedIn OAuth connect, status ("Connected as …, expires …"), reconnect and disconnect,
@@ -518,11 +518,11 @@ work (to save deploy credits); everything is verified on staging first.
       adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
       production and staging callback URLs
 - [x] The Readiness section (#42): an H2 with two bullets, "Online Event Listings x/5
-      (Default Cover Image | Custom Cover Image)" counting the four listings and the public
+      (default or custom Event Image)" counting the four listings and the public
       page (the Luma embed id is no longer an item; the brackets follow the Event Image's
       source), the missing parts and the LinkedIn lines under it (drift and cancel pointing at
-      the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
-      status, or "not set up yet"), its problems (not once Posted) and channels under it. The
+      the LinkedIn section on Event Info); and the Social plan's Plan status (or "not set up
+      yet"), its problems (not once Posted) and its social media posts under it. The
       events list and home tag became "x/5 listings" with the same count
 - [x] Event readiness and Social plan readiness (#59) replace the Readiness section: two H2
       sections above the tabs on every tab of today's or an Upcoming Event. **Event readiness**

@@ -1,7 +1,7 @@
 // Thursday social check (ADR 0011 decision 5, amended 2026-11-18): a Netlify scheduled
 // function that pushes an ntfy alert when the next Tuesday's Social plan is missing,
 // not ready, or has a social media post that isn't `scheduled` / `live` yet. Silent (log only)
-// when everything is fine. It also alerts, separately, when a LinkedIn connection has
+// when everything is fine. It also alerts, separately, when a LinkedIn authentication has
 // under 10 days left or has expired (ADR 0012, #24). The logic is in src/lib/social-alert/ (alert.mjs is pure
 // and unit-tested; run.mjs does the database read and the push).
 //

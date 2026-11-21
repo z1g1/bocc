@@ -14,7 +14,7 @@ const plan = (status, chans = {}) => ({
   videoMediaId: "v1", coverNote: null, baseCaption: "Coffee Tuesday", extraHashtags: [], publishAt: new Date("2026-11-23T12:00:00Z"), status,
   channels: Object.fromEntries(r.CHANNEL_KEYS.map((c) => [c, channelRow(chans[c])])),
 });
-const workOrder = (post, { lumaUrl = LUMA } = {}) => r.buildWorkOrder({ date: DATE, event: EVENT, post, lumaUrl, video: post ? video : null });
+const workOrder = (plan, { lumaUrl = LUMA } = {}) => r.buildWorkOrder({ date: DATE, event: EVENT, plan, lumaUrl, video: plan ? video : null });
 
 describe("Social plan readiness", () => {
   test("no Social plan yet: says so, nothing under it", () => {

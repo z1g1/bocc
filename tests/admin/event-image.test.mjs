@@ -98,7 +98,7 @@ after(async () => {
 });
 
 // ── 1. Schema ───────────────────────────────────────────────────────────────
-describe("schema: event_image kind and cover copy", () => {
+describe("schema: event_image kind and 16:9 Event Image copy", () => {
   const insert = `insert into event_media (event_date, kind, original_key, display_key, thumb_key, image_16x9_key, content_type, size_bytes, status)
                   values ($1, $2, $3, $4, $5, $6, 'image/png', 10, $7)`;
   const keys = (d) => { const id = randomUUID(); return [`events/${d}/${id}/original.png`, `events/${d}/${id}/display.jpg`, `events/${d}/${id}/thumb.jpg`, `events/${d}/${id}/cover.jpg`]; };

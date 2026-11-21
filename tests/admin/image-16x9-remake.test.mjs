@@ -3,7 +3,7 @@
 //   1. the schema (migration 20261202120000): event_media.image_16x9_outdated, set on every
 //      existing 16:9 Event Image, never without one
 //   2. src/lib/admin/event-image.mjs + media.mjs as admin_app: an outdated version is
-//      still the cover (a posted LinkedIn event keeps its image ref) but is flagged;
+//      still the 16:9 Event Image (a posted LinkedIn event keeps its image ref) but is flagged;
 //      the picker and pick ask for a new one; startImage16x9 / completeImage16x9 remake it in
 //      place (same key) and clear the flag; listOutdated16x9Images lists what's left;
 //      load16x9Bytes refuses an outdated version (no new LinkedIn event gets it)
@@ -131,7 +131,7 @@ describe("schema: image_16x9_outdated", () => {
 
 // ── 2. The library ──────────────────────────────────────────────────────────
 describe("an outdated 16:9 Event Image", () => {
-  test("an uploaded Event Image keeps its cover (same key, so a posted LinkedIn event shows no drift) and is flagged", async () => {
+  test("an uploaded Event Image keeps its 16:9 Event Image (same key, so a posted LinkedIn event shows no drift) and is flagged", async () => {
     const [d] = dates(1);
     const id = await seed(d, { kind: "event_image" });
     const img = await ei.getEventImage(pool, d);
