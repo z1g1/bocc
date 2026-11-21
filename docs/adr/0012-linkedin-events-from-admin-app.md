@@ -29,7 +29,7 @@ LinkedIn facts that shape this (carried over from the CLI):
 
 ## Decision
 
-1. **The event page prefactor (tabs).** The Readiness summary stays at the top, above three
+1. **The event page prefactor (tabs).** The Readiness summary (since #59, two sections: Event readiness and Social plan readiness) stays at the top, above three
    server-rendered tabs that work without JavaScript:
    - **Event Info:** Status and location, Online Event Listings, Event Image, LinkedIn event
 

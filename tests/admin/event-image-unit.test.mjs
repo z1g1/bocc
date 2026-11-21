@@ -1,12 +1,12 @@
 // The Event Image's pure rules (ADR 0012 decision 3): which image an event uses
-// (uploaded, then a referenced photo, then the BOCC logo) and its Readiness line. No
+// (uploaded, then a referenced photo, then the BOCC logo). Its Event readiness line is in
+// event-readiness-unit.test.mjs. No
 // database or storage. All inputs are synthetic.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_EVENT_IMAGE, inUseMessage, resolveEventImage } from "../../src/lib/admin/event-image-rules.mjs";
-import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 
 const uploaded = {
   id: "11111111-1111-4111-8111-111111111111", eventDate: "2026-11-24", kind: "event_image", status: "ready",
@@ -64,23 +64,6 @@ describe("Event Image resolution: uploaded, then referenced, then the logo", () 
   test("a row that isn't ready is ignored", () => {
     assert.equal(resolveEventImage({ uploaded: { ...uploaded, status: "pending" } }).source, "default");
     assert.equal(resolveEventImage({ uploaded: { ...uploaded, status: "pending" }, referenced: photo }).source, "referenced");
-  });
-});
-
-describe("Readiness: Default or Custom Cover Image", () => {
-  const event = { date: "2026-11-24", status: "scheduled", exists: true };
-  const cover = (eventImage) => readiness(event, {}, null, { eventImage }).listings.cover;
-
-  test("an uploaded Event Image or a Photo from Event: Custom Cover Image", () => {
-    assert.equal(cover(resolveEventImage({ uploaded })), "Custom Cover Image");
-    assert.equal(cover(resolveEventImage({ referenced: photo })), "Custom Cover Image");
-  });
-  test("the BOCC logo default: Default Cover Image", () => {
-    assert.equal(cover(resolveEventImage({})), "Default Cover Image");
-  });
-  test("no Event Image line any more", () => {
-    const r = readiness(event, {}, null, { eventImage: resolveEventImage({ uploaded }) });
-    assert.ok(![...r.listings.parts, ...r.listings.items].some((i) => i.key === "event_image"));
   });
 });
 

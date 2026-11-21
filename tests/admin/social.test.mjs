@@ -9,7 +9,7 @@
 //      the attached video (media.mjs) un-readying the plan; promo video uploads through
 //      media.mjs with a fake bucket
 //   3. the "Social plan" section on /admin/events/YYYY-MM-DD/ over HTTP (astro dev):
-//      roles, Origin, post/redirect/get, the readiness checklist's social lines
+//      roles, Origin, post/redirect/get, Social plan readiness
 // The pure rules (texts, hashtags, times) are in social-unit.test.mjs.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -409,7 +409,7 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
     for (const c of CHANNELS) assert.ok(page.includes(`id="post-${c}"`), c);
     assert.ok(page.includes('src="/js/admin-video.js"'), "the upload script is an external file (CSP script-src 'self')");
     assert.ok(page.includes(so.formatPublishAt(so.defaultPublishAt(d)).utc), "the default publish time in UTC");
-    assert.ok(page.includes("Social Posts: not set up yet"));
+    assert.ok(page.includes("No Social plan yet"), "Social plan readiness");
 
     assert.equal((await req(`/admin/events/${d}/`, { cookie: social.cookie })).status, 403);
     const sp = await req(`/admin/events/${d}/`, { cookie: social.cookie, method: "POST", form: { action: "social_plan", baseCaption: "x" } });
@@ -419,7 +419,7 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
     assert.equal(await planRow(d), null, "nothing written");
   });
 
-  test("save, refused ready (400 with the reasons, re-filled), social media post override, and the readiness lines", async () => {
+  test("save, refused ready (400 with the reasons, re-filled), social media post override, and Social plan readiness", async () => {
     const d = httpDate();
     const ok = await req(`/admin/events/${d}/`, { cookie: admin.cookie, method: "POST",
       form: { action: "social_plan", baseCaption: "Coffee <b>Tuesday</b>", extraHashtags: "founders", thumbnailTimecode: "", publishAt: `${so.mondayBefore(d)}T08:30` } });
@@ -432,8 +432,8 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
     assert.ok(page.includes("Social plan saved."));
     assert.ok(page.includes("Plan status: To do."), "the plan's state line");
     assert.ok(page.includes("Coffee &lt;b&gt;Tuesday&lt;/b&gt;") && !page.includes("<b>Tuesday</b>"), "escaped");
-    const ready = page.slice(page.indexOf('id="h-ready"'), page.indexOf('aria-label="Event page tabs"'));
-    assert.ok(ready.includes("Social Posts: To do") && ready.includes("Facebook: pending") && ready.includes("0/5 channels scheduled"));
+    const ready = page.slice(page.indexOf('id="h-social-ready"'), page.indexOf('aria-label="Event page tabs"'));
+    assert.ok(ready.includes("Social plan: To do") && ready.includes("Facebook: Pending") && ready.includes("0/5 posts scheduled"), "Social plan readiness");
     assert.ok(ready.includes("Add the Luma listing"), "the problems under the bullet");
     assert.ok(!ready.includes("not marked ready"));
     assert.ok(page.includes(`RSVP: [Luma link: add the Luma listing]`), "preview flags the missing Luma link");
@@ -453,7 +453,7 @@ describe("the Social plan section over HTTP", { timeout: 300_000 }, () => {
 
     await owner.query(`update social_media_posts set status = 'scheduled', post_url = 'https://www.facebook.com/reel/1' where event_date = $1 and channel = 'facebook'`, [d]);
     const sched = await (await req(`/admin/events/${d}/?tab=social`, { cookie: admin.cookie })).text();
-    assert.ok(sched.includes("Facebook: scheduled") && sched.includes("1/5 channels scheduled") && sched.includes('href="https://www.facebook.com/reel/1"'));
+    assert.ok(sched.includes("Facebook: Scheduled") && sched.includes("1/5 posts scheduled") && sched.includes('href="https://www.facebook.com/reel/1"'));
     assert.ok(sched.includes("Changes here don't change posts already scheduled"));
     // Each Channel's row is a social media post with its Post status.
     const fb = sched.slice(sched.indexOf('id="post-facebook"'), sched.indexOf('id="post-instagram"'));

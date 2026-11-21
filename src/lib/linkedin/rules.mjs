@@ -385,7 +385,7 @@ export const LINKEDIN_SECTION_HREF = "?tab=info#h-linkedin";
  *           then the event is to be cancelled, not fixed). A row with no image recorded
  *           (imported from the CLI's ledger, #28) only compares the location.
  *   cancel  the event is cancelled: `due` until the Admin ticks "Done on LinkedIn"
- * Both carry `href`, LINKEDIN_SECTION_HREF (the one source for the Readiness lines and
+ * Both carry `href`, LINKEDIN_SECTION_HREF (the one source for the Event readiness lines and
  * the page); the LinkedIn event itself is `eventUrl`.
  * @param {{ ledger: null | { status: string, location: string|null, imageSource: string|null,
  *   imageRef: string|null, eventUrl: string|null, cancelledOnLinkedInAt: Date|null },

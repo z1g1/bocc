@@ -69,55 +69,8 @@ describe("URL rules", () => {
     }
   });
 
-  test("readiness: Online Event Listings x/5 (four listings and the public page), the missing parts under it", () => {
-    const empty = rules.readiness({ date: "2081-03-04", status: "scheduled" }, {});
+  test("LISTINGS_TOTAL: the four platforms and the Public event page", () => {
     assert.equal(rules.LISTINGS_TOTAL, 5);
-    assert.deepEqual([empty.listings.done, empty.listings.total, empty.ready], [1, 5, false]);
-    assert.equal(empty.listings.label, "Online Event Listings 1/5");
-    assert.deepEqual(empty.listings.parts.map((i) => [i.key, i.ok]), [
-      ["luma", false], ["eventbrite", false], ["facebook_event", false], ["linkedin_event", false], ["public_page", true],
-    ]);
-    assert.deepEqual(empty.listings.items.map((i) => i.key), ["luma", "eventbrite", "facebook_event", "linkedin_event"], "only the missing parts");
-    assert.equal(empty.listings.parts.find((i) => i.key === "public_page").href, "/events/2081-03-04/");
-    assert.equal(empty.listings.publicHref, "/events/2081-03-04/", "the bullet links the public page once it exists");
-
-    const link = (url, externalId = null) => ({ url, externalId });
-    // The Luma embed id is no longer a readiness item.
-    const full = rules.readiness({ date: "2081-03-04", status: "scheduled" }, {
-      luma: link("https://luma.com/a"), eventbrite: link("https://www.eventbrite.com/e/1"),
-      facebook_event: link("https://fb.me/e/1"), linkedin_event: link("https://www.linkedin.com/events/1"),
-    });
-    assert.deepEqual([full.listings.done, full.ready, full.listings.items.length], [5, true, 0]);
-    assert.ok(!JSON.stringify(full).includes("embed id"));
-    const three = rules.readiness({ date: "2081-03-04", status: "scheduled" }, {
-      luma: link("https://luma.com/a", "evt-1"), eventbrite: link("https://www.eventbrite.com/e/1"),
-    }, null, { eventImage: { source: "default" } });
-    assert.equal(three.listings.label, "Online Event Listings 3/5 (Default Cover Image)");
-    // The public page follows src/pages/events/[date].astro: no events row = 404.
-    const cancelled = rules.readiness({ date: "2081-03-04", status: "cancelled" }, {});
-    const pub = cancelled.listings.items.find((i) => i.key === "public_page");
-    assert.deepEqual([cancelled.listings.done, pub.ok, pub.href], [0, false, "/events/2081-03-04/"]);
-    assert.match(pub.note, /cancelled notice/);
-    const unsaved = rules.readiness({ date: "2081-03-04", status: "scheduled", exists: false }, {});
-    const pub2 = unsaved.listings.items.find((i) => i.key === "public_page");
-    assert.deepEqual([pub2.ok, pub2.href, unsaved.listings.publicHref], [false, undefined, undefined]);
-    assert.match(pub2.note, /404 until the event is saved/);
-  });
-
-  test("readiness: Default or Custom Cover Image follows the Event Image's source", () => {
-    const ev = { date: "2081-03-04", status: "scheduled" };
-    const cover = (source) => rules.readiness(ev, {}, null, { eventImage: { source } }).listings;
-    assert.deepEqual([cover("default").cover, cover("default").label], ["Default Cover Image", "Online Event Listings 1/5 (Default Cover Image)"]);
-    assert.equal(cover("uploaded").cover, "Custom Cover Image");
-    assert.equal(cover("referenced").cover, "Custom Cover Image");
-    assert.equal(rules.readiness(ev, {}).listings.cover, null, "no brackets without an Event Image");
-  });
-
-  test("listingsDone: the lists' tag counts the same five", () => {
-    assert.equal(rules.listingsDone({ status: "scheduled" }, 4), 5);
-    assert.equal(rules.listingsDone({ status: "scheduled" }, 0), 1);
-    assert.equal(rules.listingsDone({ status: "cancelled" }, 3), 3);
-    assert.equal(rules.listingsDone({ status: "scheduled", exists: false }, 0), 0);
   });
 });
 
@@ -193,13 +146,17 @@ describe("event-links module (admin_app)", () => {
     assert.deepEqual(await audits(d), before);
   });
 
-  test("linkSummaries: listings count per date", async () => {
+  test("linksByDate: each date's Listings, as getLinks returns them (for Event readiness on the lists)", async () => {
     const [a, b, c] = [date(), date(), date()];
     await el.setLink(actor.id, a, "luma", { url: "https://luma.com/a", externalId: "evt-a" });
     await el.setLink(actor.id, a, "eventbrite", { url: "https://www.eventbrite.com/e/1" });
-    await el.setLink(actor.id, b, "luma", { url: "https://luma.com/b" });
-    const m = await el.linkSummaries(pool, [a, b, c]);
-    assert.deepEqual([m.get(a), m.get(b), m.get(c)], [{ listings: 2 }, { listings: 1 }, { listings: 0 }]);
-    assert.equal((await el.linkSummaries(pool, [])).size, 0);
+    await el.setLink(actor.id, b, "linkedin_event", { url: "https://www.linkedin.com/events/1/" });
+    const m = await el.linksByDate(pool, [a, b, c]);
+    const urls = (d) => Object.fromEntries(Object.entries(m.get(d)).map(([p, l]) => [p, l?.url ?? null]));
+    assert.deepEqual(urls(a), { luma: "https://luma.com/a", eventbrite: "https://www.eventbrite.com/e/1", facebook_event: null, linkedin_event: null });
+    assert.deepEqual(urls(b), { luma: null, eventbrite: null, facebook_event: null, linkedin_event: "https://www.linkedin.com/events/1/" });
+    assert.deepEqual(urls(c), { luma: null, eventbrite: null, facebook_event: null, linkedin_event: null });
+    assert.deepEqual(m.get(a), await el.getLinks(pool, a), "the same shape as getLinks");
+    assert.equal((await el.linksByDate(pool, [])).size, 0);
   });
 });

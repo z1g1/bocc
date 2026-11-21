@@ -4,7 +4,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { linkedInFollowUp } from "../../src/lib/linkedin/rules.mjs";
-import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 
 const EVENT_URL = "https://www.linkedin.com/events/7249812613549670400/";
 const LOGO = { source: "default", mediaId: null, eventDate: null, image16x9: { path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png" } };
@@ -95,71 +94,3 @@ describe("linkedInFollowUp: cancellation", () => {
   });
 });
 
-describe("readiness: the LinkedIn lines", () => {
-  const event = { date: "2078-01-04", status: "scheduled", exists: true };
-  const lines = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).listings.items.filter((i) => ["linkedin_drift", "linkedin_cancel"].includes(i.key));
-
-  it("none without a follow-up (never posted, or no ledger read)", () => {
-    assert.deepEqual(lines(undefined), []);
-    assert.deepEqual(lines({ eventUrl: null, drift: null, cancel: null }), []);
-    assert.deepEqual(lines({ eventUrl: EVENT_URL, drift: null, cancel: null }), []);
-  });
-
-  it("drift: a red 'LinkedIn is out of date' line pointing at the Event Info tab", () => {
-    const f = linkedInFollowUp({ ledger: posted(), event: scheduled("food_hall"), eventImage: LOGO });
-    const [line] = lines(f);
-    assert.equal(line.key, "linkedin_drift");
-    assert.equal(line.ok, false);
-    assert.match(line.label, /^LinkedIn is out of date/);
-    assert.equal(line.href, "?tab=info#h-linkedin");
-  });
-
-  it("cancelled and not done: a red 'Cancel the LinkedIn event on LinkedIn' line; done clears it", () => {
-    const ev = { ...event, status: "cancelled" };
-    const [line] = lines(linkedInFollowUp({ ledger: posted(), event: ev, eventImage: LOGO }), ev);
-    assert.deepEqual(line, { key: "linkedin_cancel", label: "Cancel the LinkedIn event on LinkedIn", ok: false, href: "?tab=info#h-linkedin" });
-    const done = linkedInFollowUp({ ledger: posted({ cancelledOnLinkedInAt: new Date() }), event: ev, eventImage: LOGO });
-    assert.deepEqual(lines(done, ev), []);
-  });
-});
-
-describe("readiness: the LinkedIn event posted line", () => {
-  const event = { date: "2078-01-04", status: "scheduled", exists: true };
-  const line = (linkedIn, ev = event) => readiness(ev, {}, null, { linkedIn }).listings.items.find((i) => i.key === "linkedin_posted");
-
-  it("posted: done, linking the LinkedIn event", () => {
-    assert.deepEqual(line(linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: LOGO })),
-      { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: EVENT_URL });
-  });
-  it("not posted (no row, pending, created): missing, pointing at the Event Info tab", () => {
-    for (const ledger of [null, posted({ status: "pending", eventUrl: null }), posted({ status: "created" })]) {
-      const l = line(linkedInFollowUp({ ledger, event: scheduled(), eventImage: LOGO }));
-      assert.equal(l.ok, false, String(ledger?.status));
-      assert.equal(l.href, undefined);
-      assert.match(l.note, /Event Info tab/);
-      assert.doesNotMatch(l.note, /Social plan|Social Posts/);
-    }
-  });
-  it("made outside the app (a LinkedIn listing URL, no posted ledger row): a caution line, noting it", () => {
-    const LISTING = "https://www.linkedin.com/events/7000000000000000000/";
-    const links = { linkedin_event: { url: LISTING, externalId: null } };
-    for (const ledger of [null, posted({ status: "pending", eventUrl: null })]) {
-      const l = readiness(event, links, null, { linkedIn: linkedInFollowUp({ ledger, event: scheduled(), eventImage: LOGO }) })
-        .listings.items.find((i) => i.key === "linkedin_posted");
-      assert.equal(l.ok, true, String(ledger?.status));
-      assert.equal(l.caution, true);
-      assert.equal(l.href, LISTING);
-      assert.match(l.note, /created manually/);
-    }
-    // Posted from the app: the ledger wins, a plain tick.
-    const app = readiness(event, links, null, { linkedIn: linkedInFollowUp({ ledger: posted(), event: scheduled(), eventImage: LOGO }) })
-      .listings.items.find((i) => i.key === "linkedin_posted");
-    assert.deepEqual(app, { key: "linkedin_posted", label: "LinkedIn event posted", ok: true, href: EVENT_URL });
-  });
-  it("no line for a cancelled event (the cancel line covers it) or without a ledger read", () => {
-    const ev = { ...event, status: "cancelled" };
-    assert.equal(line(linkedInFollowUp({ ledger: posted(), event: ev, eventImage: LOGO }), ev), undefined);
-    assert.equal(line(linkedInFollowUp({ ledger: null, event: ev, eventImage: LOGO }), ev), undefined);
-    assert.equal(line(undefined), undefined);
-  });
-});

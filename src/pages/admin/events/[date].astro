@@ -1,7 +1,8 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
-// The Readiness section (#42: Online Event Listings x/5 with the cover image, and Social
-// Posts: <status>) sits above three tabs (ADR 0012 decision 1):
+// Two sections, Event readiness and Social plan readiness (#59; src/lib/admin/event-readiness.mjs,
+// social-plan-readiness.mjs), shown for today and Upcoming Events, sit above three tabs
+// (ADR 0012 decision 1):
 //   ?tab=info    Event Info: status (scheduled, reported or cancelled, with the cancel reason
 //                fields shown only while Cancelled is selected) and location in one form;
 //                below it, for a cancelled event that was posted on LinkedIn, the red
@@ -41,6 +42,8 @@
 // CDN (Social plan saves only when they created the events row: the public page
 // doesn't show them) (src/lib/site/purge.mjs). It is awaited so it runs before the function ends, but
 // it never throws, and a failure is caught here: the save is already committed.
+import { eventReadiness } from "../../../lib/admin/event-readiness.mjs";
+import { socialPlanReadiness } from "../../../lib/admin/social-plan-readiness.mjs";
 import Admin from "../../../layouts/Admin.astro";
 import EventImage from "../../../components/admin/EventImage.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
@@ -188,7 +191,17 @@ const { linkedInFollowUpFor } = await import("../../../lib/linkedin/linkedin.mjs
 const linkedIn = await linkedInFollowUpFor(pool, date, { event, eventImage });
 const today = ev.todayEastern();
 const upcoming = date >= today;
-const ready = el.readiness(event, links, social, { eventImage, linkedIn });
+const eventReady = eventReadiness(event, links, { eventImage, linkedIn });
+const socialReady = socialPlanReadiness(social);
+// The two sections at the top, rendered alike: bullets, each with its lines under it.
+type ReadyBullet = { key: string; label: string; ok: boolean; info?: boolean; items: any[]; publicHref?: string; extra?: string | null };
+const readySections: { id: string; title: string; bullets: ReadyBullet[] }[] = [
+  { id: "h-ready", title: "Event readiness",
+    bullets: eventReady.bullets.map((b) => ({ ...b, publicHref: b.key === "listings" ? eventReady.publicHref : undefined })) },
+  { id: "h-social-ready", title: "Social plan readiness",
+    bullets: [{ key: "social_plan", label: socialReady.label, ok: socialReady.ok, items: [...socialReady.problems, ...socialReady.posts],
+      extra: socialReady.exists ? `${socialReady.scheduled}/${socialReady.total} posts scheduled` : null }] },
+];
 const isFuture = date > today;
 const missing = ev.isReportMissing(event, today);
 const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
@@ -248,23 +261,20 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   {posted && errors.platform && <p class="error" role="alert">{errors.platform}</p>}
   {posted && errors.channel && <p class="error" role="alert">{errors.channel}</p>}
 
-  {upcoming && (
-    <section aria-labelledby="h-ready" class="ready">
-      <h2 id="h-ready">Readiness</h2>
+  {upcoming && readySections.map((sec) => (
+    <section aria-labelledby={sec.id} class="ready">
+      <h2 id={sec.id}>{sec.title}</h2>
       <ul class="bullets">
-        {[
-          { ...ready.listings, extra: null },
-          { ...ready.social, extra: ready.social.exists ? `${ready.social.scheduled}/${ready.social.total} channels scheduled` : null },
-        ].map((b) => (
-          <li class={`bullet ${b.ok ? "ok" : "todo"}`}>
-            <span class="mark" aria-hidden="true">{mark(b.ok)}</span>
+        {sec.bullets.map((b) => (
+          <li class={`bullet ${b.info ? "info" : b.ok ? "ok" : "todo"}`}>
+            <span class="mark" aria-hidden="true">{b.info ? "·" : mark(b.ok)}</span>
             <strong>{b.label}</strong>
-            <span class="visually-hidden">{b.ok ? " (done)" : " (to do)"}</span>
-            {b.publicHref && <span class="muted"> · <a href={b.publicHref} target="_blank" rel="noopener">public page</a></span>}
+            {!b.info && <span class="visually-hidden">{b.ok ? " (done)" : " (to do)"}</span>}
+            {b.publicHref && <span class="muted"> · <a href={b.publicHref} target="_blank" rel="noopener">Public event page</a></span>}
             {b.extra && <span class="muted"> · {b.extra}</span>}
             {b.items.length > 0 && (
               <ul class="checklist">
-                {b.items.map((i) => (
+                {b.items.map((i: any) => (
                   <li class={i.caution ? "caution" : i.ok ? "ok" : "todo"}>
                     <span class="mark" aria-hidden="true">{mark(i.ok, i.caution)}</span>
                     {i.href ? (/^https?:/.test(i.href) ? <a href={i.href} target="_blank" rel="noopener">{i.label}</a> : <a href={i.href}>{i.label}</a>) : i.label}
@@ -278,7 +288,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
         ))}
       </ul>
     </section>
-  )}
+  ))}
 
   <nav aria-label="Event page tabs" class="tabs pinned">
     <ul>
@@ -317,8 +327,8 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       </fieldset>
       <label for="location">Location</label>
       <select id="location" name="location" aria-invalid={detErr.location ? "true" : undefined}>
-        <option value="" selected={det.location === ""}>Not set</option>
-        {Object.entries(LOCATIONS).map(([v, label]) => <option value={v} selected={det.location === v}>{label}</option>)}
+        <option value="" selected={det.location === ""}>Not set (Lobby assumed)</option>
+        {Object.entries(LOCATIONS).map(([v, label]) => <option value={v} selected={det.location === v}>{v === "other" ? "Other (describe it)" : label}</option>)}
       </select>
       {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
       <div class="location-other">
@@ -469,7 +479,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .event-details .location-other { display: none; }
   .event-details:has(select[name="location"] option[value="other"]:checked) .location-other { display: block; }
   .event-details select { display: block; }
-  /* #36: the title and the tabs stay at the top on scroll; Readiness (between them, ADR 0012)
+  /* #36: the title and the tabs stay at the top on scroll; the readiness sections (between them, ADR 0012)
      scrolls under the title. The title is one line of fixed height so the tabs can pin right
      below it; html's scroll-padding keeps anchor jumps and focused fields clear of both. */
   :global(html) { --pin-title: 3rem; --pin-tabs: 2.5rem; scroll-padding-top: calc(var(--pin-title) + var(--pin-tabs) + 0.75rem); }
@@ -489,6 +499,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .badge { display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
   .badge.cancelled, .badge.missing { color: var(--err); border-color: var(--err); }
   .badge.reported { color: var(--accent); border-color: var(--accent); }
+  .ready + .ready { margin-top: 0.5rem; }
   .ready { margin-top: 1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
   .ready h2 { margin: 0; font-size: 1.1rem; }
   .bullets { list-style: none; padding: 0; margin: 0.25rem 0 0; }
@@ -498,6 +509,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .ready .ok > .mark { color: var(--accent); }
   .ready .todo > .mark { color: var(--err); }
   .ready .caution > .mark { color: var(--warn); }
+  .ready .info > .mark { color: var(--muted); }
   .linkedin-tools > summary { cursor: pointer; color: var(--muted); }
   .link-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
   .link-row label:first-of-type { font-weight: 600; }

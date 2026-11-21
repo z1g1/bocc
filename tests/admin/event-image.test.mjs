@@ -324,7 +324,7 @@ describe("the Event Image section and its clear form over HTTP", { skip, timeout
     assert.doesNotMatch(text, /cover|16:9 version/i);
   });
 
-  test("the Event Info tab shows the logo default with both previews and downloads, and the Readiness line", async () => {
+  test("the Event Info tab shows the logo default with both previews and downloads", async () => {
     const d = await freshDate();
     const res = await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie });
     assert.equal(res.status, 200);
@@ -336,7 +336,7 @@ describe("the Event Image section and its clear form over HTTP", { skip, timeout
     assert.match(page, /<a[^>]*href="\/assets\/images\/brand\/bocc-logo-wide-16x9\.png"[^>]*download/);
     assert.match(page, /data-media-upload[^>]*data-kind="event_image"|data-kind="event_image"[^>]*data-media-upload/);
     assert.ok(!/action="\/api\/admin\/media\/event-image\/clear"/.test(page), "nothing to clear");
-    // The Readiness summary is only shown for upcoming dates: this one is in 2024.
+    // Event readiness is only shown for upcoming dates: this one is in 2024.
   });
 
   test("with an image: previews and downloads are presigned bucket links; clear posts back to the Event Info tab", async () => {
@@ -383,10 +383,10 @@ describe("the Event Image section and its clear form over HTTP", { skip, timeout
     assert.ok(await row(id), "nothing was cleared");
   });
 
-  test("an upcoming event's Readiness says Default Cover Image while the logo is in use", async () => {
+  test("an upcoming event's Event readiness says Event Image: Default (BOCC logo) while the logo is in use", async () => {
     const d = new Date(Date.now() + 20 * 86400000).toISOString().slice(0, 10);
     const page = await (await req(`/admin/events/${d}/?tab=info`, { cookie: admin.cookie })).text();
-    assert.match(page, /Online Event Listings \d\/5 \(Default Cover Image\)/);
+    assert.match(page, /Event Image: Default \(BOCC logo\)/);
   });
 
   test("the browser scripts are served as JavaScript", async () => {

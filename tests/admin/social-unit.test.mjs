@@ -1,11 +1,10 @@
 // Phase 5 social work order rules (ADR 0011 decision 2), src/lib/admin/social-plan-rules.mjs:
 // pure functions, no database. Channel texts and overrides, TikTok hashtags, the
 // Monday 7:00 AM Eastern default (DST), Eastern <-> UTC, what blocks `ready`, the
-// work order, and the readiness checklist's social lines (event-links-rules.mjs).
+// work order. Social plan readiness is in social-plan-readiness-unit.test.mjs.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import * as r from "../../src/lib/admin/social-plan-rules.mjs";
-import { readiness } from "../../src/lib/admin/event-links-rules.mjs";
 import * as lib from "../../public/js/admin-media-lib.js";
 import { DEFAULT_EVENT_IMAGE, resolveEventImage } from "../../src/lib/admin/event-image-rules.mjs";
 
@@ -189,43 +188,6 @@ describe("ready and the work order", () => {
     const w = r.buildWorkOrder({ date: "2026-11-24", event: { status: "scheduled", exists: false }, post: null, lumaUrl: null, video: null });
     assert.deepEqual([w.exists, w.ready, w.actionable, w.publishAt.toISOString()], [false, false, false, "2026-11-23T12:00:00.000Z"]);
     assert.ok(w.channels.every((c) => c.status === null && c.caption === null));
-  });
-
-  test("Readiness: Social Posts: <status>, or not set up yet; the problems and channels under it", () => {
-    const ev = { date: "2026-11-24", status: "scheduled" };
-    const none = readiness(ev, {});
-    assert.deepEqual([none.social.label, none.social.ok, none.social.items], ["Social Posts: not set up yet", false, []]);
-
-    const p = stored();
-    p.channels.facebook.status = "scheduled";
-    p.channels.instagram.status = "live";
-    p.channels.tiktok.status = "failed";
-    const at = (status, post = p, lumaUrl = LUMA) =>
-      readiness(ev, {}, r.buildWorkOrder({ date: ev.date, event: ev, post: { ...post, status }, lumaUrl, video })).social;
-    assert.deepEqual(["todo", "ready", "posted", "error"].map((s) => at(s).label),
-      ["Social Posts: To do", "Social Posts: Ready for Posting", "Social Posts: Posted", "Social Posts: Error"]);
-    const ready = at("ready");
-    assert.deepEqual(ready.items.map((i) => [i.key, i.label, i.ok]), [
-      ["social_facebook", "Facebook: scheduled", true],
-      ["social_instagram", "Instagram: live", true],
-      ["social_threads", "Threads: pending", false],
-      ["social_tiktok", "TikTok: failed", false],
-      ["social_linkedin_page", "LinkedIn page: pending", false],
-    ]);
-    assert.deepEqual([ready.ok, ready.scheduled, ready.total], [true, 2, 5]);
-    assert.equal(at("todo").ok, false);
-    // A tick only for Posted, or Ready for Posting with no problems: never Error or To do.
-    assert.equal(at("error").ok, false, "Error is never ticked");
-    assert.equal(at("error", stored()).ok, false, "Error with no problems is still not ticked");
-    assert.equal(at("ready", stored(), null).ok, false, "Ready for Posting with a problem");
-    // The problems are listed (no "not marked ready" line any more)...
-    const noLuma = at("todo", stored(), null);
-    assert.match(noLuma.items[0].label, /Luma listing/);
-    assert.ok(!JSON.stringify(noLuma).includes("not marked ready"));
-    // ...but not once Posted: a Posted post is done.
-    const posted = at("posted", stored(), null);
-    assert.equal(posted.ok, true);
-    assert.ok(posted.items.every((i) => i.key.startsWith("social_") && !i.key.startsWith("social_problem")), "channels only");
   });
 });
 
