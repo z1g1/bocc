@@ -7,9 +7,11 @@
 //   todayEastern(now)                         -> "YYYY-MM-DD", BOCC's calendar day
 //   getEvent(db, date)                        -> event (a new `scheduled` one if no row yet)
 //   checkinCount(db, date)                    -> number (debug check-ins/attendees excluded)
-//   listUpcoming(db, { today, limit })        -> [event summary] soonest first
-//   listPast(db, { today, limit, offset, missingOnly }) -> { rows, total }
+//   listUpcoming(db, { today, limit, status })  -> [event summary] soonest first
+//   listPast(db, { today, limit, offset, missingOnly, status }) -> { rows, total }
 //   reportMissingCount(db, { today })         -> number
+//   statusCounts(db)                          -> { scheduled, reported, cancelled }, every saved event
+//   parseStatusFilter(value)                  -> a STATUSES value, or null (the ?status= filter)
 //
 // Writes (each change and its audit_log row are ONE transaction, via withAudit; a save
 // that changes nothing writes nothing and returns { changed: false }):
@@ -50,7 +52,10 @@ import { isHolidayWeek } from "../holiday-weeks.mjs";
 
 export { parseDate };
 
-export const STATUSES = Object.freeze(["scheduled", "reported", "cancelled"]);
+export const SCHEDULED = "scheduled";
+export const REPORTED = "reported";
+export const CANCELLED = "cancelled";
+export const STATUSES = Object.freeze([SCHEDULED, REPORTED, CANCELLED]);
 /** Each status's label, in STATUSES order (the Status dropdown, badges and lists). */
 export const STATUS_LABELS = Object.freeze({ scheduled: "Scheduled", reported: "Reported", cancelled: "Cancelled" });
 export const LOCATIONS = Object.freeze({ lobby: "Lobby", food_hall: "Food hall", other: "Other" });
@@ -157,7 +162,7 @@ export async function getEvent(db, date) {
   const count = await checkinCount(db, date);
   if (!row) {
     return {
-      date, exists: false, status: "scheduled", location: null, locationOther: null,
+      date, exists: false, status: SCHEDULED, location: null, locationOther: null,
       cancelReason: null, cancelReasonOther: null, cancelAnnounced: false, updatedAt: null,
       report: null, checkinCount: count,
     };
@@ -181,22 +186,39 @@ const SUMMARY_SQL = `
     left join public.event_reports r on r.event_date = e.event_date
     left join auth."user" u on u.id = r.submitted_by`;
 
-/** Events on or after `today` (Eastern), soonest first. */
-export async function listUpcoming(db, { today = todayEastern(), limit = 20 } = {}) {
+/** The ?status= filter: one of STATUSES, anything else (or nothing) is no filter. */
+export const parseStatusFilter = (value) => (STATUSES.includes(value) ? value : null);
+
+/** Events on or after `today` (Eastern), soonest first; `status` (one of STATUSES) filters. */
+export async function listUpcoming(db, { today = todayEastern(), limit = 20, status = null } = {}) {
   const { rows } = await db.query(
-    `${SUMMARY_SQL} where e.event_date >= $1::date order by e.event_date limit $2`, [today, limit]);
+    `${SUMMARY_SQL} where e.event_date >= $1::date and ($3::text is null or e.status = $3)
+      order by e.event_date limit $2`, [today, limit, parseStatusFilter(status)]);
   return rows.map(summary(today));
 }
 
-/** Events before `today`, newest first; missingOnly keeps the "report missing" ones. */
-export async function listPast(db, { today = todayEastern(), limit = 25, offset = 0, missingOnly = false } = {}) {
-  const where = `e.event_date < $1::date and ($2::boolean is false or e.status = 'scheduled')`;
+/**
+ * Events before `today`, newest first; missingOnly keeps the "report missing" ones and
+ * `status` (one of STATUSES) keeps that status.
+ */
+export async function listPast(db, { today = todayEastern(), limit = 25, offset = 0, missingOnly = false, status = null } = {}) {
+  const where = `e.event_date < $1::date and ($2::boolean is false or e.status = 'scheduled')
+    and ($3::text is null or e.status = $3)`;
+  const filter = [today, missingOnly, parseStatusFilter(status)];
   const [{ rows }, { rows: [{ n }] }] = await Promise.all([
-    db.query(`${SUMMARY_SQL} where ${where} order by e.event_date desc limit $3 offset $4`,
-      [today, missingOnly, limit, offset]),
-    db.query(`select count(*)::int as n from public.events e where ${where}`, [today, missingOnly]),
+    db.query(`${SUMMARY_SQL} where ${where} order by e.event_date desc limit $4 offset $5`,
+      [...filter, limit, offset]),
+    db.query(`select count(*)::int as n from public.events e where ${where}`, filter),
   ]);
   return { rows: rows.map(summary(today)), total: n };
+}
+
+/** Every saved event (past and upcoming) counted by status, each STATUSES key present. */
+export async function statusCounts(db) {
+  const { rows } = await db.query("select status, count(*)::int as n from public.events group by status");
+  const counts = Object.fromEntries(STATUSES.map((st) => [st, 0]));
+  for (const { status, n } of rows) if (status in counts) counts[status] = n;
+  return counts;
 }
 
 /** Past dates (before today, Eastern) still `scheduled`: the report was never filed. */
@@ -214,7 +236,7 @@ const summary = (today) => (row) => {
 
 /** A date before today (Eastern) still `scheduled`. */
 export const isReportMissing = (event, today = todayEastern()) =>
-  event.status === "scheduled" && event.date < today;
+  event.status === SCHEDULED && event.date < today;
 
 // ── Validation ───────────────────────────────────────────────────────────────
 
@@ -257,7 +279,7 @@ export function validateEventInput(input) {
     else errors.status = "Choose Scheduled, Reported or Cancelled.";
   }
   const loc = validateLocation(input, errors);
-  const cancel = status === "cancelled" ? validateCancel(input, errors) : null;
+  const cancel = status === CANCELLED ? validateCancel(input, errors) : null;
   if (Object.keys(errors).length) throw new ValidationError(errors);
   return { status, ...loc, cancel };
 }
@@ -370,33 +392,30 @@ const REPORTED_BY_REPORT = "An event becomes Reported when its Event Report is s
  * announced flag: one UPDATE. Creates the event on its first save.
  * A change to `reported` is refused: only saving an Event Report sets it (submitReport).
  * `scheduled` and `cancelled` are refused once a report exists (the event is Reported).
- * @param {{ today?: string }} [opts]  "today" (Eastern); tests pass it
+ * (A future date can't be Reported either: submitReport refuses it.)
  */
-export async function saveEvent(actorUserId, date, input, { today = todayEastern() } = {}) {
+export async function saveEvent(actorUserId, date, input) {
   checkDate(date);
   const v = validateEventInput(input);
-  if (v.status === "reported" && date > today) {
-    throw new ConflictError({ status: "That date hasn't happened yet, so it can't be Reported." });
-  }
   return audited(actorUserId, date, "events", async (client) => {
     const { created, row } = await lockEvent(client, date);
     const status = v.status ?? row.status;
     // Reported means its Event Report is in (GLOSSARY.md): only submitReport sets it.
-    if (status === "reported" && row.status !== "reported") {
+    if (status === REPORTED && row.status !== REPORTED) {
       throw new ConflictError({ status: REPORTED_BY_REPORT });
     }
     // A report means it is Reported: no way back to scheduled, and no cancelling. (A
     // cancelled event can't have a report, so only a change of status needs the check.)
-    if (status !== row.status && status !== "reported" && (await hasReport(client, date))) {
+    if (status !== row.status && status !== REPORTED && (await hasReport(client, date))) {
       throw new ConflictError({
-        status: status === "cancelled"
+        status: status === CANCELLED
           ? "This event has an Event Report, so it is Reported and can't be cancelled."
           : "This event has an Event Report, so it is Reported.",
       });
     }
     // Cancel fields: the posted ones when cancelling, kept when a cancelled event is
     // saved without a status, cleared otherwise.
-    const cancel = status !== "cancelled"
+    const cancel = status !== CANCELLED
       ? { cancel_reason: null, cancel_reason_other: null, cancel_announced: false }
       : v.cancel
         ? { cancel_reason: v.cancel.reason, cancel_reason_other: v.cancel.reasonOther, cancel_announced: v.cancel.announced }
@@ -410,8 +429,8 @@ export async function saveEvent(actorUserId, date, input, { today = todayEastern
               cancel_reason = $5, cancel_reason_other = $6, cancel_announced = $7
         where event_date = $1::date`,
       [date, status, v.location, v.locationOther, cancel.cancel_reason, cancel.cancel_reason_other, cancel.cancel_announced]);
-    const action = row.status === "cancelled" && status !== "cancelled" ? "event.uncancel"
-      : status === "cancelled" && (created || d.changed.some((k) => k === "status" || CANCEL_FIELDS.includes(k))) ? "event.cancel"
+    const action = row.status === CANCELLED && status !== CANCELLED ? "event.uncancel"
+      : status === CANCELLED && (created || d.changed.some((k) => k === "status" || CANCEL_FIELDS.includes(k))) ? "event.cancel"
       : "event.update";
     return { action, details: { created, before: d.before, after: d.after } };
   });
@@ -427,7 +446,7 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
   if (date > today) throw new ConflictError({ date: "That date hasn't happened yet. File the report on or after the day." });
   return audited(actorUserId, date, "event_reports", async (client) => {
     const { created, row } = await lockEvent(client, date);
-    if (row.status === "cancelled") {
+    if (row.status === CANCELLED) {
       throw new ConflictError({ date: "This event is cancelled. If it went ahead, set its status back to Scheduled (Event Info tab), then file the report." });
     }
     const { rows } = await client.query(
@@ -439,7 +458,7 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
     };
     if (existing) {
       const d = diff(existing, { ...after, source: "admin" });
-      if (d.changed.length === 0 && row.status === "reported") throw NOOP;
+      if (d.changed.length === 0 && row.status === REPORTED) throw NOOP;
       await client.query(
         `update public.event_reports
             set attendee_count = $2, notes = $3, bling_given = $4, bling_details = $5,
@@ -449,7 +468,7 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
       await setReported(client, date, row.status);
       return {
         action: "event_report.update",
-        details: { eventStatus: { before: row.status, after: "reported" }, before: d.before, after: d.after },
+        details: { eventStatus: { before: row.status, after: REPORTED }, before: d.before, after: d.after },
       };
     }
     await client.query(
@@ -460,13 +479,13 @@ export async function submitReport(actorUserId, date, input, { today = todayEast
     await setReported(client, date, row.status);
     return {
       action: "event_report.submit",
-      details: { created, eventStatus: { before: row.status, after: "reported" }, after },
+      details: { created, eventStatus: { before: row.status, after: REPORTED }, after },
     };
   });
 }
 
 async function setReported(client, date, current) {
-  if (current !== "reported") {
+  if (current !== REPORTED) {
     await client.query(`update public.events set status = 'reported' where event_date = $1::date`, [date]);
   }
 }

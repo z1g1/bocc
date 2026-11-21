@@ -168,26 +168,26 @@ describe("events module", () => {
   test("Reported only comes from saving an Event Report: choosing it by hand is refused without one", async () => {
     const d = pastDate();
     await ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "facility" });
-    await assert.rejects(ev.saveEvent(actor.id, d, { status: "reported", location: "lobby" }, { today: TODAY }),
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "reported", location: "lobby" }),
       (e) => e instanceof ConflictError && /Event Report/.test(e.errors.status) && /Post Event/.test(e.errors.status));
     assert.equal((await eventRow(d)).status, "cancelled");
     const fresh = pastDate();
-    await assert.rejects(ev.saveEvent(actor.id, fresh, { status: "reported" }, { today: TODAY }), ConflictError);
+    await assert.rejects(ev.saveEvent(actor.id, fresh, { status: "reported" }), ConflictError);
     assert.equal(await eventRow(fresh), null, "nothing written");
 
     // A cancelled Event that went ahead: the report is refused, and the message points to
     // Scheduled (not Reported, which only the report itself can set).
     await assert.rejects(ev.submitReport(actor.id, d, REPORT, { today: TODAY }),
       (e) => e instanceof ConflictError && /back to Scheduled/.test(e.errors.date) && !/to Reported/.test(e.errors.date));
-    await ev.saveEvent(actor.id, d, { status: "scheduled", location: "lobby" }, { today: TODAY });
+    await ev.saveEvent(actor.id, d, { status: "scheduled", location: "lobby" });
     assert.equal((await auditRows(d)).at(-1).action, "event.uncancel");
     assert.deepEqual(await ev.submitReport(actor.id, d, REPORT, { today: TODAY }), { changed: true });
     assert.equal((await eventRow(d)).status, "reported");
     // Re-saving a Reported Event (status unchanged) still works, as does one imported Reported with no report.
-    assert.deepEqual(await ev.saveEvent(actor.id, d, { status: "reported", location: "food_hall" }, { today: TODAY }), { changed: true });
+    assert.deepEqual(await ev.saveEvent(actor.id, d, { status: "reported", location: "food_hall" }), { changed: true });
     const imported = pastDate();
     await owner.query(`insert into events (event_date, status) values ($1, 'reported')`, [imported]);
-    assert.deepEqual(await ev.saveEvent(actor.id, imported, { status: "reported", location: "food_hall" }, { today: TODAY }), { changed: true });
+    assert.deepEqual(await ev.saveEvent(actor.id, imported, { status: "reported", location: "food_hall" }), { changed: true });
   });
 
   test("submitting a report moves the event from scheduled to reported and writes an audit row", async () => {
@@ -217,14 +217,14 @@ describe("events module", () => {
     assert.deepEqual([got.exists, got.status, got.report.attendeeCount, got.report.by], [true, "reported", 31, "Report Writer"]);
     // Reported: can't go back to scheduled, can't be cancelled.
     await assert.rejects(ev.saveEvent(actor.id, d, { status: "scheduled", location: "lobby" }), ConflictError);
-    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "weather" }, { today: TODAY }),
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "cancelled", cancelReason: "weather" }),
       (e) => e instanceof ConflictError && /can't be cancelled/.test(e.errors.status));
     assert.equal((await eventRow(d)).status, "reported");
   });
 
   test("`held` is no longer a status: refused with the new words", async () => {
     const d = pastDate();
-    await assert.rejects(ev.saveEvent(actor.id, d, { status: "held" }, { today: TODAY }),
+    await assert.rejects(ev.saveEvent(actor.id, d, { status: "held" }),
       (e) => e instanceof ValidationError && e.errors.status === "Choose Scheduled, Reported or Cancelled.");
     assert.equal(await eventRow(d), null);
     assert.deepEqual(ev.STATUSES.map((s) => ev.STATUS_LABELS[s]), ["Scheduled", "Reported", "Cancelled"]);
@@ -261,18 +261,18 @@ describe("events module", () => {
     assert.equal(await reportRow(d), null);
     assert.equal((await eventRow(d)).status, "cancelled");
 
-    await assert.rejects(ev.submitReport(actor.id, "2026-11-18", REPORT, { today: TODAY }), ConflictError);
-    // Nor can a future date be marked reported by hand (it would show as reported, no report).
-    // A 2001 date with "today" the day before stands in for a future date.
+    await assert.rejects(ev.submitReport(actor.id, "2026-11-18", REPORT, { today: TODAY }),
+      (e) => e instanceof ConflictError && /hasn't happened yet/.test(e.errors.date));
+    // Nor can any date be marked reported by hand (it would show as reported, no report):
+    // only submitReport sets Reported, and it refuses a future date.
     const f = pastDate();
-    const dayBefore = new Date(Date.parse(`${f}T00:00:00Z`) - 86400_000).toISOString().slice(0, 10);
-    await assert.rejects(ev.saveEvent(actor.id, f, { status: "reported" }, { today: dayBefore }),
+    await assert.rejects(ev.saveEvent(actor.id, f, { status: "reported" }),
       (e) => e instanceof ConflictError && "status" in e.errors);
     assert.equal(await eventRow(f), null);
-    await ev.saveEvent(actor.id, f, { status: "scheduled", location: "lobby" }, { today: dayBefore });
+    await ev.saveEvent(actor.id, f, { status: "scheduled", location: "lobby" });
     assert.equal((await eventRow(f)).status, "scheduled");
-    await assert.rejects(ev.saveEvent(actor.id, f, { status: "reported", location: "lobby" }, { today: f }), ConflictError,
-      "not by hand on the day itself either: only the report sets Reported");
+    await assert.rejects(ev.saveEvent(actor.id, f, { status: "reported", location: "lobby" }), ConflictError,
+      "nor on a saved Scheduled event: only the report sets Reported");
     // Today itself is fine (Eastern); use a 2001 date as "today" to keep the DB tidy.
     const t = pastDate();
     await ev.submitReport(actor.id, t, REPORT, { today: t });
@@ -356,6 +356,39 @@ describe("events module", () => {
     // The next day, d is missing too.
     const tomorrow = await ev.reportMissingCount(pool, { today: ev.todayEastern(new Date(instant.getTime() + 3600_000)) });
     assert.equal(tomorrow, missing.total + 1);
+  });
+
+  test("the lists filter by Event status, and statusCounts counts every saved event by status", async () => {
+    assert.equal(ev.parseStatusFilter("reported"), "reported");
+    assert.equal(ev.parseStatusFilter("held"), null, "only STATUSES");
+    assert.equal(ev.parseStatusFilter("x' or 1=1 --"), null);
+    assert.equal(ev.parseStatusFilter(null), null);
+
+    const before = await ev.statusCounts(pool);
+    assert.deepEqual(Object.keys(before), ["scheduled", "reported", "cancelled"]);
+    const [a, b, c] = [pastDate(), pastDate(), pastDate()];
+    const later = ev.todayEastern(new Date(Date.now() + 200 * 86400_000));
+    await ev.saveEvent(actor.id, a, { status: "scheduled" });
+    await ev.submitReport(actor.id, b, REPORT, { today: TODAY });
+    await ev.saveEvent(actor.id, c, { status: "cancelled", cancelReason: "weather" });
+    await ev.saveEvent(actor.id, later, { status: "cancelled", cancelReason: "facility" });
+    const after = await ev.statusCounts(pool);
+    assert.deepEqual(
+      { scheduled: after.scheduled - before.scheduled, reported: after.reported - before.reported, cancelled: after.cancelled - before.cancelled },
+      { scheduled: 1, reported: 1, cancelled: 2 });
+
+    const today = ev.todayEastern();
+    const reported = await ev.listPast(pool, { today, limit: 500, status: "reported" });
+    assert.ok(reported.rows.some((r) => r.date === b));
+    assert.ok(reported.rows.every((r) => r.status === "reported"));
+    const cancelled = await ev.listPast(pool, { today, limit: 500, status: "cancelled" });
+    assert.ok(cancelled.rows.some((r) => r.date === c) && !cancelled.rows.some((r) => r.date === a));
+    const all = await ev.listPast(pool, { today, limit: 1 });
+    assert.equal(all.total, (await ev.listPast(pool, { today, limit: 1, status: "scheduled" })).total
+      + reported.total + cancelled.total);
+    const upcoming = await ev.listUpcoming(pool, { today, limit: 500, status: "cancelled" });
+    assert.ok(upcoming.some((r) => r.date === later) && upcoming.every((r) => r.status === "cancelled"));
+    assert.ok(!(await ev.listUpcoming(pool, { today, limit: 500, status: "scheduled" })).some((r) => r.date === later));
   });
 });
 
