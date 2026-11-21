@@ -1,19 +1,19 @@
 // The Thursday social check against the throwaway database (npm run test:db):
 //   1. migration 20261123120000_social_checker.sql: social_checker may SELECT events,
-//      event_links, social_posts, social_post_channels and four columns of event_media,
+//      event_links, social_plans, social_media_posts and four columns of event_media,
 //      and nothing else; it can't write anything
 //   2. readWorkOrder() as social_checker, on rows seeded by the owner, and
 //      runSocialCheck() end to end with SOCIAL_CHECK_DB_URL and a fake ntfy
 //   3. the LinkedIn expiry check (#24, migration 20261126120000_social_checker_linkedin.sql):
 //      social_checker reads only user_id, expires_at and display_name of
-//      linkedin_connections and nothing in auth, never the token or member URN; the alert
-//      names the connection by its LinkedIn display name, under 10 days or expired
+//      linkedin_authentications and nothing in auth, never the token or member URN; the alert
+//      names the LinkedIn authentication by its LinkedIn display name, under 10 days or expired
 // The pure rules are in social-alert-unit.test.mjs.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { OWNER_URL, assertAllowed, assertRefused, connect } from "./helpers.mjs";
-import { readLinkedInConnections, readWorkOrder, runSocialCheck } from "../../src/lib/social-alert/run.mjs";
+import { readLinkedInAuthentications, readWorkOrder, runSocialCheck } from "../../src/lib/social-alert/run.mjs";
 import { socialAlert } from "../../src/lib/social-alert/alert.mjs";
 
 const CHECK_URL = process.env.TEST_SOCIAL_CHECK_URL;
@@ -37,10 +37,10 @@ async function seed(date, { status = "scheduled", luma = true, post = true, post
     `insert into event_media (id, event_date, kind, original_key, content_type, size_bytes, status)
      values ($1, $2, 'promo_video', $3, 'video/mp4', 4800000, 'ready')`, [vid, date, `events/${date}/${vid}/original.mp4`]);
   await owner.query(
-    `insert into social_posts (event_date, video_media_id, base_caption, publish_at, status)
+    `insert into social_plans (event_date, video_media_id, base_caption, publish_at, status)
      values ($1, $2, 'Coffee on Tuesday', ($1::date - 1) + time '12:00' at time zone 'UTC', $3)`, [date, vid, postStatus]);
   for (const c of CHANNELS) {
-    await owner.query(`insert into social_post_channels (event_date, channel, status) values ($1, $2, $3)`, [date, c, statuses[c] ?? "scheduled"]);
+    await owner.query(`insert into social_media_posts (event_date, channel, status) values ($1, $2, $3)`, [date, c, statuses[c] ?? "scheduled"]);
   }
 }
 
@@ -60,8 +60,8 @@ describe("social_checker permissions", () => {
   test("may read the work-order tables", async () => {
     await assertAllowed(checker, "select event_date, status from events limit 1");
     await assertAllowed(checker, "select event_date, platform, url from event_links limit 1");
-    await assertAllowed(checker, "select * from social_posts limit 1");
-    await assertAllowed(checker, "select * from social_post_channels limit 1");
+    await assertAllowed(checker, "select * from social_plans limit 1");
+    await assertAllowed(checker, "select * from social_media_posts limit 1");
     await assertAllowed(checker, "select id, event_date, kind, status from event_media limit 1");
   });
 
@@ -71,12 +71,12 @@ describe("social_checker permissions", () => {
     await assertRefused(checker, "select uploaded_by from event_media limit 1");
   });
 
-  test("may read only the expiry, user link and display name of linkedin_connections (#24)", async () => {
-    await assertAllowed(checker, "select user_id, expires_at, display_name from linkedin_connections limit 1");
-    await assertRefused(checker, "select token_ciphertext from linkedin_connections limit 1");
-    await assertRefused(checker, "select * from linkedin_connections limit 1");
+  test("may read only the expiry, user link and display name of linkedin_authentications (#24)", async () => {
+    await assertAllowed(checker, "select user_id, expires_at, display_name from linkedin_authentications limit 1");
+    await assertRefused(checker, "select token_ciphertext from linkedin_authentications limit 1");
+    await assertRefused(checker, "select * from linkedin_authentications limit 1");
     for (const col of ["member_urn", "scope", "connected_at"]) {
-      await assertRefused(checker, `select ${col} from linkedin_connections limit 1`);
+      await assertRefused(checker, `select ${col} from linkedin_authentications limit 1`);
     }
   });
 
@@ -95,9 +95,9 @@ describe("social_checker permissions", () => {
     assert.deepEqual(grants, []);
   });
 
-  test("may not write linkedin_connections", async () => {
-    await assertRefused(checker, "update linkedin_connections set expires_at = now()");
-    await assertRefused(checker, "delete from linkedin_connections");
+  test("may not write linkedin_authentications", async () => {
+    await assertRefused(checker, "update linkedin_authentications set expires_at = now()");
+    await assertRefused(checker, "delete from linkedin_authentications");
   });
 
   for (const table of ["event_reports", "attendees", "checkins", "audit_log", "user_roles", "streaks", "held_occurrences", 'auth."user"', "auth.session"]) {
@@ -108,8 +108,8 @@ describe("social_checker permissions", () => {
 
   test("may not write anything", async () => {
     await assertRefused(checker, "insert into events (event_date) values ('2031-01-07')");
-    await assertRefused(checker, "update social_posts set status = 'todo'");
-    await assertRefused(checker, "update social_post_channels set status = 'scheduled'");
+    await assertRefused(checker, "update social_plans set status = 'todo'");
+    await assertRefused(checker, "update social_media_posts set status = 'scheduled'");
     await assertRefused(checker, "delete from event_links");
     await assertRefused(checker, "update event_media set status = 'ready'");
   });
@@ -126,16 +126,16 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(await readWorkOrder(checker, tuesday()), null);
   });
 
-  test("an event with no post", async () => {
+  test("an event with no Social plan", async () => {
     const d = tuesday();
     await seed(d, { post: false });
     const o = await readWorkOrder(checker, d);
     assert.equal(o.exists, false);
     assert.equal(o.eventStatus, "scheduled");
-    assert.equal(socialAlert({ order: o, date: d }).title.includes("no post"), true);
+    assert.equal(socialAlert({ order: o, date: d }).title.includes("no Social plan"), true);
   });
 
-  test("a ready post with every channel scheduled: actionable, no alert", async () => {
+  test("a ready Social plan with every social media post scheduled: actionable, no alert", async () => {
     const d = tuesday();
     await seed(d, { statuses: { tiktok: "live" } });
     const o = await readWorkOrder(checker, d);
@@ -146,11 +146,11 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(socialAlert({ order: o, date: d }), null);
   });
 
-  test("pending and failed channels are reported", async () => {
+  test("pending and failed social media posts are reported with their Post status", async () => {
     const d = tuesday();
     await seed(d, { statuses: { facebook: "pending", threads: "failed" } });
     const a = socialAlert({ order: await readWorkOrder(checker, d), date: d });
-    assert.match(a.message, /- Facebook: pending\n- Threads: failed/);
+    assert.match(a.message, /- Facebook: Pending\n- Threads: Failed/);
   });
 
   test("a ready post that lost its Luma listing is not ready", async () => {
@@ -158,10 +158,10 @@ describe("readWorkOrder as social_checker", () => {
     await seed(d, { luma: false });
     const o = await readWorkOrder(checker, d);
     assert.deepEqual(o.problems.map((p) => p.key), ["luma"]);
-    assert.match(socialAlert({ order: o, date: d }).title, /post not ready/);
+    assert.match(socialAlert({ order: o, date: d }).title, /Social plan not ready/);
   });
 
-  test("the post status (ticket #39): Posted counts as ready; Error alerts as channels not scheduled; To do isn't ready", async () => {
+  test("the Plan status (ticket #39): Posted counts as ready; Error alerts as social media posts not scheduled; To do isn't ready", async () => {
     const [p, e, t] = [tuesday(), tuesday(), tuesday()];
     await seed(p, { postStatus: "posted", statuses: { tiktok: "live" } });
     await seed(e, { postStatus: "error", statuses: { threads: "failed" } });
@@ -170,9 +170,9 @@ describe("readWorkOrder as social_checker", () => {
     assert.equal(posted.status, "posted");
     assert.equal(socialAlert({ order: posted, date: p }), null);
     const error = socialAlert({ order: await readWorkOrder(checker, e), date: e });
-    assert.match(error.title, /1 of 5 channels not scheduled/);
-    assert.match(error.message, /status is Error: Threads failed[\s\S]*- Threads: failed/);
-    assert.match(socialAlert({ order: await readWorkOrder(checker, t), date: t }).message, /isn't set to Ready for Posting \(it is To do\)/);
+    assert.match(error.title, /1 of 5 social media posts not scheduled/);
+    assert.match(error.message, /Plan status is Error: the Threads social media post failed[\s\S]*- Threads: Failed/);
+    assert.match(socialAlert({ order: await readWorkOrder(checker, t), date: t }).message, /The Social plan isn't set to Ready for Posting \(it is To do\)/);
   });
 
   test("a cancelled event: no alert", async () => {
@@ -205,31 +205,31 @@ describe("runSocialCheck end to end", () => {
     } finally { Object.assign(console, { log, info, error }); }
     assert.equal(result.outcome, "sent", lines.join("\n"));
     assert.equal(result.date, d);
-    // Other suites may leave LinkedIn connections behind: count the social pushes only.
+    // Other suites may leave LinkedIn authentications behind: count the social pushes only.
     const social = calls.filter((c) => JSON.parse(c.init.body).title.startsWith("BOCC social"));
     assert.equal(social.length, 1);
     assert.equal(social[0].url, "https://ntfy.sh/", "the server root: the topic is never in the URL");
     const body = JSON.parse(social[0].init.body);
     assert.equal(body.topic, "bocc-test-topic");
-    assert.match(body.message, /- Instagram: pending/);
+    assert.match(body.message, /- Instagram: Pending/);
     assert.doesNotMatch(lines.join("\n"), /bocc-test-topic|social_checker:/);
   });
 });
 
-describe("the LinkedIn connection expiry as social_checker (#24)", () => {
+describe("the LinkedIn authentication expiry as social_checker (#24)", () => {
   const seeded = [];
   /**
-   * A user (seeded as the owner) with a connection expiring `days` from `now`. `name` is
-   * the connection's LinkedIn display name, what the alert must use; `authName` is the
+   * A user (seeded as the owner) with a LinkedIn authentication expiring `days` from `now`. `name` is
+   * the LinkedIn authentication's LinkedIn display name, what the alert must use; `authName` is the
    * Better Auth name, which social_checker can't read.
    */
-  async function connection(days, now = new Date()) {
+  async function authentication(days, now = new Date()) {
     const id = `t24-${randomUUID()}`;
     const name = `LinkedIn ${id.slice(4, 12)}`;
     const authName = `AuthName ${id.slice(4, 12)}`;
     await owner.query(`insert into auth."user" (id, name, email, "emailVerified") values ($1, $2, $3, true)`, [id, authName, `${id}@example.com`]);
     await owner.query(
-      `insert into linkedin_connections (user_id, token_ciphertext, expires_at, member_urn, display_name)
+      `insert into linkedin_authentications (user_id, token_ciphertext, expires_at, member_urn, display_name)
        values ($1, $2, $3, 'urn:li:person:t24secret', $4)`,
       [id, Buffer.from("SECRET-TOKEN-BYTES-".repeat(3)), new Date(now.getTime() + days * 86_400_000), name]);
     seeded.push(id);
@@ -256,9 +256,9 @@ describe("the LinkedIn connection expiry as social_checker (#24)", () => {
     return { result, calls, logs: lines.join("\n") };
   }
 
-  test("readLinkedInConnections returns the display name and expiry only", async () => {
-    const { id, name } = await connection(5);
-    const rows = await readLinkedInConnections(checker);
+  test("readLinkedInAuthentications returns the display name and expiry only", async () => {
+    const { id, name } = await authentication(5);
+    const rows = await readLinkedInAuthentications(checker);
     const mine = rows.filter((r) => r.name === name);
     assert.equal(mine.length, 1, id);
     assert.deepEqual(Object.keys(mine[0]).sort(), ["expiresAt", "name"]);
@@ -267,12 +267,12 @@ describe("the LinkedIn connection expiry as social_checker (#24)", () => {
 
   test("under 10 days: the alert fires, names the LinkedIn display name, links /admin/account/, and carries no token data", async () => {
     const d = new Date();
-    const { name, authName } = await connection(3, d);
+    const { name, authName } = await authentication(3, d);
     const { result, calls, logs } = await run(d);
     const mine = calls.filter((b) => b.title.includes(name));
     assert.equal(mine.length, 1, logs);
-    assert.equal(mine[0].title, `BOCC LinkedIn: ${name}'s connection expires in 3 days`);
-    assert.match(mine[0].message, /Reconnect at \/admin\/account\//);
+    assert.equal(mine[0].title, `BOCC LinkedIn: ${name}'s LinkedIn authentication expires in 3 days`);
+    assert.match(mine[0].message, /Re-authenticate at \/admin\/account\//);
     assert.equal(mine[0].click, "https://716coffee.club/admin/account/");
     assert.equal(result.linkedin.outcome, "sent");
     assert.doesNotMatch(JSON.stringify(calls) + logs, /SECRET-TOKEN|t24secret/);
@@ -282,14 +282,14 @@ describe("the LinkedIn connection expiry as social_checker (#24)", () => {
 
   test("expired: the alert fires", async () => {
     const d = new Date();
-    const { name } = await connection(-1, d);
+    const { name } = await authentication(-1, d);
     const { calls } = await run(d);
-    assert.deepEqual(calls.filter((b) => b.title.includes(name)).map((b) => b.title), [`BOCC LinkedIn: ${name}'s connection has expired`]);
+    assert.deepEqual(calls.filter((b) => b.title.includes(name)).map((b) => b.title), [`BOCC LinkedIn: ${name}'s LinkedIn authentication has expired`]);
   });
 
   test("10 days or more left: no alert for it", async () => {
     const d = new Date();
-    const { name } = await connection(30, d);
+    const { name } = await authentication(30, d);
     const { result, calls, logs } = await run(d);
     assert.equal(calls.filter((b) => b.title.includes(name)).length, 0);
     assert.notEqual(result.linkedin.outcome, "failed", logs);

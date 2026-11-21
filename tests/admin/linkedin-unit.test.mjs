@@ -130,6 +130,14 @@ describe("token encryption (AES-256-GCM)", () => {
     bad[bad.length - 1] ^= 1;
     assert.throws(() => decryptToken(bad, { key, userId: "u1" }));
   });
+  it("still decrypts a token stored before the linkedin_connections table was renamed (#50)", () => {
+    // Made by the code of 2026-11-20 (AAD "linkedin_connections:u1"), before the rename
+    // to linkedin_authentications. The AAD must never follow the table's name.
+    const stored = Buffer.from(
+      "0163e5a19205fe67b1db81795bc8025ef35fbf92344a8f7a50cf07bd184e5e16" +
+      "4087e6b3e99df511dce3ef72f4aab0ad917937e126cb12338ff7362798eae975", "hex");
+    assert.equal(decryptToken(stored, { key, userId: "u1" }), token);
+  });
 });
 
 describe("OAuth state cookie", () => {

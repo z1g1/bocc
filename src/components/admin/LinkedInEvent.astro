@@ -6,7 +6,7 @@
 // away: a dry run changes nothing, so there is no redirect).
 //
 // - The full preview of what would be sent: name, description, times, address, venue
-//   details, external link, cover, visibility, the post commentary, and the payloads.
+//   details, external link, 16:9 Event Image, visibility, the post commentary, and the payloads.
 // - "Create live event" opens a native <dialog> (/js/admin-linkedin.js) that names the
 //   date, title and visibility, warns this is a REAL public event and a PUBLIC post,
 //   quotes the commentary and, on a dry run, says "Dry run: nothing will be sent". Its
@@ -15,11 +15,13 @@
 //   (409) and the page shows the same dialog open inline, with the confirm button.
 // - After a dry run: the requests that would have been sent. After a refusal: why.
 // - The live ledger (#26), by status:
-//     posted   links to the event and the post, and the reminder to reshare it from
-//              the BOCC page (the listing was filled when it was posted)
-//     created  the event link and "Publish event" (action linkedin_publish), which
-//              retries only the post. It confirms like the create: its own <dialog>
-//              (PUBLIC post from your profile, the commentary quoted), confirm=live only
+//     posted   links to the LinkedIn event and the LinkedIn post, and the reminder to
+//              make a LinkedIn repost from the LinkedIn page, by hand: the app can't post
+//              as the LinkedIn page (#49). The listing was filled when it was posted
+//     created  the event link and "Publish the LinkedIn post" (action linkedin_publish),
+//              which retries only the LinkedIn post. It confirms like the create: its own
+//              <dialog> (a PUBLIC LinkedIn post from your LinkedIn profile, naming the
+//              post's author, the commentary quoted), confirm=live only
 //              in the dialog's form, the same no-JS inline fallback. Not offered once
 //              the date has passed or the event is cancelled (the server refuses too)
 //     pending  check LinkedIn, then "I checked: nothing was created, allow retry"
@@ -50,7 +52,7 @@ const refusals: { code: string; message: string }[] = result && !result.ok ? res
   : (p?.refusals ?? []).filter((r: { code: string }) => r.code !== "ledger");
 const needsConfirm = Boolean(result && !result.ok && result.refusals.length === 1 && result.refusals[0].code === "confirm");
 const canCreate = p?.action === "create" && (p.refusals.length === 0);
-// Publish event: a created row, not past or cancelled (the matrix's only other refusal is "ledger").
+// Publish the LinkedIn post: a created row, not past or cancelled (the matrix's only other refusal is "ledger").
 const canPublish = p?.action === "publish_retry" && p.refusals.every((r: { code: string }) => r.code === "ledger");
 
 const time = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
@@ -58,28 +60,29 @@ const when = p?.spec ? `${longDay(date)}, ${time.format(p.spec.startsAt)} to ${t
 const a = EVENT_ADDRESS;
 const address = `${a.line1}, ${a.city}, ${a.geographicArea} ${a.postalCode}, ${a.country}`;
 
-// The cover: a checked-in file from the site, a stored copy through a presigned GET.
-let coverSrc: string | null = null;
-const cover = p?.image?.cover;
-if (cover) {
-  if ("path" in cover) coverSrc = cover.path;
+// The 16:9 Event Image: a checked-in file from the site, a stored copy through a presigned GET.
+let image16x9Src: string | null = null;
+const image16x9 = p?.image?.image16x9;
+if (image16x9) {
+  if ("path" in image16x9) image16x9Src = image16x9.path;
   else {
     const { storage } = getStorage();
-    coverSrc = storage ? storage.presignGet({ key: cover.key }).url : null;
+    image16x9Src = storage ? storage.presignGet({ key: image16x9.key }).url : null;
   }
 }
 const SOURCE: Record<string, string> = { uploaded: "the uploaded Event Image", referenced: "the picked Photo from Event", default: "the BOCC logo default" };
 const STATUS: Record<string, string> = {
   pending: "Pending: a create was started and its outcome is unknown. Check LinkedIn before doing anything else.",
-  created: "Created on LinkedIn, but the post isn't published yet, so LinkedIn keeps the event hidden.",
+  created: "Created on LinkedIn, but its LinkedIn post isn't published yet. LinkedIn keeps the LinkedIn event hidden until its LinkedIn post is published.",
   posted: "Posted on LinkedIn.",
 };
 const STEP: Record<string, string> = {
-  image_init: "starting the cover upload", image_upload: "uploading the cover", create: "creating the event", post: "publishing the post",
+  image_init: "starting the 16:9 Event Image upload", image_upload: "uploading the 16:9 Event Image", create: "creating the event", post: "publishing the post",
 };
 const failure = result && !result.ok ? result.failure ?? null : null;
 const json = (v: unknown) => JSON.stringify(v, null, 2);
-const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (connect first)";
+// The LinkedIn post's author: the Admin's LinkedIn profile (never the LinkedIn page).
+const postedAs = p?.authentication ? p.authentication.name : "your LinkedIn profile (authenticate with LinkedIn first)";
 ---
 {allowed && (
   <div class="linkedin-event" id="linkedin-event">
@@ -109,28 +112,29 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
               {p.ledger.postUrl && <> · <a href={p.ledger.postUrl} rel="noopener noreferrer">post</a></>}
             </p>
             {p.ledger.status === "posted" && (
-              <p class="next"><strong>Next:</strong> reshare your post from the BOCC page on LinkedIn. The LinkedIn listing is filled in.</p>
+              <p class="next"><strong>Next:</strong> make a LinkedIn repost of your LinkedIn post from the LinkedIn page. The LinkedIn listing is filled in.</p>
             )}
             {canPublish && (
               <>
                 <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
                   <input type="hidden" name="action" value="linkedin_publish">
-                  <p class="muted">Publish event retries only the post, as a PUBLIC post from your profile ({postedAs}). The event already
-                    exists and LinkedIn can't delete it, so it is never created again.</p>
-                  <button type="submit" data-linkedin-open="linkedin-publish-confirm">Publish event</button>
+                  <p class="muted">Publish the LinkedIn post retries only the LinkedIn post, as a PUBLIC LinkedIn post from your LinkedIn profile ({postedAs}).
+                    The LinkedIn event already exists and LinkedIn can't delete it, so it is never created again.</p>
+                  <button type="submit" data-linkedin-open="linkedin-publish-confirm">Publish the LinkedIn post</button>
                 </form>
                 <dialog id="linkedin-publish-confirm" aria-labelledby="linkedin-publish-confirm-title" open={needsConfirm}>
                   <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
                     <input type="hidden" name="action" value="linkedin_publish">
                     <input type="hidden" name="confirm" value="live">
-                    <h3 id="linkedin-publish-confirm-title">Publish the LinkedIn event?</h3>
+                    <h3 id="linkedin-publish-confirm-title">Publish the LinkedIn post?</h3>
                     {needsConfirm && <p class="muted">Confirm here to go ahead.</p>}
                     {dryRun && <p class="dry"><strong>Dry run: nothing will be sent.</strong></p>}
                     <dl>
                       <dt>Date</dt><dd>{longDay(date)}</dd>
                       <dt>Title</dt><dd>{p.ledger.name}</dd>
+                      <dt>Posted by</dt><dd>{postedAs}</dd>
                     </dl>
-                    <p>This makes a <strong>PUBLIC post from your profile</strong> ({postedAs}) that publishes the event, and says:</p>
+                    <p>This makes a <strong>PUBLIC LinkedIn post from your LinkedIn profile</strong> ({postedAs}) that publishes the LinkedIn event, and says:</p>
                     <blockquote>{p.ledger.commentary}</blockquote>
                     <div class="buttons">
                       <button type="submit">{dryRun ? "Run the dry run" : "Yes, post it on LinkedIn"}</button>
@@ -143,7 +147,7 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
             {p.ledger.status === "pending" && (
               <form method="post" action={`/admin/events/${date}/#linkedin-event`}>
                 <input type="hidden" name="action" value="linkedin_allow_retry">
-                <p>Check LinkedIn first: open the BOCC page's events as a page admin and look for this date's event
+                <p>Check LinkedIn first: open the LinkedIn page's events as a page admin and look for this date's event
                   (an event that was never posted stays hidden from everyone else). If it's there, don't retry: ask for the ledger to be fixed.</p>
                 <button type="submit" class="secondary">I checked: nothing was created, allow retry</button>
               </form>
@@ -167,8 +171,8 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
           <div class="result" role="status">
             <p><strong>Dry run: nothing was sent.</strong> These are the requests that would have been sent, in order.
               {result.duplicateCheck === "passed"
-                ? " The duplicate check against the BOCC page's LinkedIn events passed."
-                : result.duplicateCheck === "skipped" ? " The duplicate check was skipped: connect LinkedIn to run it." : ""}</p>
+                ? " The duplicate check against the LinkedIn page's LinkedIn events passed."
+                : result.duplicateCheck === "skipped" ? " The duplicate check was skipped: authenticate with LinkedIn to run it." : ""}</p>
             {result.image?.warnings?.map((w: string) => <p class="warn">{w}</p>)}
             <ol class="requests">
               {result.requests.map((q: any) => (
@@ -191,11 +195,11 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
               <dt>Address</dt><dd>{address}</dd>
               <dt>Venue details</dt><dd>{p.spec.venueDetails}</dd>
               <dt>External link</dt><dd><a href={EXTERNAL_URL} rel="noopener noreferrer">{EXTERNAL_URL}</a></dd>
-              <dt>Visibility</dt><dd>LISTED (public, discoverable), organized by the BOCC page</dd>
-              <dt>Cover</dt>
+              <dt>Visibility</dt><dd>LISTED (public, discoverable), organized by the LinkedIn page</dd>
+              <dt>16:9 Event Image</dt>
               <dd>
-                {coverSrc ? <img src={coverSrc} alt="The 16:9 cover" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
-                <span class="muted"> {SOURCE[p.image.source] ?? p.image.source}{cover && "path" in cover ? ` (${cover.path})` : ""}</span>
+                {image16x9Src ? <img src={image16x9Src} alt="The 16:9 Event Image" width="320" height="180" loading="lazy"> : <span class="muted">Not available</span>}
+                <span class="muted"> {SOURCE[p.image.source] ?? p.image.source}{image16x9 && "path" in image16x9 ? ` (${image16x9.path})` : ""}</span>
               </dd>
               <dt>Post commentary</dt><dd><blockquote>{p.spec.commentary}</blockquote></dd>
               <dt>Posted as</dt><dd>{postedAs}</dd>
@@ -227,8 +231,9 @@ const postedAs = p?.connection ? p.connection.name : "your LinkedIn profile (con
                   <dt>Date</dt><dd>{longDay(date)}</dd>
                   <dt>Title</dt><dd>{p.spec.name}</dd>
                   <dt>Visibility</dt><dd>LISTED (public)</dd>
+                  <dt>Posted by</dt><dd>{postedAs}</dd>
                 </dl>
-                <p>This creates a <strong>REAL public LinkedIn event</strong> as the BOCC page, and a <strong>PUBLIC post from your profile</strong> ({postedAs}) that says:</p>
+                <p>This creates a <strong>REAL public LinkedIn event</strong> hosted by the LinkedIn page, and a <strong>PUBLIC LinkedIn post from your LinkedIn profile</strong> ({postedAs}) that says:</p>
                 <blockquote>{p.spec.commentary}</blockquote>
                 <div class="buttons">
                   <button type="submit">{dryRun ? "Run the dry run" : "Yes, create it on LinkedIn"}</button>

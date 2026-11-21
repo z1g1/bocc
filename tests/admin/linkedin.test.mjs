@@ -1,9 +1,11 @@
-// The LinkedIn connection (ADR 0012 decision 4, issue #23) against the throwaway
-// database (npm run test:db):
-//   1. migration 20261124120000_linkedin_connections.sql: grants (admin_app all four,
-//      nobody else anything), one row per user
-//   2. src/lib/linkedin/linkedin.mjs as admin_app with a fake LinkedIn client: connect,
-//      reconnect, disconnect, the token encrypted at rest, connection status, audit rows
+// The LinkedIn authentication (ADR 0012 decision 4, issue #23; GLOSSARY.md, #58) against
+// the throwaway database (npm run test:db):
+//   1. table linkedin_authentications (migration 20261124120000_linkedin_connections.sql,
+//      renamed by 20261203120000): grants (admin_app all four, nobody else anything), one
+//      row per user
+//   2. src/lib/linkedin/linkedin.mjs as admin_app with a fake LinkedIn client: authenticate,
+//      re-authenticate, remove, the token encrypted at rest, authentication status, audit
+//      rows, a token stored before the rename, and no use of the old-name view
 //   3. /api/admin/linkedin/{connect,callback,disconnect} and the status on the event
 //      page and /admin/account/ over HTTP (astro dev): state cookie, role checks, Origin,
 //      and that no token, code or state reaches a log line
@@ -11,6 +13,7 @@
 // linkedin-unit.test.mjs and linkedin-client-unit.test.mjs.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { createCipheriv, hkdfSync, randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { ADMIN_URL, CHECKIN_URL, OWNER_URL, assertAllowed, assertRefused, connect, inRollback, unique, useAdminEnv } from "./helpers.mjs";
@@ -45,7 +48,7 @@ const { config } = readLinkedInEnv();
 let owner;
 
 const newUser = () => createUser({ email: `${unique("li")}@example.com`, name: "LinkedIn Test", password: PASSWORD });
-const row = (userId) => owner.query(`select * from linkedin_connections where user_id = $1`, [userId]).then((r) => r.rows[0] ?? null);
+const row = (userId) => owner.query(`select * from linkedin_authentications where user_id = $1`, [userId]).then((r) => r.rows[0] ?? null);
 const audits = (userId) => owner.query(
   `select actor_user_id, action, details from audit_log where target_table = 'linkedin_connections' and target_id = $1 order by id`,
   [userId]).then((r) => r.rows);
@@ -61,20 +64,20 @@ before(async () => {
 after(async () => { await owner?.end(); await pool.end(); });
 
 // ── 1. Migration ────────────────────────────────────────────────────────────
-describe("migration 20261124120000_linkedin_connections.sql", () => {
+describe("table linkedin_authentications (migrations 20261124120000, 20261203120000)", () => {
   test("grants: admin_app SELECT, INSERT, UPDATE, DELETE; social_checker only the expiry, user link and display name (#24)", async () => {
     const { rows } = await owner.query(
       `select g.grantee || ':' || g.privilege_type as g
          from information_schema.role_table_grants g
          join pg_class c on c.relname = g.table_name and c.relnamespace = 'public'::regnamespace
-        where g.table_schema = 'public' and g.table_name = 'linkedin_connections'
+        where g.table_schema = 'public' and g.table_name = 'linkedin_authentications'
           and g.grantee <> pg_get_userbyid(c.relowner)
         order by 1`);
     assert.deepEqual(rows.map((r) => r.g), ["admin_app:DELETE", "admin_app:INSERT", "admin_app:SELECT", "admin_app:UPDATE"]);
     const { rows: cols } = await owner.query(
       `select grantee || ':' || privilege_type || ':' || column_name as g from information_schema.column_privileges
-        where table_schema = 'public' and table_name = 'linkedin_connections' and grantee <> 'admin_app'
-          and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_connections')
+        where table_schema = 'public' and table_name = 'linkedin_authentications' and grantee <> 'admin_app'
+          and grantee <> (select tableowner from pg_tables where tablename = 'linkedin_authentications')
         order by 1`);
     assert.deepEqual(cols.map((r) => r.g), ["social_checker:SELECT:display_name", "social_checker:SELECT:expires_at", "social_checker:SELECT:user_id"]);
   });
@@ -86,19 +89,19 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
     try {
       await inRollback(admin, async () => {
         await admin.query(
-          `insert into linkedin_connections (user_id, token_ciphertext, expires_at, member_urn, display_name)
+          `insert into linkedin_authentications (user_id, token_ciphertext, expires_at, member_urn, display_name)
            values ($1, $2, now() + interval '60 days', 'urn:li:person:x1', 'X')`, [user.id, Buffer.alloc(40, 1)]);
         await assertRefused(admin,
-          `insert into linkedin_connections (user_id, token_ciphertext, expires_at, member_urn, display_name)
+          `insert into linkedin_authentications (user_id, token_ciphertext, expires_at, member_urn, display_name)
            values ($1, $2, now(), 'urn:li:person:x2', 'Y')`, [user.id, Buffer.alloc(40, 1)], /duplicate key/);
-        await assertAllowed(admin, `update linkedin_connections set display_name = 'Z' where user_id = $1`, [user.id]);
-        await assertAllowed(admin, `delete from linkedin_connections where user_id = $1`, [user.id]);
-        await assertRefused(admin, `truncate linkedin_connections`);
+        await assertAllowed(admin, `update linkedin_authentications set display_name = 'Z' where user_id = $1`, [user.id]);
+        await assertAllowed(admin, `delete from linkedin_authentications where user_id = $1`, [user.id]);
+        await assertRefused(admin, `truncate linkedin_authentications`);
       });
       for (const db of others) {
         await db.query("begin");
-        await assertRefused(db, `select * from linkedin_connections limit 1`);
-        await assertRefused(db, `select user_id, expires_at from linkedin_connections limit 1`);
+        await assertRefused(db, `select * from linkedin_authentications limit 1`);
+        await assertRefused(db, `select user_id, expires_at from linkedin_authentications limit 1`);
         await db.query("rollback");
       }
       // The Thursday check's role: the expiry, user link and display name, never the
@@ -108,11 +111,11 @@ describe("migration 20261124120000_linkedin_connections.sql", () => {
         const checker = await connect(SOCIAL_CHECK_URL);
         try {
           await checker.query("begin");
-          await assertAllowed(checker, `select user_id, expires_at, display_name from linkedin_connections limit 1`);
-          await assertRefused(checker, `select token_ciphertext from linkedin_connections limit 1`);
-          await assertRefused(checker, `select member_urn from linkedin_connections limit 1`);
+          await assertAllowed(checker, `select user_id, expires_at, display_name from linkedin_authentications limit 1`);
+          await assertRefused(checker, `select token_ciphertext from linkedin_authentications limit 1`);
+          await assertRefused(checker, `select member_urn from linkedin_authentications limit 1`);
           await assertRefused(checker, `select id, name from auth."user" limit 1`);
-          await assertRefused(checker, `select * from linkedin_connections limit 1`);
+          await assertRefused(checker, `select * from linkedin_authentications limit 1`);
           await checker.query("rollback");
         } finally { await checker.end(); }
       }
@@ -156,7 +159,7 @@ describe("connect, reconnect, disconnect (use-case, fake client)", () => {
     assert.equal(saved.expires_at.toISOString(), "2027-01-18T15:00:00.000Z");
     // Encrypted at rest: the raw bytes don't contain the token, and they decrypt with the key.
     assert.ok(!saved.token_ciphertext.includes(Buffer.from("AQV-first-token")));
-    const { rows: [asText] } = await owner.query(`select row_to_json(c)::text as t from linkedin_connections c where user_id = $1`, [user.id]);
+    const { rows: [asText] } = await owner.query(`select row_to_json(c)::text as t from linkedin_authentications c where user_id = $1`, [user.id]);
     assert.ok(!asText.t.includes("AQV-first-token"));
     assert.equal(decryptToken(saved.token_ciphertext, { key: config.tokenKey, userId: user.id }), "AQV-first-token");
     assert.equal(await li.accessToken(pool, user.id, { config, now }), "AQV-first-token");
@@ -178,7 +181,7 @@ describe("connect, reconnect, disconnect (use-case, fake client)", () => {
     const second = createFakeLinkedInClient({ accessToken: "AQV-new", profile: { memberUrn: "urn:li:person:abc1", name: "Renamed" } });
     s = stateFor(user.id, "account", later);
     assert.equal((await li.finishConnect(user.id, { code: "c2", ...s }, { config, baseURL: BASE, client: second, now: later })).ok, true);
-    const { rows } = await owner.query(`select count(*)::int as n from linkedin_connections where user_id = $1`, [user.id]);
+    const { rows } = await owner.query(`select count(*)::int as n from linkedin_authentications where user_id = $1`, [user.id]);
     assert.equal(rows[0].n, 1);
     assert.equal(await li.accessToken(pool, user.id, { config, now: later }), "AQV-new");
     assert.equal((await row(user.id)).display_name, "Renamed");
@@ -227,17 +230,17 @@ describe("connect, reconnect, disconnect (use-case, fake client)", () => {
     assert.deepEqual(await audits(user.id), []);
   });
 
-  test("connectionStatus: none, ok, amber under 7 days, red once expired", async () => {
+  test("authenticationStatus: none, ok, amber under 7 days, red once expired", async () => {
     const user = await newUser();
-    assert.equal(await li.connectionStatus(pool, user.id, { now }), null);
+    assert.equal(await li.authenticationStatus(pool, user.id, { now }), null);
     const s = stateFor(user.id, "account", now);
     await li.finishConnect(user.id, { code: "c", ...s }, { config, baseURL: BASE, client: createFakeLinkedInClient({ expiresIn: 10 * 86400, profile: { memberUrn: "urn:li:person:q", name: "Q Person" } }), now });
     const at = (days) => new Date(now.getTime() + days * 86400_000);
-    assert.deepEqual(await li.connectionStatus(pool, user.id, { now }), {
+    assert.deepEqual(await li.authenticationStatus(pool, user.id, { now }), {
       name: "Q Person", memberUrn: "urn:li:person:q", expiresAt: at(10), level: "ok", daysLeft: 10,
     });
-    assert.equal((await li.connectionStatus(pool, user.id, { now: at(4) })).level, "amber");
-    assert.equal((await li.connectionStatus(pool, user.id, { now: at(11) })).level, "red");
+    assert.equal((await li.authenticationStatus(pool, user.id, { now: at(4) })).level, "amber");
+    assert.equal((await li.authenticationStatus(pool, user.id, { now: at(11) })).level, "red");
     await assert.rejects(li.accessToken(pool, user.id, { config, now: at(11) }), (err) => err.kind === "expired");
   });
 
@@ -250,6 +253,49 @@ describe("connect, reconnect, disconnect (use-case, fake client)", () => {
     assert.deepEqual(await li.disconnect(user.id), { changed: false });
     assert.deepEqual((await audits(user.id)).map((a) => a.action), ["linkedin_connection.connect", "linkedin_connection.disconnect"]);
     await assert.rejects(li.accessToken(pool, user.id, { config, now }), (err) => err.kind === "expired");
+  });
+
+  test("a token stored before the table rename still decrypts: no re-authenticating (#58)", async () => {
+    const user = await newUser();
+    // Sealed by hand the way the code of 2026-11-20 did it: HKDF-SHA256 of the key with the
+    // label "bocc linkedin token v1", AES-256-GCM, associated data "linkedin_connections:<user id>".
+    const key = Buffer.from(hkdfSync("sha256", config.tokenKey, Buffer.alloc(0), "bocc linkedin token v1", 32));
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    cipher.setAAD(Buffer.from(`linkedin_connections:${user.id}`));
+    const ct = Buffer.concat([cipher.update("AQV-from-before-the-rename", "utf8"), cipher.final()]);
+    const box = Buffer.concat([Buffer.from([1]), iv, cipher.getAuthTag(), ct]);
+    await owner.query(
+      `insert into linkedin_authentications (user_id, token_ciphertext, expires_at, member_urn, display_name, connected_at)
+       values ($1, $2, $3, 'urn:li:person:old1', 'Old Row', $4)`,
+      [user.id, box, new Date(now.getTime() + 30 * 86400_000), new Date("2026-11-01T12:00:00Z")]);
+    assert.equal(await li.accessToken(pool, user.id, { config, now }), "AQV-from-before-the-rename");
+    assert.equal((await li.authenticationStatus(pool, user.id, { now })).name, "Old Row");
+  });
+
+  test("works without the old linkedin_connections view (dropped by #60): authenticate, read, Thursday check, remove", async () => {
+    const user = await newUser();
+    await owner.query(`revoke all on linkedin_connections from admin_app, social_checker`);
+    const checker = SOCIAL_CHECK_URL ? await connect(SOCIAL_CHECK_URL) : null;
+    try {
+      const s = stateFor(user.id, "account", now);
+      const r = await li.finishConnect(user.id, { code: "c", ...s },
+        { config, baseURL: BASE, client: createFakeLinkedInClient({ accessToken: "AQV-new-table" }), now });
+      assert.equal(r.ok, true);
+      assert.equal((await li.authenticationStatus(pool, user.id, { now })).level, "ok");
+      assert.equal(await li.accessToken(pool, user.id, { config, now }), "AQV-new-table");
+      if (checker) {
+        const { readLinkedInAuthentications } = await import("../../src/lib/social-alert/run.mjs");
+        assert.ok((await readLinkedInAuthentications(checker)).length >= 1);
+      }
+      assert.deepEqual(await li.disconnect(user.id), { changed: true });
+      // The audit trail is unchanged by the rename: same actions, same target label.
+      assert.deepEqual((await audits(user.id)).map((a) => a.action), ["linkedin_connection.connect", "linkedin_connection.disconnect"]);
+    } finally {
+      await checker?.end();
+      await owner.query(`grant select, insert, update, delete on linkedin_connections to admin_app;
+        grant select (user_id, expires_at, display_name) on linkedin_connections to social_checker`);
+    }
   });
 });
 
@@ -268,6 +314,9 @@ async function signedIn(roles) {
   const cookie = res.headers.getSetCookie().map((c) => c.split(";")[0]).filter((c) => !c.endsWith("=")).join("; ");
   return { user, cookie };
 }
+
+/** The page's text a person reads: no tags, attributes, scripts or styles. */
+const visibleText = (html) => html.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, " ").replace(/<[^>]*>/g, " ");
 
 /** Capture every console line written while fn runs (astro dev is in this process). */
 async function captureConsole(fn) {
@@ -394,26 +443,30 @@ describe("the LinkedIn routes and status over HTTP", { timeout: 300_000 }, () =>
     assert.equal(await row(declined.user.id), null);
   });
 
-  test("status on the Event Info tab and /admin/account/: connected, amber, red with Reconnect; not for the social role", async () => {
+  test("LinkedIn authentication on the Event Info tab and /admin/account/: authenticated, amber, red with Re-authenticate; not for the social role", async () => {
     const who = await signedIn(["admin"]);
     const page = async (path) => (await req(path, { cookie: who.cookie })).text();
 
     let html = await page(`/admin/events/${D}/?tab=info`);
-    assert.match(html, /Not connected/);
-    assert.match(html, /href="\/api\/admin\/linkedin\/connect\?return=2088-03-07"/);
+    assert.match(html, /Not authenticated with LinkedIn\./);
+    assert.match(html, /href="\/api\/admin\/linkedin\/connect\?return=2088-03-07"[^>]*>Authenticate with LinkedIn</);
+    assert.doesNotMatch(visibleText(html), /connect/i, "GLOSSARY.md: LinkedIn authentication, never connection");
 
     const flow = await connectVia(who, D, { profile: { memberUrn: "urn:li:person:statusUser", name: "Status Person" } });
     await flow.callback(`code=c&state=${flow.state}`);
     html = await page(`/admin/events/${D}/?tab=info&linkedin=connected`);
-    assert.match(html, /LinkedIn connected\./);
-    assert.match(html, /Connected as Status Person, expires [A-Z][a-z]{2} \d{1,2}, \d{4} \(in (59|60) days\)/);
+    assert.match(html, /Authenticated with LinkedIn\./);
+    assert.match(html, /Authenticated as Status Person\. The LinkedIn authentication expires on [A-Z][a-z]{2} \d{1,2}, \d{4} \(in (59|60) days\)/);
     assert.match(html, /data-linkedin-level="ok"/);
-    assert.match(html, /Reconnect/);
+    assert.match(html, />Re-authenticate</);
+    assert.match(html, />Remove LinkedIn authentication</);
+    assert.doesNotMatch(visibleText(html), /connect/i);
     const account = await page("/admin/account/");
-    assert.match(account, /Connected as Status Person, expires .* \(in (59|60) days\)/);
+    assert.match(account, /Authenticated as Status Person\. The LinkedIn authentication expires on .* \(in (59|60) days\)/);
+    assert.doesNotMatch(visibleText(account), /connect/i);
     assert.match(account, /href="\/api\/admin\/linkedin\/connect\?return=account"/);
 
-    await owner.query(`update linkedin_connections set expires_at = now() + interval '3 days 1 hour' where user_id = $1`, [who.user.id]);
+    await owner.query(`update linkedin_authentications set expires_at = now() + interval '3 days 1 hour' where user_id = $1`, [who.user.id]);
     for (const p of [`/admin/events/${D}/?tab=info`, "/admin/account/"]) {
       html = await page(p);
       assert.match(html, /data-linkedin-level="amber"/);
@@ -421,16 +474,16 @@ describe("the LinkedIn routes and status over HTTP", { timeout: 300_000 }, () =>
       assert.match(html, /\(in 3 days\)/);
     }
 
-    await owner.query(`update linkedin_connections set expires_at = now() - interval '1 day' where user_id = $1`, [who.user.id]);
+    await owner.query(`update linkedin_authentications set expires_at = now() - interval '1 day' where user_id = $1`, [who.user.id]);
     for (const p of [`/admin/events/${D}/?tab=info`, "/admin/account/"]) {
       html = await page(p);
       assert.match(html, /data-linkedin-level="red"/);
-      assert.match(html, /Connected as Status Person, expired /);
-      assert.match(html, />Reconnect</);
+      assert.match(html, /Authenticated as Status Person\. The LinkedIn authentication expired on .*\. Re-authenticate to use LinkedIn\./);
+      assert.match(html, />Re-authenticate</);
     }
 
     const socialAccount = await (await req("/admin/account/", { cookie: social.cookie })).text();
-    assert.doesNotMatch(socialAccount, /data-linkedin-level|Connect LinkedIn|id="h-linkedin"/);
+    assert.doesNotMatch(socialAccount, /data-linkedin-level|Authenticate with LinkedIn|id="h-linkedin"/);
   });
 
   test("disconnect: Origin-checked, admin only, deletes the row and links to Permitted services", async () => {
@@ -449,8 +502,8 @@ describe("the LinkedIn routes and status over HTTP", { timeout: 300_000 }, () =>
     assert.equal(res.headers.get("location"), `/admin/events/${D}/?tab=info&linkedin=disconnected#linkedin`);
     assert.equal(await row(who.user.id), null);
     const html = await (await req(res.headers.get("location"), { cookie: who.cookie })).text();
-    assert.match(html, /LinkedIn disconnected/);
+    assert.match(html, /LinkedIn authentication removed\./);
     assert.match(html, /href="https:\/\/www\.linkedin\.com\/psettings\/permitted-services"/);
-    assert.match(html, /Not connected/);
+    assert.match(html, /Not authenticated with LinkedIn\./);
   });
 });

@@ -4,7 +4,7 @@
 //      listing), a failure injected at each step and the state it leaves, Publish-retry,
 //      allow-retry, and the plain-language error messages
 //   2. over HTTP (astro dev, with LINKEDIN_LIVE=1 in this process only): the create,
-//      Publish event and allow-retry forms and what the section shows in each state,
+//      Publish the LinkedIn post and allow-retry forms and what the section shows in each state,
 //      and a week imported from the CLI ledger (#28) shown as Posted, create refused
 // Dates: Tuesdays from 2073, starting at a random week so a rerun on a kept database
 // doesn't collide (no other file uses 2073-2075).
@@ -202,7 +202,7 @@ describe("live create, recovery and errors (use-case, fake client)", () => {
 
   test("the errors map to plain language: reconnect, page role, hidden post, validation shown, unknown", async () => {
     const cases = [
-      [new LinkedInError("expired", "401", { status: 401 }), /Reconnect LinkedIn/],
+      [new LinkedInError("expired", "401", { status: 401 }), /Re-authenticate with LinkedIn/],
       [new LinkedInError("page_role", "403", { status: 403 }), /ADMINISTRATOR or CONTENT_ADMINISTRATOR/],
       [new LinkedInError("hidden_post", "422", { status: 422 }), /hidden member post/],
       [new LinkedInError("validation", "422", { status: 422, detail: "commentary is too long" }), /invalid.*commentary is too long/],
@@ -250,7 +250,7 @@ describe("live create, recovery and errors (use-case, fake client)", () => {
     assert.deepEqual(retry.ops(), ["createPost"]);
   });
 
-  test("two concurrent Publish event requests post exactly once", async () => {
+  test("two concurrent Publish the LinkedIn post requests post exactly once", async () => {
     const date = await nextDate();
     await seedEvent(date);
     const user = await connectedUser();
@@ -271,7 +271,7 @@ describe("live create, recovery and errors (use-case, fake client)", () => {
     assert.equal((await ledger(date))[0].status, "posted");
   });
 
-  test("a failed Publish event releases its claim, so it can be retried", async () => {
+  test("a failed Publish the LinkedIn post releases its claim, so it can be retried", async () => {
     const date = await nextDate();
     await seedEvent(date);
     const user = await connectedUser();
@@ -296,7 +296,7 @@ describe("live create, recovery and errors (use-case, fake client)", () => {
     await create(user, date, client);
     const retry = createFakeLinkedInClient();
     const later = new Date(`${date}T23:00:00Z`);
-    await owner.query(`update linkedin_connections set expires_at = $2 where user_id = $1`, [user.id, new Date(later.getTime() + 30 * 86_400_000)]);
+    await owner.query(`update linkedin_authentications set expires_at = $2 where user_id = $1`, [user.id, new Date(later.getTime() + 30 * 86_400_000)]);
     const codes = async (over) => (await li.publishRetry(user.id, date, { confirm: "live" }, opts(retry, over))).refusals.map((x) => x.code);
     assert.deepEqual(await codes({ now: later }), ["past"]);
     await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [date]);
@@ -389,7 +389,7 @@ async function signedIn(roles) {
   return { user, cookie };
 }
 
-describe("the live create, Publish event and allow-retry forms over HTTP", { timeout: 300_000 }, () => {
+describe("the live create, Publish the LinkedIn post and allow-retry forms over HTTP", { timeout: 300_000 }, () => {
   let server, admin, social, fake;
   const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -415,11 +415,13 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     }
     return fetch(`${BASE}${path}`, { method, headers, body, redirect: "manual" });
   };
+  /** What a person reads: tags dropped, one space between words. */
+  const text = (html) => html.replace(/<(script|style)\b[\s\S]*?<\/\1>/g, " ").replace(/<\/(dt|dd|p|li|h\d)>/g, " ").replace(/<[^>]*>/g, "").replace(/\s+/g, " ");
   const page = (date) => req(`/admin/events/${date}/?tab=info`, { cookie: admin.cookie }).then((r) => r.text());
   const post = (date, action, who = admin, form = {}, opts = {}) =>
     req(`/admin/events/${date}/`, { cookie: who.cookie, method: "POST", form: { action, ...form }, ...opts });
 
-  test("Create live event: 303 to the section, which links the event and post and reminds to reshare", async () => {
+  test("Create live event: 303 to the section, which links the event and post and reminds to make a LinkedIn repost from the LinkedIn page", async () => {
     const date = await nextDate();
     await seedEvent(date, { location: "lobby" });
     const res = await post(date, "linkedin_create", admin, { confirm: "live" });
@@ -430,12 +432,12 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     const html = await page(date);
     assert.ok(html.includes(`href="${EVENT_URL}"`), "links the event");
     assert.ok(html.includes(`href="${POST_URL}"`), "links the post");
-    assert.match(html, /reshare/i);
-    assert.ok(html.includes("BOCC page"));
+    assert.ok(text(html).includes("Next: make a LinkedIn repost of your LinkedIn post from the LinkedIn page."));
+    assert.doesNotMatch(text(html), /\breshare\b|BOCC page/i);
     assert.doesNotMatch(html, /name="action" value="linkedin_(create|publish|allow_retry)"/);
   });
 
-  test("a failed post: 502 with the message, then Publish event posts only and lands posted", async () => {
+  test("a failed post: 502 with the message, then Publish the LinkedIn post posts only and lands posted", async () => {
     const date = await nextDate();
     await seedEvent(date);
     fake.fail("createPost", new LinkedInError("page_role", "403", { status: 403 }));
@@ -446,10 +448,13 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.ok(html.includes("ADMINISTRATOR or CONTENT_ADMINISTRATOR"));
     assert.match(html, /<a\b[^>]*href="\?tab=info"[^>]*aria-current="page"/, "rendered on the Event Info tab");
     assert.match(html, /name="action" value="linkedin_publish"/);
-    assert.match(html, />Publish event</);
+    assert.match(html, />Publish the LinkedIn post</);
+    assert.doesNotMatch(html, />Publish event</);
     assert.equal((await ledger(date))[0].status, "created");
 
     const shown = await page(date);
+    // Created but not posted: LinkedIn keeps the event hidden until its post is out.
+    assert.ok(shown.includes("LinkedIn keeps the LinkedIn event hidden until its LinkedIn post is published."));
     assert.match(shown, /name="action" value="linkedin_publish"/);
     assert.ok(shown.includes(`href="${EVENT_URL}"`), "links the created event");
 
@@ -462,7 +467,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.equal(await listing(date), EVENT_URL);
   });
 
-  test("Publish event confirms in a dialog like create: PUBLIC post, the commentary; without confirm=live 409 shown inline", async () => {
+  test("Publish the LinkedIn post confirms in a dialog like create: PUBLIC post, its author, the commentary; without confirm=live 409 shown inline", async () => {
     const date = await nextDate();
     await seedEvent(date, { location: "food_hall" });
     fake.fail("createPost", new LinkedInError("unknown", "500"));
@@ -472,12 +477,14 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     const html = await page(date);
     // The button's own form carries no confirm=live: only the dialog's form does.
     const button = html.match(/<form[^>]*>(?:(?!<\/form>)[\s\S])*data-linkedin-open="linkedin-publish-confirm"[\s\S]*?<\/form>/);
-    assert.ok(button, "the Publish event button opens the dialog");
+    assert.ok(button, "the Publish the LinkedIn post button opens the dialog");
     assert.doesNotMatch(button[0], /name="confirm"/);
     const dialog = html.match(/<dialog[^>]*id="linkedin-publish-confirm"[\s\S]*?<\/dialog>/);
     assert.ok(dialog, "the publish dialog is on the page");
     assert.match(dialog[0], /<input type="hidden" name="confirm" value="live"/);
-    assert.ok(dialog[0].includes("PUBLIC post from your profile"));
+    assert.ok(dialog[0].includes("Publish the LinkedIn post?"));
+    assert.ok(dialog[0].includes("PUBLIC LinkedIn post from your LinkedIn profile"));
+    assert.ok(text(dialog[0]).includes("Posted by Member 26"), "names the post's author");
     assert.ok(dialog[0].includes("Seneca One Food hall"), "quotes the commentary");
     assert.match(html, /<script[^>]*src="\/js\/admin-linkedin\.js"/);
 
@@ -551,7 +558,7 @@ describe("the live create, Publish event and allow-retry forms over HTTP", { tim
     assert.equal((await active(date)).length, 1);
   });
 
-  test("Publish event without a created row, or without confirm=live, is refused (409) and sends nothing", async () => {
+  test("Publish the LinkedIn post without a created row, or without confirm=live, is refused (409) and sends nothing", async () => {
     const date = await nextDate();
     await seedEvent(date);
     const before = fake.ops().length;

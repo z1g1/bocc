@@ -150,7 +150,7 @@ describe("preview and dry run (use-case, fake client)", () => {
   const opts = (client, over = {}) => ({ config, client, now: NOW, storage: null, ...over });
   const codes = (r) => r.refusals.map((x) => x.code);
 
-  test("preview: what would be sent for an upcoming lobby event, before connecting", async () => {
+  test("preview: what would be sent for an upcoming lobby event, before authenticating with LinkedIn", async () => {
     const date = "2087-06-17";
     await seedEvent(date, { location: "lobby" });
     const user = await newUser();
@@ -159,7 +159,7 @@ describe("preview and dry run (use-case, fake client)", () => {
     assert.equal(p.action, "create");
     assert.deepEqual(p.refusals, []);
     assert.equal(p.ledger, null);
-    assert.equal(p.connection, null);
+    assert.equal(p.authentication, null);
     assert.equal(p.spec.name, "Buffalo Open Coffee Club for June 17th");
     assert.equal(p.spec.commentary, "Please join me at Buffalo Open Coffee Club");
     assert.equal(p.image.source, "default");
@@ -271,7 +271,7 @@ describe("preview and dry run (use-case, fake client)", () => {
     const r = await li.createLinkedInEvent(user.id, date, { confirm: "live" }, opts(client));
     assert.equal(r.ok, false);
     assert.deepEqual(codes(r), ["linkedin"]);
-    assert.match(r.refusals[0].message, /Reconnect LinkedIn/);
+    assert.match(r.refusals[0].message, /Re-authenticate with LinkedIn/);
   });
 
   test("the server enforces the matrix: past, cancelled, other and an existing ledger row", async () => {
@@ -299,12 +299,12 @@ describe("preview and dry run (use-case, fake client)", () => {
     assert.equal((await ledgerRows(taken)).length, 1);
   });
 
-  test("live: no connection or an expired one is refused, and nothing is sent or written", async () => {
+  test("live: no LinkedIn authentication or an expired one is refused, and nothing is sent or written", async () => {
     // The live sequence itself is tested in linkedin-live.test.mjs (#26).
     const date = "2087-08-19";
     await seedEvent(date);
     const client = createFakeLinkedInClient();
-    assert.deepEqual(codes(await li.createLinkedInEvent((await newUser()).id, date, { confirm: "live" }, opts(client, { config: LIVE }))), ["no_connection"]);
+    assert.deepEqual(codes(await li.createLinkedInEvent((await newUser()).id, date, { confirm: "live" }, opts(client, { config: LIVE }))), ["no_authentication"]);
 
     const stale = await connectedUser({ expiresIn: 86400, now: new Date(NOW.getTime() - 3 * 86400_000) });
     assert.deepEqual(codes(await li.createLinkedInEvent(stale.id, date, { confirm: "live" }, opts(client, { config: LIVE }))), ["expired"]);
@@ -371,7 +371,7 @@ describe("the LinkedIn event section and its create form over HTTP", { timeout: 
       "BOCC is right in the lobby, please come up the escalators", "Please join me at Buffalo Open Coffee Club",
       "1 Seneca St", "Buffalo, New York 14203", "https://luma.com/716coffeeclub", "LISTED",
       "7:30", "9:00", "/assets/images/brand/bocc-logo-wide-16x9.png", "Dry run: nothing will be sent",
-      "REAL public LinkedIn event", "PUBLIC post from your profile", "&quot;discoveryMode&quot;",
+      "REAL public LinkedIn event", "PUBLIC LinkedIn post from your LinkedIn profile", "&quot;discoveryMode&quot;",
     ]) assert.ok(html.includes(text), `page shows ${text}`);
     assert.match(html, /<dialog[^>]*id="linkedin-confirm"/);
     assert.match(html, /<input type="hidden" name="confirm" value="live"/);

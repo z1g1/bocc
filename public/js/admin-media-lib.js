@@ -19,19 +19,19 @@ export const VIDEO_TYPES = Object.freeze(["video/mp4", "video/quicktime"]);
 export const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 
 // The Event Image (kind event_image, ADR 0012 decision 3): one per event, made as a
-// 1:1 square, used as is on Luma (the original). Its 16:9 version (the cover, for the
+// 1:1 square, used as is on Luma (the original). Its 16:9 Event Image (for the
 // listings entered by hand and LinkedIn) is the image at full height, centred on the
 // "Just the Beans" background, never cropped (ticket #40). Keep in step with
 // src/lib/admin/media.mjs EVENT_IMAGE (a test checks).
 export const EVENT_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 export const EVENT_IMAGE_MIN_WIDTH = 480;
 export const EVENT_IMAGE_MIN_HEIGHT = 270;
-export const COVER_WIDTH = 1920;
-export const COVER_HEIGHT = 1080;
-/** The 1920x1080 background of every 16:9 version, served from the site itself. */
-export const COVER_BACKGROUND = "/assets/images/brand/just-the-beans-16x9.jpg";
-export const COVER_QUALITY = 0.88;
-export const MAX_COVER_BYTES = 5 * 1024 * 1024;
+export const IMAGE_16X9_WIDTH = 1920;
+export const IMAGE_16X9_HEIGHT = 1080;
+/** The 1920x1080 background of every 16:9 Event Image, served from the site itself. */
+export const IMAGE_16X9_BACKGROUND = "/assets/images/brand/just-the-beans-16x9.jpg";
+export const IMAGE_16X9_QUALITY = 0.88;
+export const MAX_16X9_BYTES = 5 * 1024 * 1024;
 
 export const UNREADABLE_MESSAGE =
   "This photo can't be read in this browser. Upload from your iPhone, or export the photo as JPEG.";
@@ -112,10 +112,10 @@ export function fitWithin(width, height, maxEdge) {
  * background over the whole canvas, then ctx.drawImage(src, dx, dy, dw, dh).
  * @returns {{ canvas: { width: number, height: number }, dx: number, dy: number, dw: number, dh: number }}
  */
-export function composeCover(width, height) {
-  if (!(width > 0 && height > 0)) throw new Error("composeCover: dimensions must be positive");
-  const W = COVER_WIDTH;
-  const H = COVER_HEIGHT;
+export function compose16x9(width, height) {
+  if (!(width > 0 && height > 0)) throw new Error("compose16x9: dimensions must be positive");
+  const W = IMAGE_16X9_WIDTH;
+  const H = IMAGE_16X9_HEIGHT;
   const tooWide = width * H > height * W;
   const dw = tooWide ? W : Math.min(W, Math.max(1, Math.round((width * H) / height)));
   const dh = tooWide ? Math.min(H, Math.max(1, Math.round((height * W) / width))) : H;
@@ -145,11 +145,12 @@ export function checkEventImage(file) {
     return { ok: false, message: `${name}the image is ${width}×${height}; it must be at least ${EVENT_IMAGE_MIN_WIDTH}×${EVENT_IMAGE_MIN_HEIGHT}.` };
   }
   const warning = isSquare(width, height) ? null
-    : `The image is ${width}×${height}, not square. Make the Event Image a 1:1 square: Luma shows it as is, and the 16:9 version puts it at full height on the beans background. Check the preview.`;
+    : `The image is ${width}×${height}, not square. Make the Event Image a 1:1 square: Luma shows it as is, and the 16:9 Event Image puts it at full height on the beans background. Check the preview.`;
   return { ok: true, contentType: type, warning };
 }
 
-/** The JSON body for POST /api/admin/media/uploads, for the Event Image. */
+/** The JSON body for POST /api/admin/media/uploads, for the Event Image. `cover` is the 16:9 Event Image
+ * (the API's variant name, like its object key …/cover.jpg). */
 export function eventImageRequestBody({ eventDate, original, display, thumb, cover }) {
   return {
     eventDate,
@@ -166,7 +167,7 @@ export function uploadRequestBody({ eventDate, kind, publiclyUsable, original, d
   return {
     eventDate,
     kind,
-    publiclyUsable: kind === "social_photo" && publiclyUsable === true,
+    publiclyUsable: kind === "event_photo" && publiclyUsable === true,
     original: { contentType: original.contentType, size: original.size },
     display: { contentType: "image/jpeg", size: display.size },
     thumb: { contentType: "image/jpeg", size: thumb.size },

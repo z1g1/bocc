@@ -92,7 +92,7 @@ const self = `/admin/attendees/${attendee.id}/`;
 
   <h2>Streaks</h2>
   {streaks.length === 0
-    ? <p class="muted">None (test check-ins don't count).</p>
+    ? <p class="muted">None (Debug check-ins don't count).</p>
     : <ul>{streaks.map((s: any) => <li>{s.eventId}: current {s.currentStreak}, longest {s.longestStreak}, {s.weeksAttended} week{s.weeksAttended === 1 ? "" : "s"} attended</li>)}</ul>}
 
   <h2>Recent check-ins</h2>

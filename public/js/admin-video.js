@@ -1,12 +1,12 @@
-// Promo video upload for the event page's "Social post" section (ADR 0010, ADR 0011).
-// Loaded by src/components/admin/SocialPost.astro as
+// Promo video upload for the event page's "Social plan" section (ADR 0010, ADR 0011).
+// Loaded by src/components/admin/SocialPlan.astro as
 // <script type="module" src="/js/admin-video.js">: the admin CSP is script-src 'self',
 // so no inline code or handlers. Plain JS, no framework.
 //
 // One file, uploaded as is (no copies): POST /api/admin/media/uploads with kind
 // promo_video, PUT the file to its presigned URL (XMLHttpRequest, for upload progress),
 // POST /api/admin/media/{id}/complete, then submit the page's hidden "use this video"
-// form, which attaches it to the social post (post/redirect/get, like the other forms).
+// form, which attaches it to the Social plan (post/redirect/get, like the other forms).
 // The delete buttons' confirm prompts are wired by /js/admin-media.js, which the same
 // page loads whenever storage is on.
 

@@ -1,5 +1,5 @@
-// GET /api/admin/linkedin/connect?return=account|YYYY-MM-DD: start connecting the
-// signed-in Admin's LinkedIn account (ADR 0012 decision 4, issue #23). Sets the signed,
+// GET /api/admin/linkedin/connect?return=account|YYYY-MM-DD: start the
+// signed-in Admin's LinkedIn authentication (ADR 0012 decision 4, issue #23). Sets the signed,
 // HttpOnly, 10-minute state cookie and 302s to LinkedIn's authorize page. A GET link,
 // not a form: the admin CSP's form-action 'self' would block a POST that redirects to
 // linkedin.com. It changes nothing in the database, so no Origin check is needed.

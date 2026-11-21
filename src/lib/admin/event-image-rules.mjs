@@ -3,51 +3,53 @@
 //
 // Resolution order:
 //   1. uploaded    the event's own `event_image` row (at most one ready per event)
-//   2. referenced  a publicly usable `social_photo` the event points at (ticket #21 adds
+//   2. referenced  a publicly usable `event_photo` (Photo from Event) the event points at (ticket #21 adds
 //                  the reference; until then the caller passes none)
 //   3. default     the square BOCC logo, with a checked-in 16:9 version: the logo at
 //                  full height on the "Just the Beans" background (ticket #40)
 //
 // The resolved image has the same shape whatever its source, so consumers (the Event
-// Image section, the Social Post cover, the LinkedIn image upload) don't branch on it:
-//   { source, mediaId, eventDate, original, display, thumb, cover, coverOutdated }
+// Image section, the Social plan Thumbnail, the LinkedIn image upload) don't branch on it:
+//   { source, mediaId, eventDate, original, display, thumb, image16x9, image16x9Outdated }
 // where each file is either { key, contentType } (an object in the private bucket:
 // sign it with storage.presignGet, or read it with storage.getObject) or
 // { path, contentType, width, height } (a checked-in file under public/, same origin).
 //
-// `original` is the square/original image (for Luma), `cover` the 16:9 copy (for the
-// listings entered by hand, and LinkedIn). A referenced photo picked before it had a
-// cover copy has `cover: null`: whoever picks it must make one (it is never silently
-// swapped for the logo's). `coverOutdated`: the cover was made under the old
-// centre-crop rule and is being remade in the browser (migration 20261202120000); it
-// is still shown, but not sent to LinkedIn.
+// `original` is the square/original image (for Luma), `image16x9` the 16:9 Event Image
+// (for the listings entered by hand, and LinkedIn). A referenced photo picked before it
+// had one has `image16x9: null`: whoever picks it must make one (it is never silently
+// swapped for the logo's). `image16x9Outdated`: the 16:9 Event Image was made under the
+// old centre-crop rule and is being remade in the browser (migration 20261202120000);
+// it is still shown, but not sent to LinkedIn. In object storage the 16:9 Event Image
+// keeps its key …/cover.jpg (keys are opaque, never renamed).
 
 /** @typedef {{ key: string, contentType: string }} StoredFile */
 /** @typedef {{ path: string, contentType: string, width: number, height: number }} AssetFile */
 /**
  * @typedef {{ source: "uploaded"|"referenced"|"default", mediaId: string|null, eventDate: string|null,
  *   original: StoredFile|AssetFile, display: StoredFile|AssetFile, thumb: StoredFile|AssetFile,
- *   cover: StoredFile|AssetFile|null, coverOutdated: boolean }} EventImage
+ *   image16x9: StoredFile|AssetFile|null, image16x9Outdated: boolean }} EventImage
  */
 
 const SQUARE_LOGO = Object.freeze({
   path: "/assets/images/brand/bocc-logo-square.png", contentType: "image/png", width: 2000, height: 2000,
 });
-const WIDE_LOGO = Object.freeze({
+
+const LOGO_16X9 = Object.freeze({
   path: "/assets/images/brand/bocc-logo-wide-16x9.png", contentType: "image/png", width: 1920, height: 1080,
 });
 
 /** @type {Readonly<EventImage>} */
 export const DEFAULT_EVENT_IMAGE = Object.freeze({
   source: "default", mediaId: null, eventDate: null,
-  original: SQUARE_LOGO, display: SQUARE_LOGO, thumb: SQUARE_LOGO, cover: WIDE_LOGO, coverOutdated: false,
+  original: SQUARE_LOGO, display: SQUARE_LOGO, thumb: SQUARE_LOGO, image16x9: LOGO_16X9, image16x9Outdated: false,
 });
 
 const COPY = "image/jpeg";
 
 /**
  * @param {{ id: string, eventDate: string, status: string, originalKey: string, displayKey: string,
- *   thumbKey: string, coverKey?: string|null, coverOutdated?: boolean, contentType: string }} row  an event_media row (camelCase)
+ *   thumbKey: string, image16x9Key?: string|null, image16x9Outdated?: boolean, contentType: string }} row  an event_media row (camelCase)
  * @param {"uploaded"|"referenced"} source
  * @returns {EventImage}
  */
@@ -59,8 +61,8 @@ function fromRow(row, source) {
     original: { key: row.originalKey, contentType: row.contentType },
     display: { key: row.displayKey, contentType: COPY },
     thumb: { key: row.thumbKey, contentType: COPY },
-    cover: row.coverKey ? { key: row.coverKey, contentType: COPY } : null,
-    coverOutdated: Boolean(row.coverKey && row.coverOutdated),
+    image16x9: row.image16x9Key ? { key: row.image16x9Key, contentType: COPY } : null,
+    image16x9Outdated: Boolean(row.image16x9Key && row.image16x9Outdated),
   };
 }
 

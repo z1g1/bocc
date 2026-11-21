@@ -56,7 +56,7 @@ describe("a media upload that creates the event purges its public page", { skip 
     request: new Request(`${BASE}/api/admin/media/uploads`, {
       method: "POST",
       headers: { origin: BASE, "content-type": "application/json" },
-      body: JSON.stringify({ eventDate: DATE, kind: "social_photo", original: { contentType: "image/jpeg", size: 1000 }, display: { size: 500 }, thumb: { size: 100 } }),
+      body: JSON.stringify({ eventDate: DATE, kind: "event_photo", original: { contentType: "image/jpeg", size: 1000 }, display: { size: 500 }, thumb: { size: 100 } }),
     }),
   });
 

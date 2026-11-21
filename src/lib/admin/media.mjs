@@ -19,17 +19,17 @@
 //   listEventMedia(db, date)             -> { ready, pending } for the gallery
 //   listStalePending(db, { date? })      pending rows older than STALE_PENDING_HOURS
 //
-// publicly_usable is not a choice: every social photo is covered by the photo waiver
-// posted at the event, so a social_photo row is always created true, and a
+// publicly_usable is not a choice: every Photo from Event is covered by the photo waiver
+// posted at the event, so an event_photo row is always created true, and a
 // signin_board row always false (the CHECK on event_media agrees), whatever the client
 // sends (ADR 0010 decision 2, amended 2026-11-18). Phase 5 reads the column.
 //
 // Promo videos (kind promo_video, plan Phase 5) use the same flow with ONE file: the
 // browser declares only `original` (video/mp4 or video/quicktime, up to LIMITS.video),
 // gets one presigned PUT, and completeUpload checks only that object. Nothing is made
-// in the browser (no copies, no thumbnail). The social post picks one ready video
-// (src/lib/admin/social.mjs setVideo); deleteMedia of that video clears it from the
-// post and un-readies the post, in the same transaction as the delete.
+// in the browser (no copies, no thumbnail). The Social plan picks one ready video
+// (src/lib/admin/social-plan.mjs setVideo); deleteMedia of that video clears it from the
+// plan and un-readies the plan, in the same transaction as the delete.
 //
 // What was signed for the display copy and thumbnail (their sizes) is not in
 // event_media, which only describes the original; completeUpload reads it back from
@@ -38,13 +38,18 @@
 import { randomUUID } from "node:crypto";
 import { pool, withAudit, writeAudit } from "./db.mjs";
 import { inUseMessage } from "./event-image-rules.mjs";
+import { EVENT_PHOTO_KIND } from "./media-rules.mjs";
 import { NotFoundError, ValidationError, isUuid } from "./attendees.mjs";
 import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
-import { COVER_LIMITS } from "../linkedin/rules.mjs";
+import { IMAGE_16X9_LIMITS } from "../linkedin/rules.mjs";
 
 export { NotFoundError, ValidationError };
 
-export const PHOTO_KINDS = Object.freeze(["signin_board", "social_photo"]);
+export const PHOTO_KINDS = Object.freeze(["signin_board", EVENT_PHOTO_KIND]);
+// DEPRECATED (#54): the kind's old name. A tab opened before the deploy runs the old
+// static browser JS and still posts it, so an upload request with it is taken as
+// event_photo (migration 20261203150000 maps it in the database too). Remove with #60.
+const OLD_EVENT_PHOTO_KIND = "social_photo";
 export const VIDEO_KIND = "promo_video";
 /** The week's one image (ADR 0012 decision 3): see src/lib/admin/event-image.mjs. */
 export const EVENT_IMAGE_KIND = "event_image";
@@ -69,13 +74,13 @@ export const LIMITS = Object.freeze({
 });
 
 // The Event Image's original: smaller cap than a photo (it is a designed image, not a
-// phone photo), and big enough for the 16:9 cover. Its dimensions are measured in the
+// phone photo), and big enough for the 16:9 Event Image. Its dimensions are measured in the
 // browser and declared (the server never reads the bytes), so the minimum is checked
-// here only as a guard against a buggy client. The numbers are LinkedIn's cover limits
-// (src/lib/linkedin/rules.mjs COVER_LIMITS), the one copy on the server. Keep in step
+// here only as a guard against a buggy client. The numbers are the 16:9 Event Image limits
+// (src/lib/linkedin/rules.mjs IMAGE_16X9_LIMITS), the one copy on the server. Keep in step
 // with admin-media-lib.js (a test checks).
 export const EVENT_IMAGE = Object.freeze({
-  maxBytes: COVER_LIMITS.maxBytes, minWidth: COVER_LIMITS.minWidth, minHeight: COVER_LIMITS.minHeight,
+  maxBytes: IMAGE_16X9_LIMITS.maxBytes, minWidth: IMAGE_16X9_LIMITS.minWidth, minHeight: IMAGE_16X9_LIMITS.minHeight,
 });
 
 // Presigned PUTs last 15 minutes, not the storage default of 5: the three files go up
@@ -89,6 +94,10 @@ const VARIANTS = /** @type {const} */ (["original", "display", "thumb"]);
 /** The objects a row of this kind has. */
 const variantsFor = (kind) => (kind === VIDEO_KIND ? /** @type {const} */ (["original"])
   : kind === EVENT_IMAGE_KIND ? /** @type {const} */ ([...VARIANTS, "cover"]) : VARIANTS);
+
+/** How a problem names an object: the upload variant `cover` is the 16:9 Event Image. */
+const IMAGE_16X9_LABEL = "16:9 Event Image";
+const label = (variant) => (variant === "cover" ? IMAGE_16X9_LABEL : variant);
 
 const isSize = (n, max) => Number.isSafeInteger(n) && n > 0 && n <= max;
 const plusDays = (d, days) => new Date(d.getTime() + days * 86400000).toISOString().slice(0, 10);
@@ -106,15 +115,16 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, errors: ["body must be a JSON object"] };
   const b = /** @type {Record<string, any>} */ (input);
 
+  const kind = b.kind === OLD_EVENT_PHOTO_KIND ? EVENT_PHOTO_KIND : b.kind;
   if (!isIsoDate(b.eventDate)) errors.push("eventDate must be a date, YYYY-MM-DD");
   else if (b.eventDate < EARLIEST_DATE || b.eventDate > plusDays(today, 366)) errors.push("eventDate is out of range");
 
-  if (!UPLOAD_KINDS.includes(b.kind)) errors.push(`kind must be one of ${UPLOAD_KINDS.join(", ")}`);
-  const video = b.kind === VIDEO_KIND;
-  const eventImage = b.kind === EVENT_IMAGE_KIND;
+  if (!UPLOAD_KINDS.includes(kind)) errors.push(`kind must be one of ${UPLOAD_KINDS.join(", ")}`);
+  const video = kind === VIDEO_KIND;
+  const eventImage = kind === EVENT_IMAGE_KIND;
 
   // Not the client's choice (see the top of this file): any publiclyUsable sent is ignored.
-  const publiclyUsable = b.kind === "social_photo";
+  const publiclyUsable = kind === EVENT_PHOTO_KIND;
 
   const o = b.original;
   const types = video ? VIDEO_TYPES : ORIGINAL_TYPES;
@@ -147,7 +157,7 @@ export function validateUploadRequest(input, { today = new Date() } = {}) {
     ok: true,
     values: {
       eventDate: b.eventDate,
-      kind: b.kind,
+      kind,
       publiclyUsable,
       original: { contentType: o.contentType, size: o.size },
       ...(eventImage ? { original: { contentType: o.contentType, size: o.size, width: o.width, height: o.height } } : {}),
@@ -205,7 +215,7 @@ export async function startUpload(actorUserId, storage, input, { today = new Dat
       "insert into public.events (event_date) values ($1) on conflict (event_date) do nothing", [eventDate]);
     await client.query(
       `insert into public.event_media
-         (id, event_date, kind, original_key, display_key, thumb_key, cover_key, content_type, size_bytes,
+         (id, event_date, kind, original_key, display_key, thumb_key, image_16x9_key, content_type, size_bytes,
           publicly_usable, status, uploaded_by)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11)`,
       [id, eventDate, kind, keys.original, keys.display, keys.thumb, keys.cover, original.contentType, original.size,
@@ -224,7 +234,7 @@ export async function startUpload(actorUserId, storage, input, { today = new Dat
 
 const MEDIA_COLUMNS = `
   id, event_date::text as "eventDate", kind, original_key as "originalKey", display_key as "displayKey",
-  thumb_key as "thumbKey", cover_key as "coverKey", cover_outdated as "coverOutdated",
+  thumb_key as "thumbKey", image_16x9_key as "image16x9Key", image_16x9_outdated as "image16x9Outdated",
   content_type as "contentType", size_bytes::int8 as "sizeBytes", publicly_usable as "publiclyUsable", status, uploaded_by as "uploadedBy", created_at as "createdAt"`;
 
 async function getRow(db, id) {
@@ -237,7 +247,7 @@ async function getRow(db, id) {
 
 /**
  * Confirm the objects landed as signed (three; one for a video; four for an Event
- * Image, with its cover), then pending -> ready. An Event Image replaces the event's
+ * Image, with its 16:9 Event Image), then pending -> ready. An Event Image replaces the event's
  * current one in the same transaction (audited `event_image.set` with `replaced`),
  * and the old one's objects are deleted after the commit.
  * @param {string} actorUserId
@@ -261,19 +271,19 @@ export async function completeUpload(actorUserId, storage, id, { db, log }) {
     thumb: { contentType: COPY_TYPE, size: signed.thumb?.size },
     cover: { contentType: COPY_TYPE, size: signed.cover?.size },
   };
-  const keys = { original: row.originalKey, display: row.displayKey, thumb: row.thumbKey, cover: row.coverKey };
+  const keys = { original: row.originalKey, display: row.displayKey, thumb: row.thumbKey, cover: row.image16x9Key };
 
   const variants = variantsFor(row.kind);
   const heads = await Promise.all(variants.map((v) => storage.headObject({ key: keys[v] })));
   const problems = [];
   variants.forEach((v, i) => {
     const h = heads[i];
-    if (!h) return problems.push(`${v}: not uploaded`);
+    if (!h) return problems.push(`${label(v)}: not uploaded`);
     const type = (h.contentType ?? "").split(";")[0].trim().toLowerCase();
-    if (type !== expected[v].contentType) problems.push(`${v}: content type ${type || "missing"}, expected ${expected[v].contentType}`);
+    if (type !== expected[v].contentType) problems.push(`${label(v)}: content type ${type || "missing"}, expected ${expected[v].contentType}`);
     const max = row.kind === VIDEO_KIND ? LIMITS.video : LIMITS[v];
     const sizeOk = expected[v].size === undefined ? h.contentLength > 0 && h.contentLength <= max : h.contentLength === expected[v].size;
-    if (!sizeOk) problems.push(`${v}: ${h.contentLength} bytes, expected ${expected[v].size ?? `1 to ${max}`}`);
+    if (!sizeOk) problems.push(`${label(v)}: ${h.contentLength} bytes, expected ${expected[v].size ?? `1 to ${max}`}`);
   });
   if (problems.length) return { id, status: "pending", problems };
 
@@ -288,7 +298,7 @@ export async function completeUpload(actorUserId, storage, id, { db, log }) {
       const { rows: old } = await client.query(
         `delete from public.event_media
           where event_date = $1 and kind = 'event_image' and status = 'ready' and id <> $2
-          returning id, original_key, display_key, thumb_key, cover_key`, [row.eventDate, id]);
+          returning id, original_key, display_key, thumb_key, image_16x9_key`, [row.eventDate, id]);
       replaced = old[0] ?? null;
     }
     const r = await client.query(
@@ -339,32 +349,32 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
          from public.events e join public.event_media m on m.id = e.event_image_media_id
         where e.event_image_media_id = $1 order by e.event_date for share of e`, [id]);
     if (users.length) throw new InUseError(users.map((u) => u.d), users[0].photoDate);
-    // A promo video may be a social post's video: clear it there first (the FK would
-    // refuse the delete), and move a Ready for Posting post back to To do: it needs a
+    // A promo video may be a Social plan's video: clear it there first (the FK would
+    // refuse the delete), and move a Ready for Posting plan back to To do: it needs a
     // video (its CHECK). Posted and Error stay (ticket #39).
     const { rows: detached } = await client.query(
-      `update public.social_posts
+      `update public.social_plans
           set video_media_id = null, status = case when status = 'ready' then 'todo' else status end
         where video_media_id = $1
         returning event_date::text as "eventDate"`, [id]);
     const { rows } = await client.query(
       `delete from public.event_media where id = $1
-       returning event_date::text as "eventDate", kind, status, original_key, display_key, thumb_key, cover_key`, [id]);
+       returning event_date::text as "eventDate", kind, status, original_key, display_key, thumb_key, image_16x9_key`, [id]);
     if (!rows.length) throw new NotFoundError("media not found");
-    return { ...rows[0], detachedFromSocialPost: detached.length > 0 };
+    return { ...rows[0], detachedFromSocialPlan: detached.length > 0 };
   }, (r) => ({
     action: "media.delete", targetTable: "event_media", targetId: id,
     details: {
       eventDate: r.eventDate, kind: r.kind, status: r.status, keys: rowKeys(r),
-      ...(r.detachedFromSocialPost ? { detachedFromSocialPost: true } : {}),
+      ...(r.detachedFromSocialPlan ? { detachedFromSocialPlan: true } : {}),
     },
   }));
 
-  // A social photo's cover is at a known key: also delete it when a cover upload was
-  // started but never completed (deleting a missing object is not an error).
+  // A Photo from Event's 16:9 Event Image is at a known key: also delete it when its upload
+  // was started but never completed (deleting a missing object is not an error).
   const keys = rowKeys(row);
-  const coverKey = row.kind === "social_photo" ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
-  if (coverKey && !keys.includes(coverKey)) keys.push(coverKey);
+  const image16x9Key = row.kind === EVENT_PHOTO_KIND ? mediaKey(row.eventDate, id, "cover", "jpg") : null;
+  if (image16x9Key && !keys.includes(image16x9Key)) keys.push(image16x9Key);
   const leftovers = await deleteObjects(storage, `media delete ${id}`, keys, log);
   return { id, eventDate: row.eventDate, kind: row.kind, leftovers };
 }
@@ -384,24 +394,29 @@ export class InUseError extends Error {
   }
 }
 
-// ─── A 16:9 version made after the upload (tickets #21, #40) ─────────────────
-// A photo picked as an Event Image needs a 16:9 version (the cover copy), and a
-// version made under the old centre-crop rule (cover_outdated, migration 20261202120000)
-// is remade. The browser makes it (its display copy at full height on the beans
-// background, public/js/admin-media-lib.js composeCover) and PUTs it:
-//   startCover(actor, storage, id, { size })  -> { id, eventDate, key, expiresInSeconds, upload }
-//       a ready social_photo without a cover, or a ready social_photo / event_image
-//       whose cover is outdated: one presigned PUT for events/<date>/<id>/cover.jpg
+// ─── A 16:9 Event Image made after the upload (tickets #21, #40) ──────────────
+// A photo picked as an Event Image needs a 16:9 Event Image, and one made under the old
+// centre-crop rule (image_16x9_outdated, migration 20261202120000) is remade. The
+// browser makes it (its display copy at full height on the beans background,
+// public/js/admin-media-lib.js compose16x9) and PUTs it:
+//   startImage16x9(actor, storage, id, { size })  -> { id, eventDate, key, expiresInSeconds, upload }
+//       a ready event_photo without one, or a ready event_photo / event_image whose
+//       16:9 Event Image is outdated: one presigned PUT for events/<date>/<id>/cover.jpg
 //       (the same key when remaking; type and size signed), audited
-//       `media.cover_upload` with what was signed, COVER_LAYOUT, and when remaking the
+//       `media.cover_upload` with what was signed, IMAGE_16X9_LAYOUT, and when remaking the
 //       old file's ETag (so complete can tell the new file from the old)
-//   completeCover(actor, storage, id, { db }) -> { status: "ready", coverKey } | { status: "pending", problems }
-//       HEADs the object, checks it against what was signed, then sets cover_key and
-//       clears cover_outdated (audited `media.cover`, remade: true when remaking)
+//   completeImage16x9(actor, storage, id, { db }) -> { status: "ready", image16x9Key } | { status: "pending", problems }
+//       HEADs the object, checks it against what was signed, then sets image_16x9_key and
+//       clears image_16x9_outdated (audited `media.cover`, remade: true when remaking)
+// The names that keep "cover": the object key (…/cover.jpg, opaque, never renamed), the
+// upload variant `cover` (LIMITS.cover, the upload API body, the signed details), the
+// /api/admin/media/{id}/cover routes, and the audit actions `media.cover_upload` and
+// `media.cover`: complete reads back the start's audit row, so a start made before a
+// rename would otherwise be lost, and old rows keep their action anyway.
 
-/** The rule the browser composes the 16:9 version by; recorded with each cover upload. */
-export const COVER_LAYOUT = "beans-full-height";
-const COVER_KINDS = Object.freeze(["social_photo", EVENT_IMAGE_KIND]);
+/** The rule the browser composes the 16:9 Event Image by; recorded with each upload of one. */
+export const IMAGE_16X9_LAYOUT = "beans-full-height";
+const IMAGE_16X9_KINDS = Object.freeze([EVENT_PHOTO_KIND, EVENT_IMAGE_KIND]);
 
 /**
  * @param {string} actorUserId
@@ -409,25 +424,25 @@ const COVER_KINDS = Object.freeze(["social_photo", EVENT_IMAGE_KIND]);
  * @param {string} id
  * @param {unknown} input  { size }
  */
-export async function startCover(actorUserId, storage, id, input) {
+export async function startImage16x9(actorUserId, storage, id, input) {
   const size = /** @type {any} */ (input)?.size;
   const row = await getRow(pool, id);
   const errors = [];
-  if (!COVER_KINDS.includes(row.kind) || row.status !== "ready") {
-    errors.push("only a ready Photo from Event or Event Image can be given a 16:9 version");
-  } else if (row.coverKey && !row.coverOutdated) errors.push("this image already has a current 16:9 version");
-  else if (!row.coverKey && row.kind !== "social_photo") errors.push("this image has no 16:9 version to remake");
+  if (!IMAGE_16X9_KINDS.includes(row.kind) || row.status !== "ready") {
+    errors.push("only a ready Photo from Event or Event Image can be given a 16:9 Event Image");
+  } else if (row.image16x9Key && !row.image16x9Outdated) errors.push("this image already has a current 16:9 Event Image");
+  else if (!row.image16x9Key && row.kind !== EVENT_PHOTO_KIND) errors.push("this image has no 16:9 Event Image to remake");
   if (!isSize(size, LIMITS.cover)) errors.push(`size must be 1 to ${LIMITS.cover} bytes`);
   if (errors.length) throw new ValidationError(errors);
-  const key = row.coverKey ?? mediaKey(row.eventDate, id, "cover", "jpg");
+  const key = row.image16x9Key ?? mediaKey(row.eventDate, id, "cover", "jpg");
   // Remaking overwrites the old file: note its ETag so complete doesn't take it for the new one.
-  const replaces = row.coverKey ? (await storage.headObject({ key }))?.etag ?? null : null;
+  const replaces = row.image16x9Key ? (await storage.headObject({ key }))?.etag ?? null : null;
   const p = storage.presignPut({ key, contentType: COPY_TYPE, contentLength: size, expiresIn: PUT_EXPIRES });
   await withAudit(actorUserId, async () => {}, {
     action: "media.cover_upload", targetTable: "event_media", targetId: id,
     details: {
-      eventDate: row.eventDate, key, signed: { contentType: COPY_TYPE, size }, layout: COVER_LAYOUT,
-      ...(row.coverKey ? { replacesEtag: replaces } : {}),
+      eventDate: row.eventDate, key, signed: { contentType: COPY_TYPE, size }, layout: IMAGE_16X9_LAYOUT,
+      ...(row.image16x9Key ? { replacesEtag: replaces } : {}),
     },
   });
   return { id, eventDate: row.eventDate, key, expiresInSeconds: PUT_EXPIRES, upload: { method: p.method, url: p.url, headers: p.headers } };
@@ -438,35 +453,35 @@ export async function startCover(actorUserId, storage, id, input) {
  * @param {import("./storage.mjs").Storage} storage
  * @param {string} id
  * @param {{ db: { query: Function } }} deps
- * @returns {Promise<{ id: string, status: "ready", coverKey: string } | { id: string, status: "pending", problems: string[] }>}
+ * @returns {Promise<{ id: string, status: "ready", image16x9Key: string } | { id: string, status: "pending", problems: string[] }>}
  */
-export async function completeCover(actorUserId, storage, id, { db }) {
+export async function completeImage16x9(actorUserId, storage, id, { db }) {
   const row = await getRow(db, id);
-  if (row.coverKey && !row.coverOutdated) return { id, status: "ready", coverKey: row.coverKey };
-  const remake = Boolean(row.coverKey);
+  if (row.image16x9Key && !row.image16x9Outdated) return { id, status: "ready", image16x9Key: row.image16x9Key };
+  const remake = Boolean(row.image16x9Key);
   const { rows: audit } = await db.query(
     `select details from public.audit_log
       where action = 'media.cover_upload' and target_table = 'event_media' and target_id = $1
       order by id desc limit 1`, [id]);
   const started = audit[0]?.details;
   // Only an upload started under the current rule counts (not one of the old crop).
-  if (!started || started.layout !== COVER_LAYOUT) return { id, status: "pending", problems: ["cover: not started"] };
+  if (!started || started.layout !== IMAGE_16X9_LAYOUT) return { id, status: "pending", problems: [`${IMAGE_16X9_LABEL}: not started`] };
   const h = await storage.headObject({ key: started.key });
   const problems = [];
-  if (!h || (remake && started.replacesEtag && h.etag === started.replacesEtag)) problems.push("cover: not uploaded");
+  if (!h || (remake && started.replacesEtag && h.etag === started.replacesEtag)) problems.push(`${IMAGE_16X9_LABEL}: not uploaded`);
   else {
     const type = (h.contentType ?? "").split(";")[0].trim().toLowerCase();
-    if (type !== COPY_TYPE) problems.push(`cover: content type ${type || "missing"}, expected ${COPY_TYPE}`);
-    if (h.contentLength !== started.signed.size) problems.push(`cover: ${h.contentLength} bytes, expected ${started.signed.size}`);
+    if (type !== COPY_TYPE) problems.push(`${IMAGE_16X9_LABEL}: content type ${type || "missing"}, expected ${COPY_TYPE}`);
+    if (h.contentLength !== started.signed.size) problems.push(`${IMAGE_16X9_LABEL}: ${h.contentLength} bytes, expected ${started.signed.size}`);
   }
   if (problems.length) return { id, status: "pending", problems };
   const raced = Symbol("raced");
   const updated = await withAudit(actorUserId, async (client) => {
     const r = remake
       ? await client.query(
-        "update public.event_media set cover_outdated = false where id = $1 and cover_key = $2 and cover_outdated", [id, started.key])
+        "update public.event_media set image_16x9_outdated = false where id = $1 and image_16x9_key = $2 and image_16x9_outdated", [id, started.key])
       : await client.query(
-        "update public.event_media set cover_key = $2 where id = $1 and cover_key is null and kind = 'social_photo'", [id, started.key]);
+        "update public.event_media set image_16x9_key = $2 where id = $1 and image_16x9_key is null and kind = $3", [id, started.key, EVENT_PHOTO_KIND]);
     // Nothing changed (a race with another complete, or a delete): roll back, no audit row.
     if (r.rowCount !== 1) throw raced;
     return true;
@@ -477,31 +492,31 @@ export async function completeCover(actorUserId, storage, id, { db }) {
     .catch((err) => { if (err === raced) return false; throw err; });
   if (!updated) {
     const again = await getRow(db, id);
-    return again.coverKey && !again.coverOutdated
-      ? { id, status: "ready", coverKey: again.coverKey } : { id, status: "pending", problems: ["state changed, try again"] };
+    return again.image16x9Key && !again.image16x9Outdated
+      ? { id, status: "ready", image16x9Key: again.image16x9Key } : { id, status: "pending", problems: ["state changed, try again"] };
   }
-  return { id, status: "ready", coverKey: started.key };
+  return { id, status: "ready", image16x9Key: started.key };
 }
 
 /**
- * Every ready Event Image and Photo from Event whose 16:9 version is still outdated
+ * Every ready Event Image and Photo from Event whose 16:9 Event Image is still outdated
  * (made under the old centre-crop rule), newest event first: what
  * /admin/media/covers/ remakes.
  * @param {{ query: Function }} db
- * @returns {Promise<Array<{ id: string, eventDate: string, kind: string, displayKey: string, thumbKey: string, coverKey: string }>>}
+ * @returns {Promise<Array<{ id: string, eventDate: string, kind: string, displayKey: string, thumbKey: string, image16x9Key: string }>>}
  */
-export async function listOutdatedCovers(db) {
+export async function listOutdated16x9Images(db) {
   const { rows } = await db.query(
     `select id, event_date::text as "eventDate", kind, display_key as "displayKey", thumb_key as "thumbKey",
-            cover_key as "coverKey"
+            image_16x9_key as "image16x9Key"
        from public.event_media
-      where cover_outdated and status = 'ready' and kind = any($1::text[])
-      order by event_date desc, created_at, id`, [COVER_KINDS]);
+      where image_16x9_outdated and status = 'ready' and kind = any($1::text[])
+      order by event_date desc, created_at, id`, [IMAGE_16X9_KINDS]);
   return rows;
 }
 
 /** A deleted row's object keys (snake_case, from `returning`). */
-export const rowKeys = (r) => [r.original_key, r.display_key, r.thumb_key, r.cover_key].filter(Boolean);
+export const rowKeys = (r) => [r.original_key, r.display_key, r.thumb_key, r.image_16x9_key].filter(Boolean);
 
 /**
  * Delete objects whose row is already gone. Never throws: the keys that couldn't be
@@ -529,14 +544,14 @@ export async function listEventMedia(db, date) {
     `select ${MEDIA_COLUMNS},
             created_at < now() - make_interval(hours => $2) as stale
        from public.event_media
-      where event_date = $1 and kind in ('signin_board', 'social_photo')
-      order by created_at, id`, [date, STALE_PENDING_HOURS]);
+      where event_date = $1 and kind = any($3::text[])
+      order by created_at, id`, [date, STALE_PENDING_HOURS, PHOTO_KINDS]);
   const all = rows.map((r) => ({ ...r, sizeBytes: Number(r.sizeBytes) }));
   return { ready: all.filter((r) => r.status === "ready"), pending: all.filter((r) => r.status === "pending") };
 }
 
 /**
- * The promo videos for one date (the social post section): ready ones, newest first,
+ * The promo videos for one date (the Social plan section): ready ones, newest first,
  * and pending ones (in progress or abandoned; `stale` past STALE_PENDING_HOURS).
  * @param {{ query: Function }} db
  * @param {string} date

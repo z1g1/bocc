@@ -9,7 +9,7 @@ describe("pickTab", () => {
   const noon = new Date("2026-11-24T17:00:00Z"); // Tuesday 2026-11-24, noon Eastern
 
   test("the three tabs, in page order, with their labels", () => {
-    assert.deepEqual(Object.entries(TABS), [["info", "Event Info"], ["social", "Social Posts"], ["post", "Post Event"]]);
+    assert.deepEqual(Object.entries(TABS), [["info", "Event Info"], ["social", "Social plan"], ["post", "Post Event"]]);
   });
 
   test("an explicit, known tab wins whatever the date", () => {

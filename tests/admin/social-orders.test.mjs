@@ -1,11 +1,11 @@
-// Phase 5 social work order, part B (ADR 0011 decisions 3, 4, 6): the social role's
+// Phase 5 Social plan work order, part B (ADR 0011 decisions 3, 4, 6): the social role's
 // pages and API, against the throwaway database (npm run test:db):
-//   1. pure rules: status transitions, post URL domains, the social role's path
+//   1. pure rules: Post status transitions, post URL domains, the social role's path
 //      allowlist (roles.mjs mayReach, guard.mjs), the nav links
-//   2. src/lib/admin/social.mjs as admin_app: setChannelResult (audited, transitions,
+//   2. src/lib/admin/social-plan.mjs as admin_app: setPostResult (audited, transitions,
 //      URL checks, verified_at / comment_posted_at, no-ops), findNext's states (no
-//      post, not ready, problems, ready; never skipping a stuck week; cancelled weeks; the holiday break and its override) and findVerify's, with an injected
-//      clock in far-future years (2091-2097) so other tests' posts don't interfere
+//      Social plan, not ready, problems, ready; never skipping a stuck week; cancelled weeks; the holiday break and its override) and findVerify's, with an injected
+//      clock in far-future years (2091-2097) so other tests' plans don't interfere
 //   3. over HTTP (astro dev, the real clock): /admin/social/next/ and /verify/ and
 //      /api/admin/social/*: roles (social reaches only these), Origin, PRG, refused
 //      saves, the agent-facing markup, and no personal data on any of them
@@ -29,7 +29,7 @@ const { pool } = await import("../../src/lib/auth/auth.mjs");
 const { handleAuthRequest } = await import("../../src/lib/auth/handler.mjs");
 const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
-const so = await import("../../src/lib/admin/social.mjs");
+const so = await import("../../src/lib/admin/social-plan.mjs");
 const sp = await import("../../src/lib/admin/social-pages.mjs");
 const el = await import("../../src/lib/admin/event-links.mjs");
 const { todayEastern } = await import("../../src/lib/admin/events.mjs");
@@ -49,11 +49,11 @@ const GOOD_URLS = {
 let owner, actor;
 
 const channelRow = (d, c) => owner.query(
-  `select status, post_url, notes, verified_at, comment_posted_at from social_post_channels where event_date = $1 and channel = $2`,
+  `select status, post_url, notes, verified_at, comment_posted_at from social_media_posts where event_date = $1 and channel = $2`,
   [d, c]).then((r) => r.rows[0] ?? null);
 const resultAudits = (d) => owner.query(
   `select actor_user_id, action, target_table, details from audit_log
-    where target_id = $1 and action = 'social_post_channel.result' order by id`, [d]).then((r) => r.rows);
+    where target_id = $1 and action = 'social_media_post.result' order by id`, [d]).then((r) => r.rows);
 
 async function insertVideo(d) {
   const id = randomUUID();
@@ -66,10 +66,10 @@ async function insertVideo(d) {
 }
 
 /** A post that is ready (video, caption, Luma) through the module, as an admin would make it. */
-async function readyPost(d, { caption = "Coffee Tuesday in Buffalo", coverNote = "Frame at 0:03" } = {}) {
+async function readyPlan(d, { caption = "Coffee Tuesday in Buffalo", thumbnailTimecode = "Frame at 0:03" } = {}) {
   await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
   await so.setVideo(actor.id, d, await insertVideo(d));
-  await so.savePost(actor.id, d, { baseCaption: caption, coverNote, status: "ready" });
+  await so.savePlan(actor.id, d, { baseCaption: caption, thumbnailTimecode, status: "ready" });
 }
 
 /** Mid-day Eastern, `days` after `d` (YYYY-MM-DD). */
@@ -99,7 +99,7 @@ after(async () => { await owner?.end(); await pool.end(); });
 // ── 1. Pure rules ───────────────────────────────────────────────────────────
 describe("rules", () => {
   test("transitions: everything but live -> pending; the same status is always fine", () => {
-    for (const s of so.STATUSES) assert.equal(so.canTransition(s, s), true);
+    for (const s of so.POST_STATUSES) assert.equal(so.canTransition(s, s), true);
     assert.equal(so.canTransition("pending", "scheduled"), true);
     assert.equal(so.canTransition("scheduled", "live"), true);
     assert.equal(so.canTransition("scheduled", "failed"), true);
@@ -204,24 +204,24 @@ describe("rules", () => {
 });
 
 // ── 2. The module ───────────────────────────────────────────────────────────
-describe("setChannelResult (admin_app)", () => {
+describe("setPostResult (admin_app)", () => {
   const D = "2091-01-16"; // a Tuesday; publish Monday 2091-01-15 7:00 ET
   const now = at("2091-01-10");
 
-  test("no post: 404, nothing written", async () => {
-    await assert.rejects(so.setChannelResult(actor.id, "2091-01-09", "facebook", { status: "scheduled" }, { now }),
-      (e) => e.status === 404 && /no social post/.test(e.errors.date));
-    await assert.rejects(so.setChannelResult(actor.id, "not-a-date", "facebook", {}), (e) => e.status === 400 && Boolean(e.errors.date));
+  test("no Social plan: 404, nothing written", async () => {
+    await assert.rejects(so.setPostResult(actor.id, "2091-01-09", "facebook", { status: "scheduled" }, { now }),
+      (e) => e.status === 404 && /no Social plan/.test(e.errors.date));
+    await assert.rejects(so.setPostResult(actor.id, "not-a-date", "facebook", {}), (e) => e.status === 400 && Boolean(e.errors.date));
   });
 
-  test("scheduling needs an actionable post (409), then pending -> scheduled is audited", async () => {
-    await so.savePost(actor.id, D, { baseCaption: "Coffee" });
-    await assert.rejects(so.setChannelResult(actor.id, D, "facebook", { status: "scheduled" }, { now }),
-      (e) => e.status === 409 && /Can't schedule Facebook yet: The post isn't set to Ready for Posting \(it is To do\)/.test(e.errors.status));
+  test("scheduling needs an actionable Social plan (409), then pending -> scheduled is audited", async () => {
+    await so.savePlan(actor.id, D, { baseCaption: "Coffee" });
+    await assert.rejects(so.setPostResult(actor.id, D, "facebook", { status: "scheduled" }, { now }),
+      (e) => e.status === 409 && /Can't schedule Facebook yet: The Social plan isn't set to Ready for Posting \(it is To do\)/.test(e.errors.status));
     assert.equal((await channelRow(D, "facebook")).status, "pending");
 
-    await readyPost(D);
-    const r = await so.setChannelResult(actor.id, D, "facebook", { status: "scheduled", postUrl: ` ${GOOD_URLS.facebook} `, notes: "Business Suite" }, { now });
+    await readyPlan(D);
+    const r = await so.setPostResult(actor.id, D, "facebook", { status: "scheduled", postUrl: ` ${GOOD_URLS.facebook} `, notes: "Business Suite" }, { now });
     assert.deepEqual(r, { changed: true, eventCreated: false });
     const row = await channelRow(D, "facebook");
     assert.equal(row.status, "scheduled");
@@ -231,44 +231,44 @@ describe("setChannelResult (admin_app)", () => {
     const audits = await resultAudits(D);
     assert.equal(audits.length, 1);
     assert.equal(audits[0].actor_user_id, actor.id);
-    assert.equal(audits[0].target_table, "social_post_channels");
+    assert.equal(audits[0].target_table, "social_media_posts");
     assert.deepEqual(audits[0].details, {
       channel: "facebook",
       before: { status: "pending", post_url: null, notes: null },
       after: { status: "scheduled", post_url: GOOD_URLS.facebook, notes: "Business Suite" },
     });
 
-    const again = await so.setChannelResult(actor.id, D, "facebook", { status: "scheduled", postUrl: GOOD_URLS.facebook }, { now });
+    const again = await so.setPostResult(actor.id, D, "facebook", { status: "scheduled", postUrl: GOOD_URLS.facebook }, { now });
     assert.equal(again.changed, false, "the same values: no-op");
     assert.equal((await resultAudits(D)).length, 1, "no audit row for a no-op");
   });
 
   test("post URL checks: wrong domain refused, nothing written; blank clears; absent keeps", async () => {
-    await assert.rejects(so.setChannelResult(actor.id, D, "instagram", { status: "scheduled", postUrl: "https://www.facebook.com/reel/1" }, { now }),
+    await assert.rejects(so.setPostResult(actor.id, D, "instagram", { status: "scheduled", postUrl: "https://www.facebook.com/reel/1" }, { now }),
       (e) => e.status === 400 && /instagram\.com/.test(e.errors.postUrl));
     assert.equal((await channelRow(D, "instagram")).status, "pending", "the refused save changed nothing");
-    await so.setChannelResult(actor.id, D, "facebook", { postUrl: "" }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { postUrl: "" }, { now });
     assert.equal((await channelRow(D, "facebook")).post_url, null);
-    await so.setChannelResult(actor.id, D, "facebook", { postUrl: GOOD_URLS.facebook }, { now });
-    await so.setChannelResult(actor.id, D, "facebook", { notes: "kept the URL" }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { postUrl: GOOD_URLS.facebook }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { notes: "kept the URL" }, { now });
     assert.equal((await channelRow(D, "facebook")).post_url, GOOD_URLS.facebook);
   });
 
   test("an upper-case post URL is saved (normalised; the column CHECK is case-sensitive); null clears", async () => {
-    await so.setChannelResult(actor.id, D, "facebook", { postUrl: "HTTPS://WWW.FACEBOOK.COM/reel/123456" }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { postUrl: "HTTPS://WWW.FACEBOOK.COM/reel/123456" }, { now });
     assert.equal((await channelRow(D, "facebook")).post_url, "https://www.facebook.com/reel/123456");
-    await so.setChannelResult(actor.id, D, "facebook", { notes: null }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { notes: null }, { now });
     assert.equal((await channelRow(D, "facebook")).notes, null);
-    await so.setChannelResult(actor.id, D, "facebook", { postUrl: GOOD_URLS.facebook, notes: "kept the URL" }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { postUrl: GOOD_URLS.facebook, notes: "kept the URL" }, { now });
   });
 
-  test("a channel result waits for an admin's lock on the post row (and goes on after it)", async () => {
+  test("a social media post result waits for an admin's lock on the plan row (and goes on after it)", async () => {
     const other = await connect(OWNER_URL);
     try {
       await other.query("begin");
-      await other.query(`select 1 from social_posts where event_date = $1 for update`, [D]);
+      await other.query(`select 1 from social_plans where event_date = $1 for update`, [D]);
       let done = false;
-      const p = so.setChannelResult(actor.id, D, "facebook", { notes: "after the lock" }, { now }).then((r) => { done = true; return r; });
+      const p = so.setPostResult(actor.id, D, "facebook", { notes: "after the lock" }, { now }).then((r) => { done = true; return r; });
       await new Promise((r) => setTimeout(r, 400));
       assert.equal(done, false, "blocked while the post row is locked FOR UPDATE");
       await other.query("rollback");
@@ -278,77 +278,77 @@ describe("setChannelResult (admin_app)", () => {
       await other.query("rollback").catch(() => {});
       await other.end();
     }
-    await so.setChannelResult(actor.id, D, "facebook", { notes: "kept the URL" }, { now });
+    await so.setPostResult(actor.id, D, "facebook", { notes: "kept the URL" }, { now });
   });
 
   test("live needs a URL and stamps verified_at; first comment only when live, only IG/TikTok", async () => {
     const later = at("2091-01-15", 0, 13);
-    await so.setChannelResult(actor.id, D, "instagram", { status: "scheduled" }, { now });
-    await assert.rejects(so.setChannelResult(actor.id, D, "instagram", { status: "live" }, { now: later }),
+    await so.setPostResult(actor.id, D, "instagram", { status: "scheduled" }, { now });
+    await assert.rejects(so.setPostResult(actor.id, D, "instagram", { status: "live" }, { now: later }),
       (e) => e.status === 400 && /needs its Instagram post URL/.test(e.errors.postUrl));
-    await assert.rejects(so.setChannelResult(actor.id, D, "instagram", { commentPosted: true }, { now: later }),
+    await assert.rejects(so.setPostResult(actor.id, D, "instagram", { commentPosted: true }, { now: later }),
       (e) => e.status === 400 && /live before its first comment/.test(e.errors.commentPosted));
-    await so.setChannelResult(actor.id, D, "instagram", { status: "live", postUrl: GOOD_URLS.instagram }, { now: later });
+    await so.setPostResult(actor.id, D, "instagram", { status: "live", postUrl: GOOD_URLS.instagram }, { now: later });
     let row = await channelRow(D, "instagram");
     assert.equal(row.status, "live");
     assert.equal(row.verified_at.getTime(), later.getTime());
     assert.equal(row.comment_posted_at, null);
 
     const t2 = new Date(later.getTime() + 60_000);
-    await so.setChannelResult(actor.id, D, "instagram", { commentPosted: true }, { now: t2 });
+    await so.setPostResult(actor.id, D, "instagram", { commentPosted: true }, { now: t2 });
     row = await channelRow(D, "instagram");
     assert.equal(row.comment_posted_at.getTime(), t2.getTime());
     assert.equal(row.verified_at.getTime(), later.getTime(), "saving live again keeps verified_at");
-    assert.equal((await so.setChannelResult(actor.id, D, "instagram", { commentPosted: true }, { now: new Date(t2.getTime() + 1) })).changed, false,
+    assert.equal((await so.setPostResult(actor.id, D, "instagram", { commentPosted: true }, { now: new Date(t2.getTime() + 1) })).changed, false,
       "already posted: no-op, the first time is kept");
     const t3 = new Date(t2.getTime() + 60_000);
-    await so.setChannelResult(actor.id, D, "instagram", { status: "live", verified: true }, { now: t3 });
+    await so.setPostResult(actor.id, D, "instagram", { status: "live", verified: true }, { now: t3 });
     assert.equal((await channelRow(D, "instagram")).verified_at.getTime(), t3.getTime(), "verified: true stamps it again");
 
-    await assert.rejects(so.setChannelResult(actor.id, D, "facebook", { commentPosted: true }, { now }),
+    await assert.rejects(so.setPostResult(actor.id, D, "facebook", { commentPosted: true }, { now }),
       (e) => e.status === 400 && /Facebook has no first comment/.test(e.errors.commentPosted));
-    await assert.rejects(so.setChannelResult(actor.id, D, "facebook", { verified: true }, { now }),
+    await assert.rejects(so.setPostResult(actor.id, D, "facebook", { verified: true }, { now }),
       (e) => e.status === 400 && /Only a live post/.test(e.errors.verified));
   });
 
   test("fixing mistakes: live -> pending refused (409); live -> failed needs a note and clears verified_at; failed -> pending", async () => {
-    await assert.rejects(so.setChannelResult(actor.id, D, "instagram", { status: "pending" }, { now }),
+    await assert.rejects(so.setPostResult(actor.id, D, "instagram", { status: "pending" }, { now }),
       (e) => e.status === 409 && /can become scheduled, failed/.test(e.errors.status));
-    await assert.rejects(so.setChannelResult(actor.id, D, "instagram", { status: "failed", notes: "" }, { now }),
+    await assert.rejects(so.setPostResult(actor.id, D, "instagram", { status: "failed", notes: "" }, { now }),
       (e) => e.status === 400 && /why Instagram failed/.test(e.errors.notes));
-    await so.setChannelResult(actor.id, D, "instagram", { status: "failed", notes: "Reel was removed" }, { now });
+    await so.setPostResult(actor.id, D, "instagram", { status: "failed", notes: "Reel was removed" }, { now });
     let row = await channelRow(D, "instagram");
     assert.equal(row.status, "failed");
     assert.equal(row.verified_at, null);
     assert.ok(row.comment_posted_at, "the comment time stays (the comment may still be there)");
-    await so.setChannelResult(actor.id, D, "instagram", { status: "pending", commentPosted: false }, { now });
+    await so.setPostResult(actor.id, D, "instagram", { status: "pending", commentPosted: false }, { now });
     row = await channelRow(D, "instagram");
     assert.equal(row.status, "pending");
     assert.equal(row.comment_posted_at, null);
-    await so.setChannelResult(actor.id, D, "threads", { status: "live", postUrl: GOOD_URLS.threads }, { now });
+    await so.setPostResult(actor.id, D, "threads", { status: "live", postUrl: GOOD_URLS.threads }, { now });
     assert.equal((await channelRow(D, "threads")).status, "live", "pending -> live (Wednesday's save was missed)");
   });
 });
 
 describe("findNext and findVerify (admin_app, injected clock)", () => {
-  test("next: no post, not ready, problems, ready; the earliest week with work, never a later one", async () => {
+  test("next: no Social plan, not ready, problems, ready; the earliest week with work, never a later one", async () => {
     const now = at("2092-01-02"); // a Wednesday
     const D = "2092-01-08", D2 = "2092-01-15", D3 = "2092-01-22";
     let r = await so.findNext(pool, { now });
     assert.equal(r.state, "nothing");
     assert.equal(r.reason, "no_post");
     assert.equal(r.date, D, "next Tuesday counts even without an events row");
-    assert.match(r.message, /No social post is set up for 2092-01-08 yet/);
+    assert.match(r.message, /No Social plan is set up for 2092-01-08 yet/);
 
-    // A later week that is ready doesn't jump the queue while D has no post.
-    await readyPost(D2);
+    // A later week that is ready doesn't jump the queue while D has no Social plan.
+    await readyPlan(D2);
     r = await so.findNext(pool, { now });
     assert.equal(r.state, "nothing");
     assert.equal(r.reason, "no_post");
     assert.equal(r.date, D);
     assert.match(r.message, /Later weeks wait/);
 
-    await so.savePost(actor.id, D, { baseCaption: "Coffee" });
+    await so.savePlan(actor.id, D, { baseCaption: "Coffee" });
     r = await so.findNext(pool, { now });
     assert.equal(r.reason, "not_ready");
     assert.equal(r.date, D);
@@ -358,7 +358,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
       { date: D2, status: "ready", statusLabel: "Ready for Posting", pendingChannels: 5 },
     ]);
 
-    await readyPost(D);
+    await readyPlan(D);
     r = await so.findNext(pool, { now });
     assert.equal(r.state, "ready");
     assert.equal(r.order.date, D);
@@ -372,9 +372,9 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     await el.setLink(actor.id, D, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
 
     // Part done: still D.
-    for (const c of CHANNELS.slice(0, 4)) await so.setChannelResult(actor.id, D, c, { status: "scheduled" }, { now });
+    for (const c of CHANNELS.slice(0, 4)) await so.setPostResult(actor.id, D, c, { status: "scheduled" }, { now });
     assert.equal((await so.findNext(pool, { now })).order?.date, D, "a channel still pending");
-    await so.setChannelResult(actor.id, D, "linkedin_page", { status: "failed", notes: "LinkedIn was down" }, { now });
+    await so.setPostResult(actor.id, D, "linkedin_page", { status: "failed", notes: "LinkedIn was down" }, { now });
     r = await so.findNext(pool, { now });
     assert.equal(r.state, "ready");
     assert.equal(r.order.date, D2, "every channel of D is done, so the next week");
@@ -412,21 +412,21 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     assert.equal(r.date, D, "the normal week before the break is unchanged");
 
     // D done: every listed week is done, so the fallback's first Tuesday after it, past the break.
-    await readyPost(D);
-    for (const c of CHANNELS) await so.setChannelResult(actor.id, D, c, { status: "scheduled" }, { now });
+    await readyPlan(D);
+    for (const c of CHANNELS) await so.setPostResult(actor.id, D, c, { status: "scheduled" }, { now });
     r = await so.findNext(pool, { now });
     assert.equal(r.reason, "no_post");
     assert.equal(r.date, N1, "12/25 and 1/1 skipped");
 
     // A ready later week never jumps the first normal week after the break.
-    await readyPost(N2);
+    await readyPlan(N2);
     r = await so.findNext(pool, { now });
     assert.equal(r.reason, "no_post");
     assert.equal(r.date, N1);
     assert.ok(!r.upcoming.some((u) => u.date === H1 || u.date === H2));
 
     // The override: a deliberately saved (scheduled) row on a holiday date is a real event.
-    await so.savePost(actor.id, H1, { baseCaption: "Holiday coffee" });
+    await so.savePlan(actor.id, H1, { baseCaption: "Holiday coffee" });
     assert.equal((await owner.query(`select status from events where event_date = $1`, [H1])).rows[0].status, "scheduled");
     r = await so.findNext(pool, { now });
     assert.equal(r.reason, "not_ready");
@@ -441,7 +441,7 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
 
   test("verify skips a cancelled event", async () => {
     const D = "2095-03-08"; // Tuesday
-    await readyPost(D);
+    await readyPlan(D);
     const monday = at("2095-03-07", 0, 13);
     assert.equal((await so.findVerify(pool, { now: monday })).order?.date, D);
     await owner.query(`update events set status = 'cancelled', cancel_reason = 'weather' where event_date = $1`, [D]);
@@ -453,16 +453,16 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
 
   test("verify: from the publish time through the event day; to-do and all done", async () => {
     const D = "2093-01-06"; // Tuesday; publish Monday 2093-01-05 12:00 UTC
-    await readyPost(D);
+    await readyPlan(D);
     const before = at("2093-01-04");
     let r = await so.findVerify(pool, { now: before });
     assert.equal(r.state, "nothing");
     assert.equal(r.nextPublish.date, D);
 
     const monday = at("2093-01-05", 0, 13);
-    await so.setChannelResult(actor.id, D, "facebook", { status: "scheduled", postUrl: GOOD_URLS.facebook }, { now: before });
-    await so.setChannelResult(actor.id, D, "tiktok", { status: "scheduled" }, { now: before });
-    await so.setChannelResult(actor.id, D, "instagram", { status: "live", postUrl: GOOD_URLS.instagram }, { now: monday });
+    await so.setPostResult(actor.id, D, "facebook", { status: "scheduled", postUrl: GOOD_URLS.facebook }, { now: before });
+    await so.setPostResult(actor.id, D, "tiktok", { status: "scheduled" }, { now: before });
+    await so.setPostResult(actor.id, D, "instagram", { status: "live", postUrl: GOOD_URLS.instagram }, { now: monday });
     r = await so.findVerify(pool, { now: monday });
     assert.equal(r.state, "verify");
     assert.equal(r.order.date, D);
@@ -474,19 +474,19 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     assert.equal((await so.findVerify(pool, { now: at(D, 1) })).state, "nothing", "gone the day after");
 
     for (const c of ["facebook", "tiktok", "threads", "linkedin_page"]) {
-      await so.setChannelResult(actor.id, D, c, { status: "live", postUrl: GOOD_URLS[c] }, { now: monday });
+      await so.setPostResult(actor.id, D, c, { status: "live", postUrl: GOOD_URLS[c] }, { now: monday });
     }
-    await so.setChannelResult(actor.id, D, "instagram", { commentPosted: true }, { now: monday });
+    await so.setPostResult(actor.id, D, "instagram", { commentPosted: true }, { now: monday });
     r = await so.findVerify(pool, { now: monday });
     assert.deepEqual(r.todo.map((t) => `${t.channel}:${t.task}`), ["tiktok:comment"]);
-    await so.setChannelResult(actor.id, D, "tiktok", { commentPosted: true }, { now: monday });
+    await so.setPostResult(actor.id, D, "tiktok", { commentPosted: true }, { now: monday });
     r = await so.findVerify(pool, { now: monday });
     assert.equal(r.allDone, true);
   });
 
   test("loadPick adds a download link with a filename, or says storage is off; toJson drops the storage key", async () => {
     const D = "2094-01-05";
-    await readyPost(D);
+    await readyPlan(D);
     const now = at("2094-01-01");
     const calls = [];
     const fake = { presignGet: (o) => { calls.push(o); return { url: "https://bucket.example/x?sig", expiresAt: new Date(0) }; } };
@@ -502,40 +502,41 @@ describe("findNext and findVerify (admin_app, injected clock)", () => {
     assert.equal(JSON.parse(j).order.channels.length, 5);
   });
 
-  test("the work order's cover: the Event Image (the logo, no signing) or the override's presigned link", async () => {
+  test("the work order's Thumbnail: the Event Image (the logo, no signing) or the override's presigned link", async () => {
     const D = "2095-01-11";
-    await readyPost(D);
+    await readyPlan(D);
     const now = at("2095-01-07");
     const origin = "https://dev--bocc-backend.netlify.app";
     const calls = [];
     const fake = { presignGet: (o) => { calls.push(o); return { url: `https://bucket.example/${calls.length}?sig`, expiresAt: new Date(0) }; } };
 
     const logo = await sp.loadPick("next", { now, storage: fake, origin });
-    assert.deepEqual(logo.cover, {
-      source: "event_image", eventImageSource: "default", fileName: `bocc-${D}-cover.png`,
+    assert.deepEqual(logo.thumbnail, {
+      source: "event_image", eventImageSource: "default", fileName: `bocc-${D}-thumbnail.png`,
       downloadUrl: `${origin}/assets/images/brand/bocc-logo-square.png`, expiresAt: null, contentType: "image/png",
     });
-    assert.equal(calls.filter((c) => c.downloadName?.includes("cover")).length, 0, "the logo isn't signed");
-    assert.equal((await sp.loadPick("next", { now, storage: null, origin })).cover.downloadUrl,
+    assert.equal(calls.filter((c) => c.downloadName?.includes("thumbnail")).length, 0, "the logo isn't signed");
+    assert.equal((await sp.loadPick("next", { now, storage: null, origin })).thumbnail.downloadUrl,
       `${origin}/assets/images/brand/bocc-logo-square.png`, "the logo works with storage off");
 
     const photo = randomUUID();
     await owner.query(
       `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, content_type, size_bytes, status, publicly_usable)
-       values ($1, $2, 'social_photo', $3, $4, $5, 'image/jpeg', 900000, 'ready', true)`,
+       values ($1, $2, 'event_photo', $3, $4, $5, 'image/jpeg', 900000, 'ready', true)`,
       [photo, D, `events/${D}/${photo}/original.jpg`, `events/${D}/${photo}/display.jpg`, `events/${D}/${photo}/thumb.jpg`]);
-    await so.setCover(actor.id, D, photo);
+    await so.setThumbnail(actor.id, D, photo);
     calls.length = 0;
     const over = await sp.loadPick("next", { now, storage: fake, origin });
-    const signed = calls.find((c) => c.downloadName === `bocc-${D}-cover.jpg`);
+    const signed = calls.find((c) => c.downloadName === `bocc-${D}-thumbnail.jpg`);
     assert.deepEqual([signed.key, signed.expiresIn], [`events/${D}/${photo}/display.jpg`, sp.VIDEO_LINK_SECONDS]);
-    assert.deepEqual([over.cover.source, over.cover.fileName, over.cover.contentType], ["override", `bocc-${D}-cover.jpg`, "image/jpeg"]);
-    assert.match(over.cover.downloadUrl, /^https:\/\/bucket\.example\/\d\?sig$/);
-    assert.equal(over.order.actionable, true, "the cover never blocks the order");
-    assert.match((await sp.loadPick("next", { now, storage: null })).cover.unavailable, /can't be downloaded/);
+    assert.deepEqual([over.thumbnail.source, over.thumbnail.fileName, over.thumbnail.contentType], ["override", `bocc-${D}-thumbnail.jpg`, "image/jpeg"]);
+    assert.match(over.thumbnail.downloadUrl, /^https:\/\/bucket\.example\/\d\?sig$/);
+    assert.equal(over.order.actionable, true, "the Thumbnail never blocks the order");
+    assert.match((await sp.loadPick("next", { now, storage: null })).thumbnail.unavailable, /can't be downloaded/);
 
     const j = sp.toJson(over);
-    assert.deepEqual(j.cover, over.cover);
+    assert.deepEqual(j.thumbnail, over.thumbnail);
+    assert.equal(j.cover, undefined, "the JSON key is thumbnail now");
     assert.ok(!JSON.stringify(j).includes("display.jpg"), "no storage key in the JSON");
   });
 });
@@ -635,7 +636,7 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
       assert.equal(r.status, 403, p);
       assert.deepEqual(await r.json(), { error: "forbidden" }, p);
     }
-    const ev = await req(`/admin/events/${NEXT}/`, { cookie: social.cookie, method: "POST", form: { action: "social_post", baseCaption: "x" } });
+    const ev = await req(`/admin/events/${NEXT}/`, { cookie: social.cookie, method: "POST", form: { action: "social_plan", baseCaption: "x" } });
     assert.equal(ev.status, 403);
 
     const home = await (await req("/admin/", { cookie: social.cookie })).text();
@@ -646,7 +647,7 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
   });
 
   test("next: the agent-facing work order, PRG saves, refused saves, Origin", async () => {
-    await readyPost(NEXT, { caption: "Coffee <b>Tuesday</b> & friends", coverNote: "Use the frame at 0:03" });
+    await readyPlan(NEXT, { caption: "Coffee <b>Tuesday</b> & friends", thumbnailTimecode: "Use the frame at 0:03" });
     const order = await so.getWorkOrder(pool, NEXT);
     const res = await req("/admin/social/next/", { cookie: social.cookie });
     assert.equal(res.status, 200);
@@ -654,10 +655,12 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     noPii(html, "next");
     assert.ok(html.includes(`data-date="${NEXT}"`), "this post is the next one");
     assert.ok(html.includes(order.publishAtDisplay.et) && html.includes(order.publishAtDisplay.utc), "publish time in ET and UTC");
-    assert.ok(inner(html, "pre", "cover-note") === "Use the frame at 0:03");
+    assert.ok(inner(html, "pre", "thumbnail-timecode") === "Use the frame at 0:03");
     assert.ok(html.includes(">Thumbnail timecode</h3>") && !html.includes("Cover note"), "the work order calls it Thumbnail timecode (#41)");
-    assert.ok(has(html, /<a id="cover-download" href="http:\/\/localhost:\d+\/assets\/images\/brand\/bocc-logo-square\.png" download="bocc-[\d-]+-cover\.png"/),
-      "the cover (the logo default) as a link on the site's origin");
+    assert.ok(has(html, /<a id="thumbnail-download" href="http:\/\/localhost:\d+\/assets\/images\/brand\/bocc-logo-square\.png" download="bocc-[\d-]+-thumbnail\.png"/),
+      "the Thumbnail (the logo default) as a link on the site's origin");
+    assert.ok(html.includes(">Thumbnail</h3>") && html.includes("Download the Thumbnail"), "the work order calls it Thumbnail (#57)");
+    assert.ok(!/cover/i.test(html.replace(/object-fit:\s*cover/g, "")), "no cover wording or ids left on the work order");
     assert.ok(!/<script(?![^>]*\bsrc=)/.test(html), "no inline script (CSP script-src 'self')");
     assert.ok(!/<script[^>]*src="\/(?!@vite|src\/)/.test(html), "and no page script of its own (dev serves only Vite's client)");
     for (const c of order.channels) {
@@ -719,8 +722,8 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.equal(j.order.date, NEXT);
     assert.deepEqual(j.order.channels.map((c) => c.channel), CHANNELS);
     assert.equal(j.order.channels[0].status, "scheduled");
-    assert.equal(j.cover.source, "event_image");
-    assert.equal(j.cover.downloadUrl, `${BASE}/assets/images/brand/bocc-logo-square.png`);
+    assert.equal(j.thumbnail.source, "event_image");
+    assert.equal(j.thumbnail.downloadUrl, `${BASE}/assets/images/brand/bocc-logo-square.png`);
 
     const ok = await req("/api/admin/social/channel", { cookie: social.cookie, method: "POST",
       json: { date: NEXT, channel: "tiktok", status: "scheduled", notes: "TikTok Studio" } });
@@ -745,7 +748,7 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
       assert.equal(r.status, status, JSON.stringify(payload));
       assert.ok((await r.json()).errors[field], field);
     }
-    await so.setChannelResult(actor.id, NEXT, "linkedin_page", { status: "live", postUrl: GOOD_URLS.linkedin_page });
+    await so.setPostResult(actor.id, NEXT, "linkedin_page", { status: "live", postUrl: GOOD_URLS.linkedin_page });
     const conflict = await req("/api/admin/social/channel", { cookie: social.cookie, method: "POST", json: { date: NEXT, channel: "linkedin_page", status: "pending" } });
     assert.equal(conflict.status, 409);
     assert.equal((await conflict.json()).error, "conflict");
@@ -759,20 +762,20 @@ describe("the social pages and API over HTTP", { timeout: 300_000 }, () => {
     assert.equal((await req("/api/admin/social/channel", { method: "POST", json: {} })).status, 401);
   });
 
-  test("next moves on once every channel is done", async () => {
-    for (const c of ["instagram", "threads"]) await so.setChannelResult(actor.id, NEXT, c, { status: "scheduled" });
+  test("next moves on once every social media post is done", async () => {
+    for (const c of ["instagram", "threads"]) await so.setPostResult(actor.id, NEXT, c, { status: "scheduled" });
     const html = await (await req("/admin/social/next/", { cookie: social.cookie })).text();
     assert.ok(!html.includes(`data-date="${NEXT}"`), "no longer offered");
-    assert.ok(html.includes('<section id="nothing"'), "the following week has no post yet");
+    assert.ok(html.includes('<section id="nothing"'), "the following week has no Social plan yet");
   });
 
   test("verify: links to open, live/failed forms, the first comment, PRG", async () => {
     await owner.query(`insert into events (event_date) values ($1) on conflict do nothing`, [VERIFY]);
     await owner.query(
-      `insert into social_posts (event_date, base_caption, publish_at) values ($1, 'Coffee this week', now() - interval '1 hour')`, [VERIFY]);
-    await owner.query(`insert into social_post_channels (event_date, channel) select $1, unnest($2::text[])`, [VERIFY, CHANNELS]);
-    await owner.query(`update social_post_channels set status = 'scheduled', post_url = $2 where event_date = $1 and channel = 'facebook'`, [VERIFY, GOOD_URLS.facebook]);
-    await owner.query(`update social_post_channels set status = 'scheduled', post_url = $2 where event_date = $1 and channel = 'instagram'`, [VERIFY, GOOD_URLS.instagram]);
+      `insert into social_plans (event_date, base_caption, publish_at) values ($1, 'Coffee this week', now() - interval '1 hour')`, [VERIFY]);
+    await owner.query(`insert into social_media_posts (event_date, channel) select $1, unnest($2::text[])`, [VERIFY, CHANNELS]);
+    await owner.query(`update social_media_posts set status = 'scheduled', post_url = $2 where event_date = $1 and channel = 'facebook'`, [VERIFY, GOOD_URLS.facebook]);
+    await owner.query(`update social_media_posts set status = 'scheduled', post_url = $2 where event_date = $1 and channel = 'instagram'`, [VERIFY, GOOD_URLS.instagram]);
 
     const res = await req("/admin/social/verify/", { cookie: social.cookie });
     assert.equal(res.status, 200);

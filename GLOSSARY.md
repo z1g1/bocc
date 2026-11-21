@@ -94,6 +94,8 @@ _Avoid_: Platform (for BOCC's account on it)
 **Social plan**:
 One Event's set of social media posts, sharing a video, caption, Thumbnail and publish time. Each Event has at most one.
 _Avoid_: Social post (for the set), work order, ticket
+_For now_: "work order" is tolerated only for the Chrome tasks' calculated view (the Chrome
+task page and its code) until GitHub issue #62 renames it. Don't use it anywhere else.
 
 **Social media post**:
 One post on one Channel, belonging to a Social plan.

@@ -9,24 +9,24 @@
 //       its keys) FIRST, then its four objects (as deleteMedia). The event then uses
 //       the BOCC logo. Nothing to clear: { changed: false }, no audit row. A picked
 //       photo is only un-referenced (details.referenced: true): the photo stays.
-//   loadCoverBytes(image, { storage, readAsset })  -> { contentType, bytes }
-//       the 16:9 cover's bytes on the server, for the LinkedIn image upload; refused
-//       while the version is outdated (being remade, ticket #40)
+//   load16x9Bytes(image, { storage, readAsset })  -> { contentType, bytes }
+//       the 16:9 Event Image's bytes on the server, for the LinkedIn image upload;
+//       refused while it is outdated (being remade, ticket #40)
 //   listPickablePhotos(db, date)            -> the picker (ticket #21): ready, publicly
 //       usable Photos from Event of the PICK_EVENTS most recent events with photos, on
 //       or before `date`, newest event first
 //   pickEventImage(actor, storage, date, mediaId) -> { changed, eventDate, mediaId,
-//       needsCover, replaced, leftovers }
+//       needs16x9, replaced, leftovers }
 //       points the event at one of those photos (events.event_image_media_id: a
 //       reference, not a copy), audited `event_image.pick`. An uploaded Event Image is
 //       deleted in the same transaction (its objects after the commit), so the pick
-//       shows. needsCover: the photo has no 16:9 cover copy yet, or one made under the
-//       old centre-crop rule (cover_outdated, ticket #40); the browser makes a new one
-//       (src/lib/admin/media.mjs startCover / completeCover).
+//       shows. needs16x9: the photo has no 16:9 Event Image yet, or one made under the
+//       old centre-crop rule (image_16x9_outdated, ticket #40); the browser makes a new one
+//       (src/lib/admin/media.mjs startImage16x9 / completeImage16x9).
 //
 // Setting and changing are the ordinary media upload with kind `event_image`
 // (src/lib/admin/media.mjs startUpload / completeUpload): the browser makes the
-// display, thumbnail and 16:9 cover copies; completeUpload replaces the current image
+// display and thumbnail copies and the 16:9 Event Image; completeUpload replaces the current image
 // in one transaction and audits `event_image.set` ({ eventDate, mediaId, replaced }).
 //
 // A picked photo (ticket #21) is the `referenced` row; resolveEventImage ranks it after
@@ -44,7 +44,7 @@ export { DEFAULT_EVENT_IMAGE, resolveEventImage };
 
 const COLUMNS = `
   id, event_date::text as "eventDate", kind, status, original_key as "originalKey",
-  display_key as "displayKey", thumb_key as "thumbKey", cover_key as "coverKey", cover_outdated as "coverOutdated",
+  display_key as "displayKey", thumb_key as "thumbKey", image_16x9_key as "image16x9Key", image_16x9_outdated as "image16x9Outdated",
   content_type as "contentType"`;
 
 const checkDate = (date) => { if (!isIsoDate(date)) throw new ValidationError(["date must be YYYY-MM-DD"]); };
@@ -70,22 +70,22 @@ export async function getEventImage(db, date) {
 /** "About the last 8 events": how many recent events with photos the picker offers. */
 export const PICK_EVENTS = 8;
 
-// The pickable photos for $1: ready, publicly usable social photos of the PICK_EVENTS
+// The pickable photos for $1: ready, publicly usable Photos from Event of the PICK_EVENTS
 // most recent event dates (with such photos) on or before $1.
 const PICKABLE = `
   with recent as (
     select distinct event_date from public.event_media
-     where kind = 'social_photo' and status = 'ready' and publicly_usable and event_date <= $1
+     where kind = 'event_photo' and status = 'ready' and publicly_usable and event_date <= $1
      order by event_date desc limit ${PICK_EVENTS})
   select ${COLUMNS} from public.event_media join recent using (event_date)
-   where kind = 'social_photo' and status = 'ready' and publicly_usable`;
+   where kind = 'event_photo' and status = 'ready' and publicly_usable`;
 
 /**
  * The picker's photos for one event, newest event first, then in upload order.
  * @param {{ query: Function }} db
  * @param {string} date
  * @returns {Promise<Array<{ id: string, eventDate: string, originalKey: string, displayKey: string,
- *   thumbKey: string, coverKey: string|null, coverOutdated: boolean, contentType: string }>>}
+ *   thumbKey: string, image16x9Key: string|null, image16x9Outdated: boolean, contentType: string }>>}
  */
 export async function listPickablePhotos(db, date) {
   checkDate(date);
@@ -114,7 +114,7 @@ export async function pickEventImage(actorUserId, storage, date, mediaId, { log 
     const { rows: old } = await client.query(
       `delete from public.event_media
         where event_date = $1 and kind = 'event_image' and status = 'ready'
-        returning id, original_key, display_key, thumb_key, cover_key`, [date]);
+        returning id, original_key, display_key, thumb_key, image_16x9_key`, [date]);
     const replaced = old[0] ?? null;
     // Throwing rolls back and skips the audit row: nothing changed.
     if (!replaced && ev.ref === mediaId) { unchanged = photo; throw NOTHING; }
@@ -125,7 +125,7 @@ export async function pickEventImage(actorUserId, storage, date, mediaId, { log 
     details: { eventDate: date, mediaId, photoDate: r.photo.eventDate, previous: r.previous, replaced: r.replaced?.id ?? null },
   })).catch((err) => { if (err === NOTHING) return null; throw err; });
   if (!result) {
-    return { changed: false, eventDate: date, mediaId, needsCover: needsCover(unchanged), replaced: null, leftovers: [] };
+    return { changed: false, eventDate: date, mediaId, needs16x9: needs16x9(unchanged), replaced: null, leftovers: [] };
   }
   const { photo, replaced } = result;
   let leftovers = [];
@@ -134,11 +134,11 @@ export async function pickEventImage(actorUserId, storage, date, mediaId, { log 
       ? await deleteObjects(storage, `event image ${replaced.id} (replaced by the photo ${mediaId})`, rowKeys(replaced), log)
       : rowKeys(replaced);
   }
-  return { changed: true, eventDate: date, mediaId, needsCover: needsCover(photo), replaced: replaced?.id ?? null, leftovers };
+  return { changed: true, eventDate: date, mediaId, needs16x9: needs16x9(photo), replaced: replaced?.id ?? null, leftovers };
 }
 
-/** A photo needs a (new) 16:9 version: none yet, or one made under the old crop rule. */
-const needsCover = (photo) => !photo.coverKey || Boolean(photo.coverOutdated);
+/** A photo needs a (new) 16:9 Event Image: none yet, or one made under the old crop rule. */
+const needs16x9 = (photo) => !photo.image16x9Key || Boolean(photo.image16x9Outdated);
 
 /** Thrown inside a transaction to roll it back when nothing would change (no audit row). */
 const NOTHING = Symbol("nothing");
@@ -158,7 +158,7 @@ export async function clearEventImage(actorUserId, storage, date, { log } = {}) 
       const { rows } = await client.query(
         `delete from public.event_media
           where event_date = $1 and kind = 'event_image' and status = 'ready'
-          returning id, original_key, display_key, thumb_key, cover_key`, [date]);
+          returning id, original_key, display_key, thumb_key, image_16x9_key`, [date]);
       if (rows.length) return rows[0];
       // No upload: a picked photo, if any, is only un-referenced.
       const { rows: [ev] } = await client.query(
@@ -182,21 +182,21 @@ export async function clearEventImage(actorUserId, storage, date, { log } = {}) 
 }
 
 /**
- * The 16:9 cover's bytes on the server: a stored copy through a header-signed GET,
- * the logo's wide version through `readAsset` (by default readPublicAsset: public/ on
+ * The 16:9 Event Image's bytes on the server: a stored copy through a header-signed GET,
+ * the logo's 16:9 version through `readAsset` (by default readPublicAsset: public/ on
  * disk, else fetched from the site's own origin, since the Netlify function bundle
  * has no public/).
  * @param {import("./event-image-rules.mjs").EventImage} image
  * @param {{ storage?: import("./storage.mjs").Storage | null, readAsset?: (path: string) => Promise<Buffer> }} deps
  * @returns {Promise<{ contentType: string, bytes: Buffer }>}
  */
-export async function loadCoverBytes(image, { storage, readAsset = readPublicAsset } = {}) {
-  const cover = image.cover;
-  if (!cover) throw new Error("event image: this image has no 16:9 cover yet");
-  if (image.coverOutdated) throw new Error("event image: the 16:9 version is being remade (open the event page)");
-  if ("path" in cover) return { contentType: cover.contentType, bytes: Buffer.from(await readAsset(cover.path)) };
+export async function load16x9Bytes(image, { storage, readAsset = readPublicAsset } = {}) {
+  const image16x9 = image.image16x9;
+  if (!image16x9) throw new Error("event image: this image has no 16:9 Event Image yet");
+  if (image.image16x9Outdated) throw new Error("event image: the 16:9 Event Image is being remade (open the event page)");
+  if ("path" in image16x9) return { contentType: image16x9.contentType, bytes: Buffer.from(await readAsset(image16x9.path)) };
   if (!storage) throw new Error("event image: storage is not configured");
-  const got = await storage.getObject({ key: cover.key });
-  if (!got) throw new Error(`event image: the cover ${cover.key} is missing from the bucket`);
-  return { contentType: cover.contentType, bytes: got.bytes };
+  const got = await storage.getObject({ key: image16x9.key });
+  if (!got) throw new Error(`event image: the 16:9 Event Image ${image16x9.key} is missing from the bucket`);
+  return { contentType: image16x9.contentType, bytes: got.bytes };
 }
