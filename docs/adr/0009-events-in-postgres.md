@@ -139,7 +139,7 @@ Settled while building Phase 4 on `dev`. Code: `src/pages/events/[date].astro`,
    `@astrojs/netlify` already brings in. It is pinned in the root `package.json` once that
    version is two weeks old (on or after 2026-11-20).
 
-## Amendment (2026-11-20, Event status: Scheduled / Reported / Cancelled, #51)
+## Amendment (2026-12-03, Event status: Scheduled / Reported / Cancelled, #51)
 
 Follows GLOSSARY.md (spec #49). Supersedes the `held` value in decisions 1 and 2 and the
 "held" wording in amendment 3 above (the Public event page rules are unchanged).

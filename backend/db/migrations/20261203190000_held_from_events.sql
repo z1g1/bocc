@@ -1,4 +1,4 @@
--- Migration — Held counts Reported Events, never Cancelled Events (ticket #52, parent #49)
+-- Migration 0024 — Held counts Reported Events, never Cancelled Events (ticket #52, parent #49)
 --
 -- GLOSSARY.md: an Event is Held when it took place, known from at least one real Check-in
 -- or an Event Report. A Cancelled Event, or a week with no Event, was never held. Until now

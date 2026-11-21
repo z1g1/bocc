@@ -1,4 +1,4 @@
--- Migration 0022 — Photo from Event: the kind value 'social_photo' becomes 'event_photo'
+-- Migration 0023 — Photo from Event: the kind value 'social_photo' becomes 'event_photo'
 -- (ticket #54, parent #49; GLOSSARY.md "Photo from Event"; ADR 0010 amendment 2026-12-03)
 --
 -- Applied by backend/scripts/migrate.js in ONE transaction; plain SQL, so it also applies

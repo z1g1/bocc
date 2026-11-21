@@ -33,7 +33,7 @@ LinkedIn facts that shape this (carried over from the CLI):
    server-rendered tabs that work without JavaScript:
    - **Event Info:** Status and location, Online Event Listings, Event Image, LinkedIn event
 
-   *Corrected 2026-11-20 (#58):* there is no "Cancel this event" section. An event is
+   *Corrected 2026-12-03 (#58):* there is no "Cancel this event" section. An event is
    cancelled from **Status and location**: Status → Cancelled (with its reason fields). Once a
    posted LinkedIn event's Event is cancelled, the red "Cancel the LinkedIn event on LinkedIn"
    item and its "Done on LinkedIn" form show under it, in the same section (decision 8).
@@ -153,7 +153,7 @@ Deliberate extras beyond the spec, recorded so they aren't mistaken for drift:
   to LinkedIn. The object key stays `…/cover.jpg` and the route `/admin/media/covers/`: only
   the words and the columns changed (ticket #55, GLOSSARY.md).
 
-## Amendment: LinkedIn authentication and the LinkedIn words (2026-11-20, #58)
+## Amendment: LinkedIn authentication and the LinkedIn words (2026-12-03, #58)
 
 GLOSSARY.md (spec #49) fixes the LinkedIn words, and the app now uses them:
 

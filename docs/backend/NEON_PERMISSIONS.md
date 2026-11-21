@@ -115,8 +115,11 @@ expand-only, so the code live between migrate and deploy keeps working:
 After production runs the new code, a contract migration drops the three views, the shadow
 columns, the compat triggers and their functions (`event_reports_glossary_compat`,
 `event_media_glossary_compat`, and the value-mapping triggers #51 and #54 add: #51's is
-`events_status_held_compat`, migration `20261203130000_event_status_reported.sql`), and tightens
-the two CHECKs to the new values only (and drops `social_plans.ready` if #44 hasn't).
+`events_status_held_compat`, migration `20261203130000_event_status_reported.sql`; #54's is
+`event_media_event_photo_compat`, migration `20261203150000_event_photo_kind.sql`), tightens
+the two CHECKs to the new values only (and drops `social_plans.ready` if #44 hasn't), and
+drops the `'held'` match beside `'reported'` in the `held_occurrences` view (migration
+`20261203190000_held_from_events.sql`).
 
 ### site_reader
 
