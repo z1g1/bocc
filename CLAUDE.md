@@ -18,8 +18,6 @@ bocc/
 ├── public/           Static files served as-is: images, fonts, JS, the check-in page
 ├── scripts/          Build helpers (scripts/build-css.mjs compiles the Sass)
 ├── backend/          Netlify Functions API (same Netlify site)
-├── tools/
-│   └── linkedin-events/  `bocc-event` Python CLI: creates the weekly LinkedIn event (not deployed; see its README)
 └── docs/             All documentation
     ├── onboarding.md
     ├── architecture.md

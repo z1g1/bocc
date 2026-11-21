@@ -41,6 +41,22 @@ The prompts for the two Chrome tasks, and what to do when one reports a problem,
 
 Zack's personal LinkedIn post is not part of the work order. He still schedules it by hand.
 
+## Weekly LinkedIn event
+
+The week's LinkedIn event (hosted by the LinkedIn page, published by a LinkedIn post from
+Zack's LinkedIn profile) is made from the admin app, not the Social plan
+([ADR 0012](../adr/0012-linkedin-events-from-admin-app.md)). On Tuesday afternoon, for the next
+week's BOCC, Zack opens `/admin/events/<date>/` (Event Info tab), checks the location and the
+Event Image, uses **Create live event** in the LinkedIn event section, then makes a LinkedIn
+repost of his LinkedIn post from the LinkedIn page by hand. The app can't post as the LinkedIn
+page ([LINKEDIN_PERMISSIONS.md](../backend/LINKEDIN_PERMISSIONS.md)).
+
+The step-by-step, including recovery, is the `bocc-linkedin-event` Claude skill:
+[skills/bocc-linkedin-event/SKILL.md](skills/bocc-linkedin-event/SKILL.md). To update the
+skill on claude.ai, zip the `bocc-linkedin-event` folder and upload it in claude.ai's skill
+settings, replacing the old one. The `bocc-event` Python CLI it used to point at
+was retired in #30 (it is in git history).
+
 ## Handles and Websites
 
 1. Luma (Primary Event) - 
@@ -49,7 +65,7 @@ Zack's personal LinkedIn post is not part of the work order. He still schedules 
 	1. Goal 1 unique event per week. 
 1. BOCC LinkedIn Page (Primary Social Network)
 	1. https://www.linkedin.com/showcase/buffalo-open-coffee
-	1. Goal 1 Unique event. Has to be created by Zack at the CLI using the tool in this repo. Create once per week on Wednesday since you have to create a post on LinkedIn at event post. Modron Cannot post via Chrome/browser since LinkedIn will not allow their account to be an admin on the BOCC Page
+	1. Goal 1 Unique event. Created by Zack from the admin app (see "Weekly LinkedIn event" above), since creating it also publishes a LinkedIn post from his LinkedIn profile. Modron cannot do it via Chrome/browser since LinkedIn will not allow their account to be an admin on the BOCC Page
 1. Zack's Personal LinkedIn Page
 	1. Goal 1 vertical video post each week Monday at 7 AM to drive to the event. Zack has to schedule manually 1/week since Claude will not have access to his personal LinkedIn
 1. Instagram (Secondary Social Network) 

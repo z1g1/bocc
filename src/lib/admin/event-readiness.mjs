@@ -77,7 +77,7 @@ function scheduledReadiness(event, links, { eventImage, linkedIn }, publicHref) 
     const li = parts.find((i) => i.key === "linkedin_event");
     const listed = links.linkedin_event?.url;
     if (!listed) Object.assign(li, { note: "not posted yet (LinkedIn event, Event Info tab)", href: LINKEDIN_SECTION_HREF });
-    // Made outside the app (by hand, or the bocc-linkedin-event skill) and pasted into the
+    // Made outside the app (by hand on LinkedIn, or the retired bocc-event CLI) and pasted into the
     // Listings: done, but the app has no posted LinkedIn event, so no drift or cancel follow-up.
     else if (!linkedIn.eventUrl) {
       Object.assign(li, { caution: true, href: listed, note: "created manually outside the app, so Location, Event Image and cancel changes aren't tracked" });
