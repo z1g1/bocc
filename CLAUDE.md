@@ -57,8 +57,7 @@ dies with `Illegal instruction`. Locally only: `npm install --no-save --force
 - **Framework**: Astro 7, `output: "static"`. Every page is prerendered at build time.
   Phase 2 of `docs/admin/ADMIN_APP_PLAN.md` adds `@astrojs/netlify` for on-demand routes.
 - **Styles**: Sass in `src/styles/` compiled by `scripts/build-css.mjs` to
-  `public/assets/css/main.css` (generated, gitignored). The URL `/assets/css/main.css` is fixed
-  because the frozen check-in page links to it.
+  `public/assets/css/main.css` (generated, gitignored), linked from `src/layouts/Default.astro`.
 - **Markdown**: one renderer for everything, `src/lib/markdown.ts` (`marked` plus SmartyPants
   smart quotes, matching what kramdown produced).
 - **Hosting**: Netlify, build command `npm run build`, publish `dist`
@@ -85,17 +84,18 @@ dies with `Illegal instruction`. Locally only: `npm install --no-save --force
 
 ### Check-in System
 
-- `public/checkin/bocc.html` — the check-in form, served at `/checkin/bocc`. It is a **frozen
-  static file** (production's rendered Jekyll output, copied byte for byte, later edited only to
-  drop the ended grant's funding line), so it doesn't use the Astro layout. Footer, CSP and
-  year are fixed in the file: a change to the site footer must be repeated there by hand
-- `public/js/checkin.js` — Client-side form handler (unchanged)
+- `src/pages/checkin/bocc.astro` — the check-in form, served at `/checkin/bocc` (the URL in
+  the printed QR codes, with `?token=<GUID>`). It uses the Default layout with
+  `analytics={false}`. Keep its element IDs, the `#eventId` value and the `data-sponsor-*`
+  attributes: `checkin.js` reads them. Styles: `src/styles/bocc/_checkin.scss`
+- `public/js/checkin.js` — Client-side form handler
   - Stores return visitor data in `localStorage` (30-day TTL)
   - POSTs to `/.netlify/functions/checkin` (same-origin)
   - URL parameters: `debug`, `token`, `eventId`, `local` (set `local=1` to skip API calls)
-  - Input sanitization, honeypot spam detection, sponsor redirect countdown
-- **Sponsor redirect**: the `data-sponsor-name`, `data-sponsor-url` and `data-sponsor-delay`
-  attributes on `#sponsorRedirect` in `public/checkin/bocc.html` (was `_data/sponsor.yml`)
+  - Input sanitization, honeypot (`website` field) spam detection, sponsor redirect countdown.
+    The honeypot and all spam checks are client-side only for now (#5)
+- **Sponsor redirect**: `src/data/sponsor.yml` (`enabled`, `name`, `url`, `delay`); a change
+  needs a deploy
 - No analytics on the check-in page
 - `checkin/bocc-afternoon.html` was retired with the port (the afternoon series ended)
 
