@@ -69,7 +69,7 @@ export async function readJson(request) {
  * @param {string} notice
  * @param {Record<string, unknown>} body
  * @param {"event-media"|"social"|"event-image"} [anchor]  the section to land on
- *   (social: the promo video, on Social Posts; event-image: the Event Image, on Event Info)
+ *   (social: the promo video, on the Social plan tab; event-image: the Event Image, on Event Info)
  * @param {Record<string, string>} [extra]  more query parameters (values are URL-encoded)
  */
 export function formOrJson(form, eventDate, notice, body, anchor = "event-media", extra = {}) {

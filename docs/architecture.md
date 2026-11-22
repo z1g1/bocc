@@ -47,8 +47,7 @@ Technical overview of the BOCC platform — how the website, backend API, and ex
 > **Module layer (June 2026 refactor):** the `checkin.js` function is a thin HTTP
 > adapter; the check-in business flow lives in `utils/check-in.js`
 > (`checkInAttendee`). Configuration is centralized in `utils/config.js`. See
-> [architecture-review-2026-06.md](architecture-review-2026-06.md) and
-> [`CONTEXT.md`](../CONTEXT.md) for the module seams.
+> [architecture-review-2026-06.md](architecture-review-2026-06.md) for the module seams.
 >
 > **Datastore (September 2026):** check-ins moved from Airtable (free base full) to
 > Neon Postgres. See [ADR-0003](adr/0003-supabase-transactional-store.md) (data model)
@@ -131,7 +130,7 @@ Source of truth: `backend/db/migrations/*.sql`.
 Unique index `checkins_dedup_key` on `(attendee_id, event_id, coalesce(token,''), checkin_date)`.
 
 ### Postgres views
-- `held_occurrences`: the weeks each event actually met (≥1 non-debug check-in)
+- `held_occurrences`: the Held weeks per event: ≥1 non-debug check-in or, for `bocc`, a Reported Event, and never a Cancelled Event (migration `20261203190000_held_from_events.sql`)
 - `streaks`: `current_streak`, `longest_streak`, `is_personal_best` per (attendee, event), via gaps-and-islands ([ADR-0004](adr/0004-streak-computation-model.md))
 
 ### Airtable archive

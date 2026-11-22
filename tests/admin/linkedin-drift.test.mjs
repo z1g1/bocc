@@ -76,7 +76,7 @@ async function postedDate(user, { location = "lobby" } = {}) {
 async function seedEventImage(date) {
   const id = randomUUID();
   await owner.query(
-    `insert into event_media (event_date, kind, original_key, display_key, thumb_key, cover_key, content_type, size_bytes, status)
+    `insert into event_media (event_date, kind, original_key, display_key, thumb_key, image_16x9_key, content_type, size_bytes, status)
      values ($1, 'event_image', $2, $3, $4, $5, 'image/png', 10, 'ready')`,
     [date, ...["original.png", "display.jpg", "thumb.jpg", "cover.jpg"].map((f) => `events/${date}/${id}/${f}`)]);
 }
@@ -145,6 +145,26 @@ describe("drift and cancellation (use-case, admin_app, fake client)", () => {
     assert.deepEqual(await li.markCancelledOnLinkedIn(user.id, date, { now: NOW }), { changed: false });
     assert.equal((await ackAudits(date)).length, 1);
   });
+
+  test("several Events at once (the list and home tags): the same follow-ups as one by one", async () => {
+    const unchanged = await postedDate(user);
+    const moved = await postedDate(user);
+    await ev.saveEvent(user.id, moved, { status: "scheduled", location: "food_hall" });
+    const newImage = await postedDate(user);
+    await seedEventImage(newImage);
+    const cancelled = await postedDate(user);
+    await cancel(user, cancelled);
+    const never = await nextDate();
+    await owner.query(`insert into events (event_date, status) values ($1, 'scheduled')`, [never]);
+    const dates = [unchanged, moved, newImage, cancelled, never];
+    const events = await Promise.all(dates.map((d) => ev.getEvent(pool, d)));
+    const many = await li.linkedInFollowUpsFor(pool, events);
+    assert.deepEqual([...many.keys()], dates);
+    for (const d of dates) assert.deepEqual(many.get(d), await li.linkedInFollowUpFor(pool, d), d);
+    assert.deepEqual(dates.map((d) => [many.get(d).drift?.changes ?? null, many.get(d).cancel?.due ?? null]),
+      [[null, null], [["location"], null], [["image"], null], [null, true], [null, null]]);
+    assert.deepEqual(await li.linkedInFollowUpsFor(pool, []), new Map());
+  });
 });
 
 // ── 2. Over HTTP ────────────────────────────────────────────────────────────
@@ -204,7 +224,7 @@ describe("drift notice, cancel item and Done on LinkedIn over HTTP", { timeout: 
     const section = info.slice(info.indexOf('id="h-linkedin"'));
     assert.match(section, /LinkedIn is out of date: the location changed/);
     const social = await page(date, "social");
-    assert.ok(!social.includes('id="h-linkedin"'), "the LinkedIn section is not on Social Posts");
+    assert.ok(!social.includes('id="h-linkedin"'), "the LinkedIn section is not on the Social plan tab");
     assert.doesNotMatch(social, /class="linkedin-drift"/, "nor its notice");
     assert.ok(section.includes(`href="${EVENT_URL}"`), "the notice links the event");
   });

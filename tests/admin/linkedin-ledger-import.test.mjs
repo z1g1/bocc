@@ -108,8 +108,8 @@ describe("import script against the database", () => {
     for (const t of ["linkedin_events", "event_links", "events"]) {
       await owner.query(`delete from ${t} where event_date between '2064-01-01' and '2064-12-31'`);
     }
-    // 2064-01-08 already exists (food hall, held) and has its LinkedIn listing from the README import.
-    await owner.query(`insert into events (event_date, status, location) values ('2064-01-08', 'held', 'food_hall')`);
+    // 2064-01-08 already exists (food hall, reported) and has its LinkedIn listing from the README import.
+    await owner.query(`insert into events (event_date, status, location) values ('2064-01-08', 'reported', 'food_hall')`);
     await owner.query(`insert into event_links (event_date, platform, url) values ('2064-01-08', 'linkedin_event', 'https://www.linkedin.com/events/7249812613549670408/')`);
   });
   after(async () => {
@@ -173,7 +173,7 @@ describe("import script against the database", () => {
     const snap = await snapshot();
     assert.deepEqual(snap.events, [
       { event_date: "2064-01-01", status: "scheduled", location: null },
-      { event_date: "2064-01-08", status: "held", location: "food_hall" },
+      { event_date: "2064-01-08", status: "reported", location: "food_hall" },
       { event_date: "2064-01-15", status: "scheduled", location: null },
     ]);
     const [a, b, c] = snap.ledger;

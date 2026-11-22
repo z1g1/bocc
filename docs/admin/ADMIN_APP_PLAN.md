@@ -365,11 +365,11 @@ on-device checks and production are open.
   - location
   - cancel flow (reason, announced on socials). Since 2026-11-19 it is part of the status
     form: Cancelled is a third status whose reason fields show only while it is selected
-    (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Held
+    (CSS `:has()`), saved with the location in one UPDATE; choosing Scheduled or Reported
     (past dates) leaves cancelled and clears the reason. The separate cancel and un-cancel
     forms are gone; the audit actions are unchanged.
-  - report form (Gives and Asks count, notes, Bling given and details)
-  - calculated check-in count shown next to the report
+  - report form (Attendee count, notes, Bling given and details)
+  - calculated Check-in count shown next to the Attendee count (labelled "not attendance")
   - Built on `dev` 2026-11-17 (`src/lib/admin/events.mjs`). Audit actions `event.update`,
     `event.cancel`, `event.uncancel`, `event_report.submit`, `event_report.update`. A date
     without a row renders as a new scheduled event; the first save creates it. Reports are
@@ -381,8 +381,9 @@ on-device checks and production are open.
   - the browser makes the 1600px JPEG and 400px thumbnail
   - uploads go straight to the bucket via presigned PUT
   - a gallery shown through short-lived GET URLs
-  - each photo tagged `signin_board` / `social_photo`, with `publicly_usable`. Since
-    2026-11-18 that is not a choice: social photos are always publicly usable (the posted
+  - each photo tagged `signin_board` / `social_photo` (renamed `event_photo`, Photo from
+    Event, by #54, ADR 0010 amendment 2026-12-03), with `publicly_usable`. Since
+    2026-11-18 that is not a choice: Photos from Event are always publicly usable (the posted
     photo waiver), sign-in board photos never (ADR 0010 decision 2, migration `20261120120000`)
   - pending uploads over a day old are listed on the event page for deletion; no storage
     configured shows a message and the APIs answer 503
@@ -435,7 +436,15 @@ on-device checks and production are open.
 
 ## Phase 5: social work order (ADR 0011)
 
-- [x] Migration: `social_posts`, `social_post_channels`: `20261122120000_social_posts.sql`
+Since #56 (the glossary rename, spec #49) one Event's work order is its **Social plan**
+(`social_plans`, shown on the Social plan tab with its Plan status) and each Channel's row is a
+**social media post** (`social_media_posts`, with its Post status). The code below moved to
+`src/lib/admin/social-plan.mjs` (was `social.mjs`), `social-plan-rules.mjs` (was
+`social-rules.mjs`) and `src/components/admin/SocialPlan.astro` (was `SocialPost.astro`);
+`setChannelResult()` is now `setPostResult()`. The items keep the names they were built with.
+
+- [x] Migration: `social_posts`, `social_post_channels` (now `social_plans`,
+      `social_media_posts`): `20261122120000_social_posts.sql`
       (admin_app SELECT/INSERT/UPDATE, no DELETE; the video FK is on (event_date, id), so it is
       always the same event's media)
 - [x] Promo video upload (`promo_video` media), base caption, `publish_at` defaulting to Monday
@@ -497,11 +506,11 @@ work (to save deploy credits); everything is verified on staging first.
       "Social photos" → **Photos from Event** (labels only; `social_photo` and the
       `event_links` slots are unchanged)
 - [ ] Event Image (`event_image` media: upload or reference a recent publicly usable photo,
-      the logo as the default, a 16:9 cover copy), previews and downloads for the hand-entered
-      listings, and the Social Post cover image defaulting to it
-- [ ] Migrations: `linkedin_connections` (token encrypted under `LINKEDIN_TOKEN_KEY`),
+      the logo as the default, a 16:9 Event Image), previews and downloads for the hand-entered
+      listings, and the Social plan's Thumbnail defaulting to it
+- [ ] Migrations: `linkedin_connections`, now `linkedin_authentications` (#50; token encrypted under `LINKEDIN_TOKEN_KEY`),
       `linkedin_events` (the ledger, unique on `event_date`), the `event_media` changes and the
-      social post's cover. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
+      Social plan's Thumbnail. Grants: `admin_app` SELECT/INSERT/UPDATE on both (DELETE on
       connections only), `social_checker` the connection expiry only, nothing for
       `site_reader`/`checkin_writer`
 - [x] LinkedIn OAuth connect, status ("Connected as …, expires …"), reconnect and disconnect,
@@ -509,16 +518,30 @@ work (to save deploy credits); everything is verified on staging first.
       adapter and use-case in `src/lib/linkedin/`). Still to do on the LinkedIn app: add the
       production and staging callback URLs
 - [x] The Readiness section (#42): an H2 with two bullets, "Online Event Listings x/5
-      (Default Cover Image | Custom Cover Image)" counting the four listings and the public
+      (default or custom Event Image)" counting the four listings and the public
       page (the Luma embed id is no longer an item; the brackets follow the Event Image's
       source), the missing parts and the LinkedIn lines under it (drift and cancel pointing at
-      the LinkedIn section on Event Info); and "Social Posts: <status>" (the Social Post
-      status, or "not set up yet"), its problems (not once Posted) and channels under it. The
+      the LinkedIn section on Event Info); and the Social plan's Plan status (or "not set up
+      yet"), its problems (not once Posted) and its social media posts under it. The
       events list and home tag became "x/5 listings" with the same count
-- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, after the Event
+- [x] Event readiness and Social plan readiness (#59) replace the Readiness section: two H2
+      sections above the tabs on every tab of today's or an Upcoming Event. **Event readiness**
+      (pure `src/lib/admin/event-readiness.mjs`): for a Scheduled Event, "Listings x/5" (the
+      LinkedIn Listing is done once its URL is saved, which the app does when its LinkedIn
+      post is out; a URL with no posted LinkedIn event in the app is a ⚠ caution line, "created
+      manually outside the app"; LinkedIn drift is a red line under it), "Location: …" (required,
+      "not set (Lobby assumed)" until chosen) and "Event Image: Default (BOCC logo) | Custom"
+      (information only); for a Cancelled Event only "Cancellation: announced on all socials"
+      (the checkbox) with "Cancel the LinkedIn event on LinkedIn" under it while due.
+      **Social plan readiness** (pure `src/lib/admin/social-plan-readiness.mjs`): "Social plan:
+      <Plan status>" or "No Social plan yet", the problems blocking Ready for Posting (hidden
+      once Posted) and each social media post with its Post status. The events list and home
+      tag use Event readiness only: "Ready", or what is missing ("2/5 listings · Location not
+      set", "Cancellation not announced"), loaded by `event-readiness-load.mjs`
+- [ ] The LinkedIn event section on Event Info (#38: moved from Social Posts, now the Social plan tab, after the Event
       Image; it is made Tuesday afternoon for the next week's event, alongside the other
       online listings, and its actions and the OAuth return land on `?tab=info`): preview, "Create live event" with a confirm
-      dialog (Publish event too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
+      dialog (Publish event, now "Publish the LinkedIn post" (#58), too, with its own dialog), dry run everywhere but production (`LINKEDIN_LIVE=1`), the ledger state machine
       (`pending` → `created` → `posted`) with Publish-retry and allow-retry, duplicate guards,
       the `linkedin_event` listing filled on post, drift and cancellation notices
       (#25 done: `linkedin_events` ledger migration, the preview, the dialog with
@@ -530,7 +553,7 @@ work (to save deploy credits); everything is verified on staging first.
       language. A failed step leaves the last committed state, even when LinkedIn clearly
       refused before creating anything: the page then says it is safe to allow retry.
       #27 done: drift is flagged, not synced: once posted, a change of location (by its
-      wording: not set reads as the lobby) or of the Event Image's cover shows "LinkedIn is
+      wording: not set reads as the lobby) or of the 16:9 Event Image shows "LinkedIn is
       out of date…" in Readiness and the LinkedIn section, linking the event (a CLI-imported
       row with no image recorded compares the location only). A cancelled event with a
       posted row shows a red "Cancel the LinkedIn event on LinkedIn" item in Cancel and
@@ -538,13 +561,15 @@ work (to save deploy credits); everything is verified on staging first.
 - [x] Readiness lines: Event Image, LinkedIn posted, LinkedIn out of date, cancel on LinkedIn
       (#21/#27, and "LinkedIn event posted" from the review fixes: done once the ledger row is
       posted, linking the event; no line for a cancelled event, where the cancel line takes over)
-- [x] Thursday check: ntfy alert when the LinkedIn connection has under 10 days left
+- [x] Thursday check: ntfy alert when the LinkedIn authentication (a "LinkedIn connection"
+      until #58) has under 10 days left
       or has expired, naming whose it is and pointing at `/admin/account/` (#24: a second,
       independent check in `src/lib/social-alert/run.mjs`; migration
       `20261126120000_social_checker_linkedin.sql` gives `social_checker` only
-      `linkedin_connections (user_id, expires_at, display_name)`, and nothing in `auth`: the
-      alert names the connection by its LinkedIn display name. If the connections can't be
-      read, it pushes its own "the Thursday check couldn't read the connection" alert rather than
+      `linkedin_connections (user_id, expires_at, display_name)` (now `linkedin_authentications`),
+      and nothing in `auth`: the alert names the LinkedIn authentication by its LinkedIn display
+      name. If they can't be read, it pushes its own "the Thursday check couldn't read the
+      LinkedIn authentications" alert rather than
       staying silent)
 - [ ] Env: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_TOKEN_KEY` (both
       environments), `LINKEDIN_LIVE=1` (production only)

@@ -6,9 +6,9 @@
 // linkedin_page) with its exact caption and first comment in a <pre>, and one form per
 // channel with a single "Save <Channel>" button.
 //
-// Which post: the EARLIEST upcoming, not cancelled event whose publish time is still
-// ahead and that still has work (no post, To do, or a channel pending; findNext,
-// src/lib/admin/social.mjs). If that week's post is actionable (Ready for Posting or
+// Which Social plan: the EARLIEST upcoming, not cancelled event whose publish time is still
+// ahead and that still has work (no plan, To do, or a social media post pending; findNext,
+// src/lib/admin/social-plan.mjs). If that week's plan is actionable (Ready for Posting or
 // Error, no problems),
 // its work order; otherwise a "Nothing ready" section (id="nothing", data-date,
 // data-reason no_post | not_ready | problems) that says why and lists what needs
@@ -30,7 +30,7 @@ if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const sp = await import("../../../lib/admin/social-pages.mjs");
-const so = await import("../../../lib/admin/social.mjs");
+const so = await import("../../../lib/admin/social-plan.mjs");
 const PAGE = "/admin/social/next/";
 
 let errors: Record<string, string> = {};
@@ -50,7 +50,7 @@ if (Astro.request.method === "POST") {
 const pick: any = await sp.loadPick("next", { origin: Astro.url.origin });
 const order = pick.order ?? null;
 const video = pick.video ?? null;
-const cover = pick.cover ?? null;
+const thumbnail = pick.thumbnail ?? null;
 const notice = posted ? null : sp.noticeText(Astro.url.searchParams);
 const STATUS_TEXT: Record<string, string> = {
   pending: "pending (to do)", scheduled: "scheduled (done)", live: "live (done)", failed: "failed (done)",
@@ -60,8 +60,8 @@ const errFor = (c: string) => (posted?.channel === c ? errors : {});
 const formatBytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 const pending = order ? order.channels.filter((c: any) => c.status === "pending") : [];
 ---
-<Admin title="Social: next post" user={user} roles={roles}>
-  <h1 id="title">Next social post</h1>
+<Admin title="Social: next Social plan" user={user} roles={roles}>
+  <h1 id="title">Next Social plan</h1>
   {notice && <p class="notice" role="status" id="notice">{notice}</p>}
   {posted && (errors.date || errors.channel) && <p class="error" role="alert">{errors.date ?? errors.channel}</p>}
 
@@ -77,10 +77,10 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
       )}
       {pick.upcoming?.length > 0 && (
         <>
-          <h3>Upcoming social posts</h3>
+          <h3>Upcoming Social plans</h3>
           <ul id="upcoming">
             {pick.upcoming.map((u: any) => (
-              <li>{u.date} ({longDay(u.date)}): {u.statusLabel}, {u.pendingChannels} channel{u.pendingChannels === 1 ? "" : "s"} pending</li>
+              <li>{u.date} ({longDay(u.date)}): {u.statusLabel}, {u.pendingChannels} social media post{u.pendingChannels === 1 ? "" : "s"} pending</li>
             ))}
           </ul>
         </>
@@ -110,18 +110,19 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
               <span class="muted"> ({video.fileName}, {formatBytes(video.sizeBytes)}; the link works until {easternDateTime(video.expiresAt)} Eastern; reload the page for a new one)</span></p>
           )
           : <p id="video-download-unavailable" class="error">{video?.unavailable ?? "No video is attached."}</p>}
-        <h3>Cover image</h3>
-        {cover?.downloadUrl
+        <h3>Thumbnail</h3>
+        {thumbnail?.downloadUrl
           ? (
-            <p><a id="cover-download" href={cover.downloadUrl} download={cover.fileName}>Download the cover image</a>
-              <span class="muted"> ({cover.fileName}, {cover.source === "override" ? "chosen for this post" : cover.eventImageSource === "default" ? "the BOCC logo, the default Event Image" : "the Event Image"}{cover.expiresAt && <>; the link works until {easternDateTime(cover.expiresAt)} Eastern</>})</span></p>
+            <p><a id="thumbnail-download" href={thumbnail.downloadUrl} download={thumbnail.fileName}>Download the Thumbnail</a>
+              <span class="muted"> ({thumbnail.fileName}, {thumbnail.source === "override" ? "chosen for this post" : thumbnail.eventImageSource === "default" ? "the BOCC logo, the default Event Image" : "the Event Image"}{thumbnail.expiresAt && <>; the link works until {easternDateTime(thumbnail.expiresAt)} Eastern</>})</span></p>
           )
-          : <p id="cover-download-unavailable" class="error">{cover?.unavailable ?? "No cover image."}</p>}
-        <p class="muted">Set it as the video's cover only on the channels whose step says so (docs/social/CHROME_TASKS.md).</p>
+          : <p id="thumbnail-download-unavailable" class="error">{thumbnail?.unavailable ?? "No Thumbnail."}</p>}
+        <p class="muted">Upload it as the video's Thumbnail only on the channels whose step says so (docs/social/CHROME_TASKS.md).</p>
         <h3>Thumbnail timecode</h3>
-        {order.coverNote
-          ? <pre id="cover-note">{order.coverNote}</pre>
-          : <p id="cover-note" class="muted">No thumbnail timecode: keep the platform's default thumbnail frame.</p>}
+        <p class="muted">The frame of the video to use as the Thumbnail where a Thumbnail can't be uploaded.</p>
+        {order.thumbnailTimecode
+          ? <pre id="thumbnail-timecode">{order.thumbnailTimecode}</pre>
+          : <p id="thumbnail-timecode" class="muted">No Thumbnail timecode: keep the platform's default frame.</p>}
       </section>
 
       <section id="channels" aria-labelledby="h-channels">
@@ -156,9 +157,9 @@ const pending = order ? order.channels.filter((c: any) => c.status === "pending"
             <form method="post" action={PAGE} id={`form-${c.channel}`}>
               <input type="hidden" name="date" value={order.date}>
               <input type="hidden" name="channel" value={c.channel}>
-              <label for={`status-${c.channel}`}>{c.label} status</label>
+              <label for={`status-${c.channel}`}>{c.label} Post status</label>
               <select id={`status-${c.channel}`} name="status" aria-invalid={e.status ? "true" : undefined}>
-                {so.STATUSES.map((s: string) => <option value={s} selected={v.status === s}>{s}</option>)}
+                {so.POST_STATUSES.map((s: string) => <option value={s} selected={v.status === s}>{s}</option>)}
               </select>
               {e.status && <p class="error" role="alert">{e.status}</p>}
               <label for={`postUrl-${c.channel}`}>{c.label} post URL <span class="muted">(https, on {so.POST_URL_DOMAINS[c.channel].join(" or ")}; leave blank if there is none yet)</span></label>

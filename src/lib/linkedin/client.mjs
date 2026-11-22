@@ -48,8 +48,8 @@ const IMAGE_URN = /^urn:li:image:([A-Za-z0-9_-]+)$/;
 const POST_URN = /^urn:li:(ugcPost|share):\d+$/;
 
 const USER_MESSAGES = {
-  expired: "LinkedIn says the connection is invalid or expired. Reconnect LinkedIn and try again.",
-  page_role: "LinkedIn refused. Your account must be an ADMINISTRATOR or CONTENT_ADMINISTRATOR of the BOCC page, and the app needs its LinkedIn products.",
+  expired: "LinkedIn says the LinkedIn authentication is invalid or expired. Re-authenticate with LinkedIn and try again.",
+  page_role: "LinkedIn refused. Your account must be an ADMINISTRATOR or CONTENT_ADMINISTRATOR of the LinkedIn page, and the app needs its LinkedIn products.",
   validation: "LinkedIn rejected the request as invalid.",
   hidden_post: "LinkedIn rejected the post as a hidden member post (it treats those as sponsored content). The event post must be a public post on your main feed.",
   refused: "The app refused to send this request to LinkedIn.",

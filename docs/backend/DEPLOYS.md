@@ -62,6 +62,15 @@ sequenceDiagram
   and tables in one release. Drop or rename them in a later release, once no live code
   uses them (example: #44 drops `social_posts.ready` after the Phase 6 release). Then a
   code rollback never needs a database rollback.
+- **A rename is an expand with compatibility pieces.** Example: the glossary rename,
+  migration `20261203120000_glossary_rename_expand.sql` (#50). It renames the tables and
+  columns and leaves, for the old code: updatable views under the old table names,
+  trigger-synced shadow columns under the old column names, and CHECKs that accept both
+  the old and the new values. A changed *value* can't be aliased (old code filtering on
+  it would silently match nothing), so its backfill ships with the code that reads it. A database test
+  (`tests/admin/glossary-rename.test.mjs`) runs the old code's queries against the
+  migrated schema. A contract migration removes the pieces after the production release
+  (`NEON_PERMISSIONS.md`, "Contract later: the glossary rename").
 - **One transaction per file.** `migrate.js` runs each file in its own transaction and
   records it in `schema_migrations`. A failure rolls back that file and stops.
 - **New files only.** Never edit a migration that has already run anywhere.

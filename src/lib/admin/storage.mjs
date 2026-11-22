@@ -139,7 +139,8 @@ export function storageOrigin(configOrEnv = process.env) {
 
 // ─── Keys ────────────────────────────────────────────────────────────────────
 
-// cover: the Event Image's 16:9 JPEG, the image on the beans background (ADR 0012 decision 3, ticket #40).
+// cover: the 16:9 Event Image (a JPEG, the image on the beans background; ADR 0012 decision 3,
+// ticket #40). The variant keeps the name "cover": object keys are opaque and never renamed.
 export const MEDIA_VARIANTS = /** @type {const} */ (["original", "display", "thumb", "cover"]);
 // heic/heif: only the untouched originals of the one-time sign-in board photo import
 // (ADR 0010 decision 4, migration 20261119120000). Browser uploads still refuse HEIC,

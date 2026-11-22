@@ -1,8 +1,9 @@
 ---
 // /admin/events/YYYY-MM-DD/: one event day (ADR 0009, plan Phase 3). Admin only.
-// The Readiness section (#42: Online Event Listings x/5 with the cover image, and Social
-// Posts: <status>) sits above three tabs (ADR 0012 decision 1):
-//   ?tab=info    Event Info: status (scheduled, held or cancelled, with the cancel reason
+// Two sections, Event readiness and Social plan readiness (#59; src/lib/admin/event-readiness.mjs,
+// social-plan-readiness.mjs), shown for today and Upcoming Events, sit above three tabs
+// (ADR 0012 decision 1):
+//   ?tab=info    Event Info: status (scheduled, reported or cancelled, with the cancel reason
 //                fields shown only while Cancelled is selected) and location in one form;
 //                below it, for a cancelled event that was posted on LinkedIn, the red
 //                "Cancel the LinkedIn event on LinkedIn" item and its "Done on LinkedIn"
@@ -10,7 +11,7 @@
 //                Event Image (EventImage, ADR 0012 decision 3); then the LinkedIn event
 //                section (ADR 0012, #38: made Tuesday afternoon for the next week's
 //                event, alongside the other listings): the Admin's own LinkedIn
-//                connection (LinkedInConnection, posting to /api/admin/linkedin/*) and
+//                authentication (LinkedInAuthentication, posting to /api/admin/linkedin/*) and
 //                the event's preview, dialog, dry run and live create with its
 //                recovery (LinkedInEvent; actions linkedin_create, linkedin_publish,
 //                linkedin_allow_retry: 303 once posted or retired, else rendered
@@ -18,9 +19,10 @@
 //                and the "LinkedIn is out of date…" notice when the location or Event
 //                Image changed after it was posted (#27: flagged, not synced). Once a
 //                LinkedIn listing URL is saved, a "Listed:" link (noting when it was
-//                created manually outside the app) and the connection and create
+//                created manually outside the app) and the authentication and create
 //                tools folded in a <details>
-//   ?tab=social  Social Posts: the social post (SocialPost, Phase 5, ADR 0011)
+//   ?tab=social  Social plan: the Event's Social plan and its social media posts
+//                (SocialPlan, Phase 5, ADR 0011)
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -33,18 +35,20 @@
 // fixed ?notice= on the tab the form lives on (ACTION_TABS; post/redirect/get). Invalid
 // input re-renders that tab with 400 (409 for a refused state change) and the messages
 // next to the fields. All logic and the audit
-// rows are in src/lib/admin/events.mjs, event-links.mjs and social.mjs. The social
-// post's video upload is the one part that needs JavaScript (/js/admin-video.js).
+// rows are in src/lib/admin/events.mjs, event-links.mjs and social-plan.mjs. The Social
+// plan's video upload is the one part that needs JavaScript (/js/admin-video.js).
 //
 // Every save that changed something purges the public /events/<date>/ page from the
-// CDN (social post saves only when they created the events row: the public page
+// CDN (Social plan saves only when they created the events row: the public page
 // doesn't show them) (src/lib/site/purge.mjs). It is awaited so it runs before the function ends, but
 // it never throws, and a failure is caught here: the save is already committed.
+import { eventReadiness } from "../../../lib/admin/event-readiness.mjs";
+import { socialPlanReadiness } from "../../../lib/admin/social-plan-readiness.mjs";
 import Admin from "../../../layouts/Admin.astro";
 import EventImage from "../../../components/admin/EventImage.astro";
 import EventMedia from "../../../components/admin/EventMedia.astro";
-import SocialPost from "../../../components/admin/SocialPost.astro";
-import LinkedInConnection from "../../../components/admin/LinkedInConnection.astro";
+import SocialPlan from "../../../components/admin/SocialPlan.astro";
+import LinkedInAuthentication from "../../../components/admin/LinkedInAuthentication.astro";
 import LinkedInEvent from "../../../components/admin/LinkedInEvent.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
@@ -60,7 +64,7 @@ if (denied) return denied;
 const { user, roles = [] } = Astro.locals;
 const ev = await import("../../../lib/admin/events.mjs");
 const el = await import("../../../lib/admin/event-links.mjs");
-const so = await import("../../../lib/admin/social.mjs");
+const so = await import("../../../lib/admin/social-plan.mjs");
 const eim = await import("../../../lib/admin/event-image.mjs");
 const { CANCEL_REASONS, LIMITS, LOCATIONS } = ev;
 const STATUS_LABELS: Record<string, string> = ev.STATUS_LABELS;
@@ -71,14 +75,14 @@ if (!date) return notFound();
 
 const NOTICES: Record<string, string> = {
   saved: "Saved.",
-  report: "Report saved. The event is marked held.",
+  report: "Report saved. The event is marked Reported.",
   link: "Listing saved.",
   unlink: "Listing cleared.",
-  social_post: "Social post saved.",
-  social_video: "Promo video attached to the social post.",
-  social_cover: "Cover image saved.",
-  social_channel: "Channel text saved.",
-  linkedin_posted: "LinkedIn event created and posted.",
+  social_plan: "Social plan saved.",
+  social_video: "Promo video attached to the Social plan.",
+  social_thumbnail: "Thumbnail saved.",
+  social_media_post: "Social media post text saved.",
+  linkedin_posted: "LinkedIn event created and its LinkedIn post published.",
   linkedin_retry: "The pending LinkedIn create was cleared: you can create the event again.",
   linkedin_cancel_done: "Marked as cancelled on LinkedIn.",
   unchanged: "Nothing changed.",
@@ -89,20 +93,20 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   report: ev.submitReport,
   link: (actor, d, input) => el.setLink(actor, d, input.platform, input),
   unlink: (actor, d, input) => el.clearLink(actor, d, input.platform),
-  social_post: (actor, d, input) => so.savePost(actor, d, input),
+  social_plan: (actor, d, input) => so.savePlan(actor, d, input),
   social_video: (actor, d, input) => so.setVideo(actor, d, input.videoMediaId),
-  social_cover: (actor, d, input) => so.setCover(actor, d, input.mediaId ?? ""),
-  social_channel: (actor, d, input) => so.saveChannel(actor, d, input.channel, input),
+  social_thumbnail: (actor, d, input) => so.setThumbnail(actor, d, input.mediaId ?? ""),
+  social_media_post: (actor, d, input) => so.saveSocialMediaPost(actor, d, input.channel, input),
   linkedin_cancel_done: async (actor, d) => (await import("../../../lib/linkedin/linkedin.mjs")).markCancelledOnLinkedIn(actor, d),
 };
 // Saves the public page doesn't show: no purge.
 const NO_PURGE = new Set(["linkedin_cancel_done"]);
-const SOCIAL = new Set(["social_post", "social_video", "social_cover", "social_channel"]);
+const SOCIAL = new Set(["social_plan", "social_video", "social_thumbnail", "social_media_post"]);
 // Where a social form's redirect lands: its own block, else the section.
-const ANCHORS: Record<string, string> = { social_cover: "#social-cover", linkedin_cancel_done: "#linkedin-cancel" };
+const ANCHORS: Record<string, string> = { social_thumbnail: "#social-thumbnail", linkedin_cancel_done: "#linkedin-cancel" };
 const DONE: Record<string, string> = {
   save: "saved", report: "report", link: "link", unlink: "unlink",
-  social_post: "social_post", social_video: "social_video", social_cover: "social_cover", social_channel: "social_channel",
+  social_plan: "social_plan", social_video: "social_video", social_thumbnail: "social_thumbnail", social_media_post: "social_media_post",
   linkedin_cancel_done: "linkedin_cancel_done",
 };
 
@@ -128,7 +132,9 @@ if (Astro.request.method === "POST") {
   } catch {
     return new Response("Bad Request", { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } });
   }
-  const action = String(data.get("action") ?? "");
+  const rawAction = String(data.get("action") ?? "");
+  // DEPRECATED: a tab opened before #57 still posts `social_cover` (now social_thumbnail). #60 drops it.
+  const action = rawAction === "social_cover" ? "social_thumbnail" : rawAction;
   const run = ACTIONS[action];
   if (LINKEDIN_ACTIONS.has(action)) {
     // A live success that reached `posted`, and allow-retry, 303 back to the section
@@ -185,7 +191,17 @@ const { linkedInFollowUpFor } = await import("../../../lib/linkedin/linkedin.mjs
 const linkedIn = await linkedInFollowUpFor(pool, date, { event, eventImage });
 const today = ev.todayEastern();
 const upcoming = date >= today;
-const ready = el.readiness(event, links, social, { eventImage, linkedIn });
+const eventReady = eventReadiness(event, links, { eventImage, linkedIn });
+const socialReady = socialPlanReadiness(social);
+// The two sections at the top, rendered alike: bullets, each with its lines under it.
+type ReadyBullet = { key: string; label: string; ok: boolean; info?: boolean; items: any[]; publicHref?: string; extra?: string | null };
+const readySections: { id: string; title: string; bullets: ReadyBullet[] }[] = [
+  { id: "h-ready", title: "Event readiness",
+    bullets: eventReady.bullets.map((b) => ({ ...b, publicHref: b.key === "listings" ? eventReady.publicHref : undefined })) },
+  { id: "h-social-ready", title: "Social plan readiness",
+    bullets: [{ key: "social_plan", label: socialReady.label, ok: socialReady.ok, items: [...socialReady.problems, ...socialReady.posts],
+      extra: socialReady.exists ? `${socialReady.scheduled}/${socialReady.total} posts scheduled` : null }] },
+];
 const isFuture = date > today;
 const missing = ev.isReportMissing(event, today);
 const notice = posted ? null : NOTICES[Astro.url.searchParams.get("notice") ?? ""] ?? null;
@@ -204,7 +220,7 @@ const det = from("save") ?? {
 };
 const r = event.report;
 const rep = from("report") ?? {
-  givesAsksCount: r?.givesAsksCount == null ? "" : String(r.givesAsksCount),
+  attendeeCount: r?.attendeeCount == null ? "" : String(r.attendeeCount),
   notes: r?.notes ?? "",
   blingGiven: r?.blingGiven == null ? "" : r.blingGiven ? "yes" : "no",
   blingDetails: r?.blingDetails ?? "",
@@ -245,23 +261,20 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   {posted && errors.platform && <p class="error" role="alert">{errors.platform}</p>}
   {posted && errors.channel && <p class="error" role="alert">{errors.channel}</p>}
 
-  {upcoming && (
-    <section aria-labelledby="h-ready" class="ready">
-      <h2 id="h-ready">Readiness</h2>
+  {upcoming && readySections.map((sec) => (
+    <section aria-labelledby={sec.id} class="ready">
+      <h2 id={sec.id}>{sec.title}</h2>
       <ul class="bullets">
-        {[
-          { ...ready.listings, extra: null },
-          { ...ready.social, extra: ready.social.exists ? `${ready.social.scheduled}/${ready.social.total} channels scheduled` : null },
-        ].map((b) => (
-          <li class={`bullet ${b.ok ? "ok" : "todo"}`}>
-            <span class="mark" aria-hidden="true">{mark(b.ok)}</span>
+        {sec.bullets.map((b) => (
+          <li class={`bullet ${b.info ? "info" : b.ok ? "ok" : "todo"}`}>
+            <span class="mark" aria-hidden="true">{b.info ? "·" : mark(b.ok)}</span>
             <strong>{b.label}</strong>
-            <span class="visually-hidden">{b.ok ? " (done)" : " (to do)"}</span>
-            {b.publicHref && <span class="muted"> · <a href={b.publicHref} target="_blank" rel="noopener">public page</a></span>}
+            {!b.info && <span class="visually-hidden">{b.ok ? " (done)" : " (to do)"}</span>}
+            {b.publicHref && <span class="muted"> · <a href={b.publicHref} target="_blank" rel="noopener">Public event page</a></span>}
             {b.extra && <span class="muted"> · {b.extra}</span>}
             {b.items.length > 0 && (
               <ul class="checklist">
-                {b.items.map((i) => (
+                {b.items.map((i: any) => (
                   <li class={i.caution ? "caution" : i.ok ? "ok" : "todo"}>
                     <span class="mark" aria-hidden="true">{mark(i.ok, i.caution)}</span>
                     {i.href ? (/^https?:/.test(i.href) ? <a href={i.href} target="_blank" rel="noopener">{i.label}</a> : <a href={i.href}>{i.label}</a>) : i.label}
@@ -275,7 +288,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
         ))}
       </ul>
     </section>
-  )}
+  ))}
 
   <nav aria-label="Event page tabs" class="tabs pinned">
     <ul>
@@ -292,7 +305,8 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       <input type="hidden" name="action" value="save">
       <label for="status">Status</label>
       <select id="status" name="status" aria-invalid={detErr.status ? "true" : undefined}>
-        {Object.entries(STATUS_LABELS).map(([v, label]) => <option value={v} selected={det.status === v}>{label}</option>)}
+        {Object.entries(STATUS_LABELS).filter(([v]) => v !== "reported" || event.status === "reported")
+          .map(([v, label]) => <option value={v} selected={det.status === v}>{label}</option>)}
       </select>
       {detErr.status && <p class="error" role="alert">{detErr.status}</p>}
       {/* Shown only while Cancelled is selected, and each "if Other" text box only while
@@ -314,8 +328,8 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       </fieldset>
       <label for="location">Location</label>
       <select id="location" name="location" aria-invalid={detErr.location ? "true" : undefined}>
-        <option value="" selected={det.location === ""}>Not set</option>
-        {Object.entries(LOCATIONS).map(([v, label]) => <option value={v} selected={det.location === v}>{label}</option>)}
+        <option value="" selected={det.location === ""}>Not set (Lobby assumed)</option>
+        {Object.entries(LOCATIONS).map(([v, label]) => <option value={v} selected={det.location === v}>{v === "other" ? "Other (describe it)" : label}</option>)}
       </select>
       {detErr.location && <p class="error" role="alert">{detErr.location}</p>}
       <div class="location-other">
@@ -387,14 +401,14 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
           ? <span class="muted"> (created from here)</span>
           : <span class="muted"> (created manually outside the app: location, Event Image and cancel changes aren't tracked)</span>}</p>
         <details class="linkedin-tools" open={linkedInOpen}>
-          <summary>LinkedIn connection and create</summary>
-          <LinkedInConnection returnTo={date} />
+          <summary>LinkedIn authentication and create</summary>
+          <LinkedInAuthentication returnTo={date} />
           <LinkedInEvent date={date} result={linkedInResult} />
         </details>
       </>
     ) : (
       <>
-        <LinkedInConnection returnTo={date} />
+        <LinkedInAuthentication returnTo={date} />
         <LinkedInEvent date={date} result={linkedInResult} />
       </>
     )}
@@ -403,7 +417,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   </>)}
 
   {tab === "social" && (<>
-    <SocialPost date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
+    <SocialPlan date={date} order={social} posted={posted && SOCIAL.has(posted.action) ? posted : null} errors={errors} />
   </>)}
 
   {tab === "post" && (<>
@@ -415,23 +429,23 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
       </p>
     )}
     {event.status === "cancelled"
-      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status to Held (Event Info tab) first.</p>
+      ? <p class="muted">No report for a cancelled event. If it went ahead, set its status back to Scheduled (Event Info tab), then file the report here.</p>
       : isFuture
         ? null
         : (
           <form method="post" class="narrow">
             <input type="hidden" name="action" value="report">
-            <label for="givesAsksCount">People counted at Gives and Asks</label>
+            <label for="attendeeCount">Attendee count</label>
             <div class="count-row">
-              <input id="givesAsksCount" name="givesAsksCount" type="number" inputmode="numeric" min="0" max={LIMITS.givesAsks} step="1"
-                required value={rep.givesAsksCount} aria-invalid={repErr.givesAsksCount ? "true" : undefined} aria-describedby="checkin-note">
+              <input id="attendeeCount" name="attendeeCount" type="number" inputmode="numeric" min="0" max={LIMITS.attendeeCount} step="1"
+                required value={rep.attendeeCount} aria-invalid={repErr.attendeeCount ? "true" : undefined} aria-describedby="checkin-note">
               <p id="checkin-note" class="checkins">
-                <strong>{event.checkinCount}</strong> checked in on the form
-                <span class="muted">(not attendance: not everyone checks in; test check-ins left out)</span>
+                Check-in count (not attendance): <strong>{event.checkinCount}</strong>
+                <span class="muted">(not everyone checks in; Debug check-ins left out)</span>
                 {event.checkinCount > 0 && <> · <a href={`/admin/checkins/?date=${date}`}>who</a></>}
               </p>
             </div>
-            {repErr.givesAsksCount && <p class="error" role="alert">{repErr.givesAsksCount}</p>}
+            {repErr.attendeeCount && <p class="error" role="alert">{repErr.attendeeCount}</p>}
 
             <fieldset>
               <legend>Bring a Friend Bling given out?</legend>
@@ -466,7 +480,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .event-details .location-other { display: none; }
   .event-details:has(select[name="location"] option[value="other"]:checked) .location-other { display: block; }
   .event-details select { display: block; }
-  /* #36: the title and the tabs stay at the top on scroll; Readiness (between them, ADR 0012)
+  /* #36: the title and the tabs stay at the top on scroll; the readiness sections (between them, ADR 0012)
      scrolls under the title. The title is one line of fixed height so the tabs can pin right
      below it; html's scroll-padding keeps anchor jumps and focused fields clear of both. */
   :global(html) { --pin-title: 3rem; --pin-tabs: 2.5rem; scroll-padding-top: calc(var(--pin-title) + var(--pin-tabs) + 0.75rem); }
@@ -485,7 +499,8 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .checkins { margin: 0; }
   .badge { display: inline-block; padding: 0.1rem 0.5rem; border: 1px solid var(--line); border-radius: 4px; font-weight: 600; }
   .badge.cancelled, .badge.missing { color: var(--err); border-color: var(--err); }
-  .badge.held { color: var(--accent); border-color: var(--accent); }
+  .badge.reported { color: var(--accent); border-color: var(--accent); }
+  .ready + .ready { margin-top: 0.5rem; }
   .ready { margin-top: 1rem; padding: 0.5rem 0.75rem; border: 1px solid var(--line); border-radius: 6px; }
   .ready h2 { margin: 0; font-size: 1.1rem; }
   .bullets { list-style: none; padding: 0; margin: 0.25rem 0 0; }
@@ -495,6 +510,7 @@ const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
   .ready .ok > .mark { color: var(--accent); }
   .ready .todo > .mark { color: var(--err); }
   .ready .caution > .mark { color: var(--warn); }
+  .ready .info > .mark { color: var(--muted); }
   .linkedin-tools > summary { cursor: pointer; color: var(--muted); }
   .link-row { margin: 1rem 0 0; padding-top: 0.75rem; border-top: 1px solid var(--line); max-width: 40rem; }
   .link-row label:first-of-type { font-weight: 600; }

@@ -3,7 +3,7 @@
 //   1. the schema (migration 20261128120000): events.event_image_media_id, a reference
 //      that refuses the referenced photo's delete
 //   2. src/lib/admin/event-image.mjs + media.mjs as admin_app: the picker list, pick
-//      (audited, a reference not a copy), the 16:9 cover made for a photo without one,
+//      (audited, a reference not a copy), the 16:9 Event Image made for a photo without one,
 //      switching between uploaded / picked / default, the delete refusal
 //   3. the picker form and the delete refusal over HTTP through a real `astro dev`
 // Photos are seeded as the owner on dates in 2077 (the picker reads "the last 8 events
@@ -35,7 +35,7 @@ const media = await import("../../src/lib/admin/media.mjs");
 const ei = await import("../../src/lib/admin/event-image.mjs");
 
 const PASSWORD = "correct horse battery staple";
-const COVER = Buffer.from("\xff\xd8 a photo's 16:9 cover", "binary");
+const COVER = Buffer.from("\xff\xd8 a photo's 16:9 Event Image", "binary");
 
 let owner;
 let actor;
@@ -56,15 +56,15 @@ function dates(n) {
 const ensureEvent = (d) => owner.query("insert into events (event_date) values ($1) on conflict do nothing", [d]);
 
 /** Seed a ready Photo from Event (or another kind) as the owner. */
-async function seedPhoto(d, { kind = "social_photo", cover = false, status = "ready" } = {}) {
+async function seedPhoto(d, { kind = "event_photo", cover = false, status = "ready" } = {}) {
   await ensureEvent(d);
   const id = randomUUID();
   const k = (v, ext = "jpg") => `events/${d}/${id}/${v}.${ext}`;
   await owner.query(
-    `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, cover_key, content_type,
+    `insert into event_media (id, event_date, kind, original_key, display_key, thumb_key, image_16x9_key, content_type,
                               size_bytes, publicly_usable, status)
      values ($1, $2, $3, $4, $5, $6, $7, 'image/jpeg', 10, $8, $9)`,
-    [id, d, kind, k("original"), k("display"), k("thumb"), cover ? k("cover") : null, kind === "social_photo", status]);
+    [id, d, kind, k("original"), k("display"), k("thumb"), cover ? k("cover") : null, kind === "event_photo", status]);
   return id;
 }
 const row = (id) => owner.query("select * from event_media where id = $1", [id]).then((r) => r.rows[0]);
@@ -80,7 +80,7 @@ after(async () => {
   const ds = [...used];
   try {
     await owner?.query("update events set event_image_media_id = null where event_date = any($1::date[])", [ds]);
-    await owner?.query("delete from social_posts where event_date = any($1::date[])", [ds]);
+    await owner?.query("delete from social_plans where event_date = any($1::date[])", [ds]);
     await owner?.query("delete from event_media where event_date = any($1::date[])", [ds]);
     await owner?.query("delete from events where event_date = any($1::date[])", [ds]);
   } finally {
@@ -124,7 +124,7 @@ describe("schema: the Event Image reference", () => {
 
 // ── 2. Data module ──────────────────────────────────────────────────────────
 describe("the picker: publicly usable photos from about the last 8 events", () => {
-  test("lists ready social photos of the 8 most recent events with photos, on or before this one, newest first", async () => {
+  test("lists ready Photos from Event of the 8 most recent events with photos, on or before this one, newest first", async () => {
     const ds = dates(11); // ds[0] oldest … ds[10] the event being edited
     const target = ds[10];
     const photos = {};
@@ -141,10 +141,10 @@ describe("the picker: publicly usable photos from about the last 8 events", () =
     assert.deepEqual([...new Set(list.map((p) => p.eventDate))], ds.slice(2, 10).reverse(), "the 8 most recent dates, newest first");
     assert.ok(ids.includes(photos[ds[2]]) && !ids.includes(photos[ds[1]]));
     const withCover = list.find((p) => p.id === second);
-    assert.equal(withCover.coverKey, `events/${ds[8]}/${second}/cover.jpg`);
+    assert.equal(withCover.image16x9Key, `events/${ds[8]}/${second}/cover.jpg`);
     assert.equal(withCover.thumbKey, `events/${ds[8]}/${second}/thumb.jpg`);
     assert.equal(withCover.displayKey, `events/${ds[8]}/${second}/display.jpg`);
-    assert.equal(list.find((p) => p.id === photos[ds[8]]).coverKey, null);
+    assert.equal(list.find((p) => p.id === photos[ds[8]]).image16x9Key, null);
 
     // From an earlier event, later photos aren't offered.
     const earlier = await ei.listPickablePhotos(pool, ds[3]);
@@ -159,7 +159,7 @@ describe("pick a photo as the Event Image", () => {
     const before = (await owner.query("select count(*)::int as n from event_media")).rows[0].n;
 
     const res = await ei.pickEventImage(actor.id, null, d, photo);
-    assert.deepEqual(res, { changed: true, eventDate: d, mediaId: photo, needsCover: false, replaced: null, leftovers: [] });
+    assert.deepEqual(res, { changed: true, eventDate: d, mediaId: photo, needs16x9: false, replaced: null, leftovers: [] });
     assert.equal(await ref(d), photo, "the event row is created and points at the photo");
     assert.equal((await owner.query("select count(*)::int as n from event_media")).rows[0].n, before, "nothing copied");
 
@@ -168,7 +168,7 @@ describe("pick a photo as the Event Image", () => {
     assert.equal(img.mediaId, photo);
     assert.equal(img.eventDate, p);
     assert.deepEqual(img.original, { key: `events/${p}/${photo}/original.jpg`, contentType: "image/jpeg" });
-    assert.deepEqual(img.cover, { key: `events/${p}/${photo}/cover.jpg`, contentType: "image/jpeg" });
+    assert.deepEqual(img.image16x9, { key: `events/${p}/${photo}/cover.jpg`, contentType: "image/jpeg" });
 
     const picks = (await auditsFor(photo)).filter((x) => x.action === "event_image.pick");
     assert.equal(picks.length, 1);
@@ -181,12 +181,12 @@ describe("pick a photo as the Event Image", () => {
     assert.equal((await auditsFor(photo)).filter((x) => x.action === "event_image.pick").length, 1);
   });
 
-  test("a photo without a 16:9 cover is picked with cover null and needsCover", async () => {
+  test("a photo without a 16:9 Event Image is picked with image16x9 null and needs16x9", async () => {
     const [p, d] = dates(2);
     const photo = await seedPhoto(p);
     const res = await ei.pickEventImage(actor.id, null, d, photo);
-    assert.equal(res.needsCover, true);
-    assert.equal((await ei.getEventImage(pool, d)).cover, null);
+    assert.equal(res.needs16x9, true);
+    assert.equal((await ei.getEventImage(pool, d)).image16x9, null);
   });
 
   test("picking another photo switches the reference (audited with the previous one)", async () => {
@@ -245,7 +245,7 @@ describe("deleting a photo that is an Event Image", () => {
     const photo = await seedPhoto(p, { cover: true });
     const objects = [];
     const res = await media.deleteMedia(actor.id, { deleteObject: async ({ key }) => { objects.push(key); } }, photo);
-    assert.equal(res.kind, "social_photo");
+    assert.equal(res.kind, "event_photo");
     assert.equal(await row(photo), undefined);
     assert.ok(objects.includes(`events/${p}/${photo}/cover.jpg`));
   });
@@ -259,13 +259,13 @@ describe("deleting a photo that is an Event Image", () => {
     await media.deleteMedia(actor.id, { deleteObject: async () => {} }, a);
     assert.equal(await row(a), undefined);
   });
-  test("a photo that is both an Event Image and a Social Post cover: refused, the cover kept; once un-picked, the delete resets the cover", async () => {
+  test("a photo that is both an Event Image and a Social plan cover: refused, the cover kept; once un-picked, the delete resets the cover", async () => {
     const [p, d] = dates(2);
     const photo = await seedPhoto(p);
     const other = await seedPhoto(p);
     await ei.pickEventImage(actor.id, null, d, photo);
-    await owner.query("insert into social_posts (event_date, publish_at, cover_media_id) values ($1, now(), $2)", [d, photo]);
-    const cover = () => owner.query("select cover_media_id from social_posts where event_date = $1", [d]).then((r) => r.rows[0].cover_media_id);
+    await owner.query("insert into social_plans (event_date, publish_at, thumbnail_media_id) values ($1, now(), $2)", [d, photo]);
+    const cover = () => owner.query("select thumbnail_media_id from social_plans where event_date = $1", [d]).then((r) => r.rows[0].thumbnail_media_id);
 
     await assert.rejects(media.deleteMedia(actor.id, { deleteObject: async () => {} }, photo), (err) => err.status === 409);
     assert.ok(await row(photo));
@@ -278,7 +278,7 @@ describe("deleting a photo that is an Event Image", () => {
   });
 });
 
-describe("switching and the 16:9 cover against MinIO", { skip }, () => {
+describe("switching and the 16:9 Event Image against MinIO", { skip }, () => {
   const ORIGINAL = Buffer.from("\x89PNG\r\n\x1a\n original", "binary");
   const DISPLAY = Buffer.from("\xff\xd8 display", "binary");
   const THUMB = Buffer.from("\xff\xd8 t", "binary");
@@ -313,7 +313,7 @@ describe("switching and the 16:9 cover against MinIO", { skip }, () => {
     const picked = await ei.pickEventImage(actor.id, storage(), d, photo);
     assert.equal(picked.replaced, up, "the upload gives way to the picked photo");
     assert.equal(await row(up), undefined);
-    for (const k of [upRow.original_key, upRow.cover_key]) assert.equal(await exists(k), false, k);
+    for (const k of [upRow.original_key, upRow.image_16x9_key]) assert.equal(await exists(k), false, k);
     assert.equal((await ei.getEventImage(pool, d)).source, "referenced");
     assert.equal((await auditsFor(photo)).find((x) => x.action === "event_image.pick").details.replaced, up);
 
@@ -336,25 +336,25 @@ describe("switching and the 16:9 cover against MinIO", { skip }, () => {
     assert.equal((await ei.clearEventImage(actor.id, storage(), d)).changed, false);
   });
 
-  test("a picked photo without a cover gets one: presigned PUT, then complete checks it and sets cover_key (audited)", async () => {
+  test("a picked photo without a cover gets one: presigned PUT, then complete checks it and sets image_16x9_key (audited)", async () => {
     const [p, d] = dates(2);
     const photo = await seedPhoto(p);
-    assert.equal((await ei.pickEventImage(actor.id, storage(), d, photo)).needsCover, true);
+    assert.equal((await ei.pickEventImage(actor.id, storage(), d, photo)).needs16x9, true);
 
-    const start = await media.startCover(actor.id, storage(), photo, { size: COVER.length });
+    const start = await media.startImage16x9(actor.id, storage(), photo, { size: COVER.length });
     assert.equal(start.key, `events/${p}/${photo}/cover.jpg`);
-    const early = await media.completeCover(actor.id, storage(), photo, { db: pool });
-    assert.deepEqual(early, { id: photo, status: "pending", problems: ["cover: not uploaded"] });
-    assert.equal((await row(photo)).cover_key, null);
+    const early = await media.completeImage16x9(actor.id, storage(), photo, { db: pool });
+    assert.deepEqual(early, { id: photo, status: "pending", problems: ["16:9 Event Image: not uploaded"] });
+    assert.equal((await row(photo)).image_16x9_key, null);
 
     const res = await fetch(start.upload.url, { method: start.upload.method, headers: start.upload.headers, body: COVER });
     assert.equal(res.status, 200);
-    assert.deepEqual(await media.completeCover(actor.id, storage(), photo, { db: pool }), { id: photo, status: "ready", coverKey: start.key });
-    assert.equal((await row(photo)).cover_key, start.key);
+    assert.deepEqual(await media.completeImage16x9(actor.id, storage(), photo, { db: pool }), { id: photo, status: "ready", image16x9Key: start.key });
+    assert.equal((await row(photo)).image_16x9_key, start.key);
 
     const img = await ei.getEventImage(pool, d);
-    assert.deepEqual(img.cover, { key: start.key, contentType: "image/jpeg" });
-    assert.deepEqual((await ei.loadCoverBytes(img, { storage: storage() })).bytes, COVER);
+    assert.deepEqual(img.image16x9, { key: start.key, contentType: "image/jpeg" });
+    assert.deepEqual((await ei.load16x9Bytes(img, { storage: storage() })).bytes, COVER);
     const actions = (await auditsFor(photo)).map((x) => x.action);
     assert.deepEqual(actions.filter((a) => a.startsWith("media.cover")), ["media.cover_upload", "media.cover"]);
     const done = (await auditsFor(photo)).find((x) => x.action === "media.cover");
@@ -362,21 +362,21 @@ describe("switching and the 16:9 cover against MinIO", { skip }, () => {
     assert.deepEqual(done.details, { eventDate: p, key: start.key });
 
     // Already has one: no second cover.
-    await assert.rejects(media.startCover(actor.id, storage(), photo, { size: COVER.length }), { status: 400 });
+    await assert.rejects(media.startImage16x9(actor.id, storage(), photo, { size: COVER.length }), { status: 400 });
   });
 
-  test("the cover: a wrong size stays pending; only for ready social photos; size within the cap", async () => {
+  test("the cover: a wrong size stays pending; only for ready Photos from Event; size within the cap", async () => {
     const [p] = dates(1);
     const photo = await seedPhoto(p);
-    const start = await media.startCover(actor.id, storage(), photo, { size: COVER.length + 1 });
+    const start = await media.startImage16x9(actor.id, storage(), photo, { size: COVER.length + 1 });
     const put = await fetch(start.upload.url, { method: "PUT", headers: start.upload.headers, body: COVER });
     assert.equal(put.ok, false, "the bucket refuses a file of another size than signed");
-    assert.equal((await media.completeCover(actor.id, storage(), photo, { db: pool })).status, "pending");
+    assert.equal((await media.completeImage16x9(actor.id, storage(), photo, { db: pool })).status, "pending");
     const board = await seedPhoto(p, { kind: "signin_board" });
-    await assert.rejects(media.startCover(actor.id, storage(), board, { size: 10 }), { status: 400 });
-    await assert.rejects(media.startCover(actor.id, storage(), photo, { size: 0 }), { status: 400 });
-    await assert.rejects(media.startCover(actor.id, storage(), photo, { size: media.LIMITS.cover + 1 }), { status: 400 });
-    await assert.rejects(media.startCover(actor.id, storage(), randomUUID(), { size: 10 }), { status: 404 });
+    await assert.rejects(media.startImage16x9(actor.id, storage(), board, { size: 10 }), { status: 400 });
+    await assert.rejects(media.startImage16x9(actor.id, storage(), photo, { size: 0 }), { status: 400 });
+    await assert.rejects(media.startImage16x9(actor.id, storage(), photo, { size: media.LIMITS.cover + 1 }), { status: 400 });
+    await assert.rejects(media.startImage16x9(actor.id, storage(), randomUUID(), { size: 10 }), { status: 404 });
   });
 });
 
@@ -436,8 +436,8 @@ describe("the picker form, the cover routes and the delete refusal over HTTP", {
     assert.ok(imgs.some((u) => u.includes(origin) && u.includes(`${withCover}/thumb.jpg`)), "thumbnail");
     assert.ok(imgs.some((u) => u.includes(`${without}/thumb.jpg`)));
     assert.ok(!page.includes(board), "a sign-in board photo isn't offered");
-    assert.match(page, new RegExp(`<input[^>]*name="mediaId"[^>]*value="${without}"[^>]*data-needs-cover|data-needs-cover[^>]*value="${without}"`));
-    assert.ok(!new RegExp(`value="${withCover}"[^>]*data-needs-cover`).test(page));
+    assert.match(page, new RegExp(`<input[^>]*name="mediaId"[^>]*value="${without}"[^>]*data-needs-16x9|data-needs-16x9[^>]*value="${without}"`));
+    assert.ok(!new RegExp(`value="${withCover}"[^>]*data-needs-16x9`).test(page));
   });
 
   test("picking posts back to the Event Info tab; the page shows the photo, and clear un-picks it", async () => {
@@ -489,7 +489,7 @@ describe("the picker form, the cover routes and the delete refusal over HTTP", {
     assert.equal((await fetch(plan.upload.url, { method: "PUT", headers: plan.upload.headers, body: COVER })).status, 200);
     const done = await req(`/api/admin/media/${photo}/cover-complete`, { cookie: admin.cookie, method: "POST", json: {} });
     assert.equal(done.status, 200);
-    assert.deepEqual(await done.json(), { id: photo, status: "ready", coverKey: `events/${p}/${photo}/cover.jpg` });
+    assert.deepEqual(await done.json(), { id: photo, status: "ready", image16x9Key: `events/${p}/${photo}/cover.jpg` });
     assert.equal((await req(`/api/admin/media/${photo}/cover`, { cookie: admin.cookie, method: "POST", json: { size: 5 } })).status, 400);
   });
 

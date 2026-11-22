@@ -1,12 +1,12 @@
 // Pure LinkedIn rules (ADR 0012). No database, no network, no imports, so unit tests
-// and the browser-free Thursday check can load it. Holds the connection expiry and
+// and the browser-free Thursday check can load it. Holds the LinkedIn authentication's expiry and
 // scopes (#23), and the weekly event (#25): name, times, wording by location, the
-// payloads, the cover image checks, the duplicate match and the allowed-actions matrix.
+// payloads, the 16:9 Event Image checks, the duplicate match and the allowed-actions matrix.
 // Drift and the cancellation follow-up (#27): linkedInFollowUp.
 
 const DAY_MS = 86_400_000;
 
-/** Days left under which the connection shows amber (red once expired). */
+/** Days left under which the LinkedIn authentication shows amber (red once expired). */
 export const EXPIRY_WARNING_DAYS = 7;
 
 /** The Thursday check alerts with fewer than this many days left (or once expired). */
@@ -19,7 +19,7 @@ export const SCOPES = Object.freeze(["r_events", "rw_events", "openid", "profile
 export const PERMITTED_SERVICES_URL = "https://www.linkedin.com/psettings/permitted-services";
 
 /**
- * How close a connection is to expiry.
+ * How close a LinkedIn authentication is to expiry.
  * @param {Date|string|number} expiresAt
  * @param {Date} [now]
  * @returns {{ level: "ok"|"amber"|"red", daysLeft: number }}  daysLeft in whole days, 0 once expired
@@ -31,7 +31,7 @@ export function expiryLevel(expiresAt, now = new Date()) {
 }
 
 /**
- * Whether the Thursday check should push the "reconnect LinkedIn" alert: fewer than
+ * Whether the Thursday check should push the "re-authenticate with LinkedIn" alert: fewer than
  * EXPIRY_ALERT_DAYS left, or already expired.
  * @param {Date|string|number} expiresAt
  * @param {Date} [now]
@@ -138,14 +138,14 @@ export const REFUSALS = Object.freeze({
   past: "The event date has passed: LinkedIn events are only created and published for upcoming dates.",
   cancelled: "This event is cancelled. Set its status back to Scheduled before creating or publishing the LinkedIn event.",
   location_other: 'The location is "Other": there is no LinkedIn wording for it yet, so the app won\'t publish directions. Set Lobby or Food hall.',
-  no_connection: "Connect your LinkedIn account first.",
-  expired: "Your LinkedIn connection has expired. Reconnect LinkedIn first.",
+  no_authentication: "Authenticate with LinkedIn first.",
+  expired: "Your LinkedIn authentication has expired. Re-authenticate with LinkedIn first.",
   ledger: "The ledger already has a LinkedIn event for this date, so another one won't be created.",
   confirm: "Not confirmed: confirm in the dialog first.",
   duplicate: "LinkedIn already lists a BOCC event with the same name or on the same day.",
-  image: "The cover image can't be sent to LinkedIn.",
-  not_created: "Publish event only retries the post of an event that was created on LinkedIn and not posted yet.",
-  posting: "Another Publish event for this date is in progress, or its outcome is unknown. Check your LinkedIn posts, then try again in a few minutes if it isn't there.",
+  image: "The 16:9 Event Image can't be sent to LinkedIn.",
+  not_created: "Publish the LinkedIn post only retries the LinkedIn post of a LinkedIn event that was created and not posted yet.",
+  posting: "Another Publish the LinkedIn post for this date is in progress, or its outcome is unknown. Check your LinkedIn posts, then try again in a few minutes if it isn't there.",
   not_pending: "Allow retry only clears a pending create (one whose outcome is unknown).",
 });
 
@@ -218,36 +218,36 @@ export function findDuplicates(elements, spec) {
 /**
  * What the LinkedIn section offers for one date, and why create can't run.
  *   no active ledger row   -> "create", refused for: past (start time passed), cancelled,
- *                             location other, and when live: no / expired connection
+ *                             location other, and when live: no / expired LinkedIn authentication
  *   pending                -> "allow_retry" (#26: the outcome of a create is unknown)
  *   created                -> "publish_retry" (#26: the event exists, the post failed),
  *                             refused like create for past, cancelled and (live) the
- *                             connection; not for location other (the post has no location)
+ *                             LinkedIn authentication; not for location other (the post has no location)
  *   posted                 -> "none"
  * With a row, create is refused with "ledger" whatever else is true. In a dry run a
- * missing or expired connection isn't a refusal: only the duplicate check needs it.
+ * missing or expired LinkedIn authentication isn't a refusal: only the duplicate check needs it.
  * @param {{ date: string, now?: Date, event: { status: string, location: string|null },
  *   ledger: { status: "pending"|"created"|"posted" } | null,
- *   connection: { level: "ok"|"amber"|"red" } | null, live: boolean }} ctx
+ *   authentication: { level: "ok"|"amber"|"red" } | null, live: boolean }} ctx
  * @returns {{ action: "create"|"allow_retry"|"publish_retry"|"none", mode: "live"|"dry_run",
  *   refusals: { code: string, message: string }[] }}
  */
-export function allowedActions({ date, now = new Date(), event, ledger, connection, live }) {
+export function allowedActions({ date, now = new Date(), event, ledger, authentication, live }) {
   const mode = live ? "live" : "dry_run";
-  // Past and cancelled refuse anything that publishes; so does, live, the connection.
+  // Past and cancelled refuse anything that publishes; so does, live, the LinkedIn authentication.
   const dated = [];
   if (now.getTime() >= eventWindow(date).startsAt) dated.push(refusal("past"));
   if (event.status === "cancelled") dated.push(refusal("cancelled"));
-  const connected = [];
-  if (live && !connection) connected.push(refusal("no_connection"));
-  else if (live && connection.level === "red") connected.push(refusal("expired"));
+  const authenticated = [];
+  if (live && !authentication) authenticated.push(refusal("no_authentication"));
+  else if (live && authentication.level === "red") authenticated.push(refusal("expired"));
   if (ledger) {
     const action = { pending: "allow_retry", created: "publish_retry" }[ledger.status] ?? "none";
-    const more = action === "publish_retry" ? [...dated, ...connected] : [];
+    const more = action === "publish_retry" ? [...dated, ...authenticated] : [];
     return { action, mode, refusals: [refusal("ledger"), ...more] };
   }
   const located = event.location === "other" ? [refusal("location_other")] : [];
-  return { action: "create", mode, refusals: [...dated, ...located, ...connected] };
+  return { action: "create", mode, refusals: [...dated, ...located, ...authenticated] };
 }
 
 /**
@@ -262,8 +262,8 @@ export function createRefusals(ctx, { confirm }) {
 }
 
 /**
- * The server's check for one Publish event request: confirm=live (from the dialog), a
- * `created` row, then the matrix's publish_retry refusals (past, cancelled, connection).
+ * The server's check for one Publish the LinkedIn post request: confirm=live (from the dialog), a
+ * `created` row, then the matrix's publish_retry refusals (past, cancelled, LinkedIn authentication).
  * Empty means it may proceed.
  * @param {Parameters<typeof allowedActions>[0]} ctx
  * @param {{ confirm?: unknown }} request
@@ -275,7 +275,7 @@ export function publishRefusals(ctx, { confirm }) {
 }
 
 // LinkedIn's image limits (the CLI's images.py), checked on the bytes the server sends.
-export const COVER_LIMITS = Object.freeze({
+export const IMAGE_16X9_LIMITS = Object.freeze({
   maxBytes: 8 * 1024 * 1024, minWidth: 480, minHeight: 270, maxPixels: 36_152_320, ratio: 16 / 9, ratioTolerance: 0.05,
 });
 
@@ -306,28 +306,28 @@ function sniffImage(bytes) {
 }
 
 /**
- * Can these bytes be LinkedIn's event cover? Errors refuse the create; a warning (not
+ * Can these bytes (the 16:9 Event Image) be LinkedIn's event image? Errors refuse the create; a warning (not
  * 16:9, so LinkedIn crops it) is shown on the page.
  * @param {Uint8Array} bytes
  * @returns {{ ok: boolean, contentType: string|null, width: number|null, height: number|null, bytes: number,
  *   errors: string[], warnings: string[] }}
  */
-export function checkCoverImage(bytes) {
-  const L = COVER_LIMITS;
+export function checkImage16x9(bytes) {
+  const L = IMAGE_16X9_LIMITS;
   const size = bytes.length;
   const info = sniffImage(bytes);
   const errors = [];
   const warnings = [];
   if (!info) {
-    errors.push("The cover must be a PNG or JPEG image.");
+    errors.push("The 16:9 Event Image must be a PNG or JPEG image.");
     return { ok: false, contentType: null, width: null, height: null, bytes: size, errors, warnings };
   }
   const { contentType, width, height } = info;
-  if (size > L.maxBytes) errors.push("The cover is larger than 8 MiB.");
-  if (width < L.minWidth || height < L.minHeight) errors.push(`The cover is ${width}×${height}: it must be at least 480×270.`);
-  else if (width * height > L.maxPixels) errors.push(`The cover is ${width}×${height}: over LinkedIn's 36,152,320-pixel limit.`);
+  if (size > L.maxBytes) errors.push("The 16:9 Event Image is larger than 8 MiB.");
+  if (width < L.minWidth || height < L.minHeight) errors.push(`The 16:9 Event Image is ${width}×${height}: it must be at least 480×270.`);
+  else if (width * height > L.maxPixels) errors.push(`The 16:9 Event Image is ${width}×${height}: over LinkedIn's 36,152,320-pixel limit.`);
   if (height > 0 && Math.abs(width / height / L.ratio - 1) > L.ratioTolerance) {
-    warnings.push(`The cover is ${width}×${height}, not 16:9: LinkedIn will crop it.`);
+    warnings.push(`The 16:9 Event Image is ${width}×${height}, not 16:9: LinkedIn will crop it.`);
   }
   return { ok: errors.length === 0, contentType, width, height, bytes: size, errors, warnings };
 }
@@ -369,9 +369,9 @@ export const CANCEL_ON_LINKEDIN = "Cancel the LinkedIn event on LinkedIn";
 
 /** The location's LinkedIn wording: not set reads as the lobby (buildEventSpec). */
 const wording = (location) => location ?? "lobby";
-/** The cover's identity: its object key or checked-in path, null when there is none. */
-const coverRef = (eventImage) => {
-  const c = eventImage?.cover;
+/** The 16:9 Event Image's identity: its object key or checked-in path, null when there is none. */
+const image16x9Ref = (eventImage) => {
+  const c = eventImage?.image16x9;
   return c ? ("path" in c ? c.path : c.key) : null;
 };
 
@@ -385,16 +385,24 @@ export const LINKEDIN_SECTION_HREF = "?tab=info#h-linkedin";
  *           then the event is to be cancelled, not fixed). A row with no image recorded
  *           (imported from the CLI's ledger, #28) only compares the location.
  *   cancel  the event is cancelled: `due` until the Admin ticks "Done on LinkedIn"
- * Both carry `href`, LINKEDIN_SECTION_HREF (the one source for the Readiness lines and
+ * Both carry `href`, LINKEDIN_SECTION_HREF (the one source for the Event readiness lines and
  * the page); the LinkedIn event itself is `eventUrl`.
  * @param {{ ledger: null | { status: string, location: string|null, imageSource: string|null,
  *   imageRef: string|null, eventUrl: string|null, cancelledOnLinkedInAt: Date|null },
  *   event: { status: string, location: string|null },
- *   eventImage: { source: string, cover: { key: string } | { path: string } | null } }} input
+ *   eventImage: { source: string, image16x9: { key: string } | { path: string } | null } }} input
  * @returns {{ eventUrl: string|null,
  *   drift: null | { changes: ("location"|"image")[], message: string, href: string },
  *   cancel: null | { due: boolean, doneAt: Date|null, message: string, href: string } }}
  */
+/**
+ * Whether linkedInFollowUp compares the Event Image: only for a posted row that recorded
+ * an image, on an event that isn't cancelled. A caller reading many dates skips the
+ * Event Image read when this is false.
+ */
+export const followUpComparesImage = ({ ledger, event }) =>
+  ledger?.status === "posted" && event.status !== "cancelled" && ledger.imageSource != null;
+
 export function linkedInFollowUp({ ledger, event, eventImage }) {
   if (ledger?.status !== "posted") return { eventUrl: null, drift: null, cancel: null };
   const eventUrl = ledger.eventUrl;
@@ -405,7 +413,8 @@ export function linkedInFollowUp({ ledger, event, eventImage }) {
   }
   const changes = [];
   if (wording(ledger.location) !== wording(event.location)) changes.push("location");
-  if (ledger.imageSource != null && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== coverRef(eventImage))) {
+  if (followUpComparesImage({ ledger, event })
+      && (ledger.imageSource !== eventImage?.source || ledger.imageRef !== image16x9Ref(eventImage))) {
     changes.push("image");
   }
   if (!changes.length) return { eventUrl, drift: null, cancel: null };

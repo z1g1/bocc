@@ -7,7 +7,7 @@ import { easternOffset, todayEastern } from "./time";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-export type EventStatus = "scheduled" | "held" | "cancelled";
+export type EventStatus = "scheduled" | "reported" | "cancelled";
 
 export interface EventPage {
   date: string; // YYYY-MM-DD

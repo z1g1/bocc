@@ -77,7 +77,7 @@ async function backfillAttendees(records) {
 async function backfillCheckins(records, recordIdToEmail) {
   // Resolve each check-in's attendee by EMAIL (the natural key), not by Airtable
   // record id. This collapses duplicate-email attendee records to one Postgres
-  // attendee, so their check-ins are never orphaned. See ADR 0003 / CONTEXT.md
+  // attendee, so their check-ins are never orphaned. See ADR 0003 / GLOSSARY.md
   // ("Attendee identified by email").
   const emailToId = new Map();
   if (!DRY_RUN) {

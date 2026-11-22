@@ -10,7 +10,7 @@
  * half-built client exists. See docs/adr/0001-config-fail-fast-at-import.md.
  *
  * Tests run with no env vars; tests/jest.setup.js seeds dummy secrets so the
- * suite can import this module. See CONTEXT.md → "Config adapter" seam.
+ * suite can import this module.
  */
 
 const env = process.env;

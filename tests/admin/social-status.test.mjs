@@ -1,12 +1,12 @@
-// The Social Post status (ticket #39): To do / Ready for Posting / Posted / Error,
+// The Plan status of a Social plan (ticket #39): To do / Ready for Posting / Posted / Error,
 // against the throwaway database (npm run test:db):
 //   1. migration 20261201120000_social_post_status.sql: the mapping from the old
 //      `ready` flag (re-run on a rebuilt pre-migration table, in a rolled-back
 //      transaction), the CHECKs, the grants, and that it is expand-only: the deprecated
 //      `ready` column stays, so the code live before the deploy keeps working
-//   2. src/lib/admin/social.mjs as admin_app: savePost's status (Ready for Posting
-//      checked, the others always allowed, audited) and setChannelResult moving the
-//      post to Posted / Error in the channel update's transaction, audited
+//   2. src/lib/admin/social-plan.mjs as admin_app: savePlan's status (Ready for Posting
+//      checked, the others always allowed, audited) and setPostResult moving the
+//      plan to Posted / Error in the social media post update's transaction, audited
 // The pure rules are in social-unit.test.mjs; the dropdown over HTTP in social.test.mjs.
 // Dates: 2073 (not used elsewhere).
 import { after, before, describe, test } from "node:test";
@@ -18,7 +18,7 @@ import { ADMIN_URL, OWNER_URL, assertAllowed, assertRefused, connect, inRollback
 useAdminEnv();
 const { pool } = await import("../../src/lib/auth/auth.mjs");
 const { createUser } = await import("../../src/lib/admin/users.mjs");
-const so = await import("../../src/lib/admin/social.mjs");
+const so = await import("../../src/lib/admin/social-plan.mjs");
 const el = await import("../../src/lib/admin/event-links.mjs");
 
 const MIGRATION = readFileSync(new URL("../../backend/db/migrations/20261201120000_social_post_status.sql", import.meta.url), "utf8");
@@ -29,10 +29,10 @@ let n = 0;
 const date = () => new Date(Date.UTC(2073, 0, 3 + 7 * n++)).toISOString().slice(0, 10);
 const NOW = new Date("2072-12-01T12:00:00Z"); // before every 2073 publish time
 
-const postRow = (d) => owner.query(`select * from social_posts where event_date = $1`, [d]).then((r) => r.rows[0] ?? null);
+const planRow = (d) => owner.query(`select * from social_plans where event_date = $1`, [d]).then((r) => r.rows[0] ?? null);
 const statusAudits = (d) => owner.query(
   `select actor_user_id, action, details from audit_log
-    where target_id = $1 and action in ('social_post.update', 'social_post.status') order by id`, [d]).then((r) => r.rows);
+    where target_id = $1 and action in ('social_plan.update', 'social_plan.status') order by id`, [d]).then((r) => r.rows);
 
 async function readyable(d) {
   await el.setLink(actor.id, d, "luma", { url: "https://luma.com/bocc-test", externalId: "" });
@@ -43,9 +43,9 @@ async function readyable(d) {
      values ($1, $2, 'promo_video', $3, 'video/mp4', 4800000, 'ready')`, [id, d, `events/${d}/${id}/original.mp4`]);
   await so.setVideo(actor.id, d, id);
 }
-async function readyPost(d) {
+async function readyPlan(d) {
   await readyable(d);
-  await so.savePost(actor.id, d, { baseCaption: "Coffee Tuesday", status: "ready" }, { now: NOW });
+  await so.savePlan(actor.id, d, { baseCaption: "Coffee Tuesday", status: "ready" }, { now: NOW });
 }
 
 before(async () => {
@@ -60,6 +60,11 @@ describe("migration 20261201120000_social_post_status.sql", () => {
   test("maps ready -> 'ready' and not ready -> 'todo'; keeps the deprecated flag but drops its CHECK", () =>
     inRollback(owner, async () => {
       // Back to the table as it was before the migration, then run the migration file.
+      // Undo the glossary rename first (migration 20261203120000): the table was social_posts.
+      await owner.query(`drop view social_posts`);
+      await owner.query(`alter table social_plans rename to social_posts`);
+      await owner.query(`alter trigger social_plans_set_updated_at on social_posts rename to social_posts_set_updated_at`);
+      await owner.query(`alter table social_posts rename constraint social_plans_status_ready_ck to social_posts_status_ready_ck`);
       await owner.query(`alter table social_posts drop constraint social_posts_status_ready_ck`);
       await owner.query(`alter table social_posts drop column status`);
       await owner.query(`alter table social_posts add constraint social_posts_ready_ck
@@ -120,7 +125,7 @@ describe("migration 20261201120000_social_post_status.sql", () => {
       const d = date();
       await owner.query(`insert into events (event_date) values ($1)`, [d]);
       await owner.query(`insert into social_posts (event_date, publish_at) values ($1, now())`, [d]);
-      assert.equal((await postRow(d)).status, "todo");
+      assert.equal((await planRow(d)).status, "todo");
       const CHECK = /violates check constraint/;
       await assertRefused(owner, `update social_posts set status = 'live' where event_date = $1`, [d], CHECK);
       await assertRefused(owner, `update social_posts set status = 'ready' where event_date = $1`, [d], CHECK);
@@ -153,91 +158,91 @@ describe("migration 20261201120000_social_post_status.sql", () => {
 });
 
 // ── 2. The module ───────────────────────────────────────────────────────────
-describe("the post status (admin_app)", () => {
+describe("the Plan status (admin_app)", () => {
   test("Ready for Posting is refused with the ready problems; To do, Posted and Error always save; each change audited", async () => {
     const d = date();
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" }, { now: NOW }), (e) => {
+    await assert.rejects(so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready" }, { now: NOW }), (e) => {
       assert.match(e.errors.status, /^Not ready yet: Upload the promo video\..*Add the Luma listing/);
       return true;
     });
-    assert.equal(await postRow(d), null); // refused: nothing written
+    assert.equal(await planRow(d), null); // refused: nothing written
     for (const s of ["posted", "error", "todo"]) {
-      assert.equal((await so.savePost(actor.id, d, { baseCaption: "Coffee", status: s }, { now: NOW })).changed, true, s);
+      assert.equal((await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: s }, { now: NOW })).changed, true, s);
     }
-    await assert.rejects(so.savePost(actor.id, d, { baseCaption: "Coffee", status: "on" }, { now: NOW }),
+    await assert.rejects(so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "on" }, { now: NOW }),
       (e) => /To do, Ready for Posting, Posted or Error/.test(e.errors.status));
     await readyable(d);
-    await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "ready" }, { now: NOW });
-    assert.equal((await postRow(d)).status, "ready");
+    await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "ready" }, { now: NOW });
+    assert.equal((await planRow(d)).status, "ready");
     // No status in the input keeps the current one.
-    assert.equal((await so.savePost(actor.id, d, { baseCaption: "Coffee" }, { now: NOW })).changed, false);
+    assert.equal((await so.savePlan(actor.id, d, { baseCaption: "Coffee" }, { now: NOW })).changed, false);
     const statuses = (await statusAudits(d)).map((a) => [a.action, a.details.before.status ?? null, a.details.after.status ?? null]);
     assert.deepEqual(statuses, [
-      ["social_post.update", "todo", "posted"], // the first save creates the post (To do), then sets Posted
-      ["social_post.update", "posted", "error"],
-      ["social_post.update", "error", "todo"],
-      ["social_post.update", "todo", "ready"],
+      ["social_plan.update", "todo", "posted"], // the first save creates the plan (To do), then sets Posted
+      ["social_plan.update", "posted", "error"],
+      ["social_plan.update", "error", "todo"],
+      ["social_plan.update", "todo", "ready"],
     ]);
     const wo = await so.getWorkOrder(pool, d);
     assert.deepEqual([wo.status, wo.statusLabel, wo.actionable], ["ready", "Ready for Posting", true]);
   });
 
-  test("scheduling every channel moves the post to Posted, in the same transaction, audited as the social user", async () => {
+  test("scheduling every social media post moves the Social plan to Posted, in the same transaction, audited as the social user", async () => {
     const d = date();
-    await readyPost(d);
-    for (const c of CHANNELS.slice(0, -1)) await so.setChannelResult(social.id, d, c, { status: "scheduled" }, { now: NOW });
-    assert.equal((await postRow(d)).status, "ready");
-    await so.setChannelResult(social.id, d, "linkedin_page", { status: "scheduled" }, { now: NOW });
-    assert.equal((await postRow(d)).status, "posted");
-    const auto = (await statusAudits(d)).filter((a) => a.action === "social_post.status");
+    await readyPlan(d);
+    for (const c of CHANNELS.slice(0, -1)) await so.setPostResult(social.id, d, c, { status: "scheduled" }, { now: NOW });
+    assert.equal((await planRow(d)).status, "ready");
+    await so.setPostResult(social.id, d, "linkedin_page", { status: "scheduled" }, { now: NOW });
+    assert.equal((await planRow(d)).status, "posted");
+    const auto = (await statusAudits(d)).filter((a) => a.action === "social_plan.status");
     assert.deepEqual(auto.map((a) => [a.actor_user_id, a.details]), [[social.id, {
       before: { status: "ready" }, after: { status: "posted" }, automatic: true, channel: "linkedin_page", channelStatus: "scheduled",
     }]]);
     // Going live keeps it Posted (no second audit row).
-    await so.setChannelResult(social.id, d, "facebook", { status: "live", postUrl: "https://www.facebook.com/reel/1" }, { now: NOW });
-    assert.equal((await statusAudits(d)).filter((a) => a.action === "social_post.status").length, 1);
+    await so.setPostResult(social.id, d, "facebook", { status: "live", postUrl: "https://www.facebook.com/reel/1" }, { now: NOW });
+    assert.equal((await statusAudits(d)).filter((a) => a.action === "social_plan.status").length, 1);
     // A Posted post isn't offered for scheduling any more.
     assert.equal((await so.getWorkOrder(pool, d)).actionable, false);
   });
 
-  test("a failed channel moves the post to Error; the rest can still be scheduled; a retry back to Posted", async () => {
+  test("a failed social media post moves the Social plan to Error; the rest can still be scheduled; a retry back to Posted", async () => {
     const d = date();
-    await readyPost(d);
-    await so.setChannelResult(social.id, d, "facebook", { status: "failed", notes: "Business Suite error" }, { now: NOW });
-    assert.equal((await postRow(d)).status, "error");
-    for (const c of CHANNELS.slice(1)) await so.setChannelResult(social.id, d, c, { status: "scheduled" }, { now: NOW });
-    assert.equal((await postRow(d)).status, "error");
-    await so.setChannelResult(social.id, d, "facebook", { status: "scheduled" }, { now: NOW });
-    assert.equal((await postRow(d)).status, "posted");
-    const auto = (await statusAudits(d)).filter((a) => a.action === "social_post.status");
+    await readyPlan(d);
+    await so.setPostResult(social.id, d, "facebook", { status: "failed", notes: "Business Suite error" }, { now: NOW });
+    assert.equal((await planRow(d)).status, "error");
+    for (const c of CHANNELS.slice(1)) await so.setPostResult(social.id, d, c, { status: "scheduled" }, { now: NOW });
+    assert.equal((await planRow(d)).status, "error");
+    await so.setPostResult(social.id, d, "facebook", { status: "scheduled" }, { now: NOW });
+    assert.equal((await planRow(d)).status, "posted");
+    const auto = (await statusAudits(d)).filter((a) => a.action === "social_plan.status");
     assert.deepEqual(auto.map((a) => [a.details.before.status, a.details.after.status, a.details.channel]),
       [["ready", "error", "facebook"], ["error", "posted", "facebook"]]);
   });
 
-  test("a refused channel update changes no status", async () => {
+  test("a refused social media post update changes no Plan status", async () => {
     const d = date();
-    await readyPost(d);
+    await readyPlan(d);
     // failed needs a note: refused, so the post stays Ready for Posting and nothing is audited.
-    await assert.rejects(so.setChannelResult(social.id, d, "tiktok", { status: "failed" }, { now: NOW }), (e) => Boolean(e.errors.notes));
-    assert.equal((await postRow(d)).status, "ready");
-    assert.equal((await statusAudits(d)).filter((a) => a.action === "social_post.status").length, 0);
+    await assert.rejects(so.setPostResult(social.id, d, "tiktok", { status: "failed" }, { now: NOW }), (e) => Boolean(e.errors.notes));
+    assert.equal((await planRow(d)).status, "ready");
+    assert.equal((await statusAudits(d)).filter((a) => a.action === "social_plan.status").length, 0);
   });
 
   test("To do isn't offered: scheduling is refused", async () => {
     const d = date();
     await readyable(d);
-    await so.savePost(actor.id, d, { baseCaption: "Coffee", status: "todo" }, { now: NOW });
-    await assert.rejects(so.setChannelResult(social.id, d, "facebook", { status: "scheduled" }, { now: NOW }),
+    await so.savePlan(actor.id, d, { baseCaption: "Coffee", status: "todo" }, { now: NOW });
+    await assert.rejects(so.setPostResult(social.id, d, "facebook", { status: "scheduled" }, { now: NOW }),
       (e) => e.status === 409 && /isn't set to Ready for Posting/.test(e.errors.status));
   });
 
   test("findNext: a week an Admin set to Posted isn't handed out, even with channels pending", async () => {
     const [d, d2] = [date(), date()];
     const now = new Date(Date.parse(`${d}T17:00:00Z`) - 6 * 86400_000); // the Wednesday before d
-    await readyPost(d);
-    await readyPost(d2);
+    await readyPlan(d);
+    await readyPlan(d2);
     assert.equal((await so.findNext(pool, { now })).order?.date, d);
-    await so.savePost(actor.id, d, { baseCaption: "Coffee Tuesday", status: "posted" }, { now: NOW });
+    await so.savePlan(actor.id, d, { baseCaption: "Coffee Tuesday", status: "posted" }, { now: NOW });
     const r = await so.findNext(pool, { now });
     assert.equal(r.order?.date, d2, "d is Posted: the next week");
   });

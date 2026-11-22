@@ -17,8 +17,8 @@
 //   cancelled                       "this Tuesday is cancelled", next event link, 200,
 //                                   JSON-LD EventCancelled (noindex once past); tagged
 //                                   event-<date>,event-list (the link depends on other dates)
-//   past (held, or scheduled but    "this one has passed", next event link, 200, noindex,
-//   past)                           no Event JSON-LD; tagged event-<date>,event-list
+//   past (reported, or scheduled    "this one has passed", next event link, 200, noindex,
+//   but past)                       no Event JSON-LD; tagged event-<date>,event-list
 //   Neon down / SITE_DB_URL unset   503, no-store, a friendly message, error only logged
 export const prerender = false;
 

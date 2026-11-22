@@ -25,6 +25,8 @@ Thumbs.db
 .claude
 .neon
 node_modules/
+.agents/*
+skills-lock.json
 
 # Social
 docs/strategy/social-uploads/*
@@ -33,3 +35,4 @@ docs/strategy/social-uploads/*
 /.astro/
 /.netlify/
 /public/assets/css/main.css
+
