@@ -90,6 +90,11 @@ LinkedIn facts that shape this (carried over from the CLI):
    create. After the first successful live create from production, the CLI is deleted (it stays
    in git history), and the permissions doc and the `bocc-linkedin-event` skill are rewritten
    for the web flow.
+
+   *Done in #30:* `tools/linkedin-events/` is deleted,
+   [LINKEDIN_PERMISSIONS.md](../backend/LINKEDIN_PERMISSIONS.md) describes the web OAuth flow
+   and its redirect URLs, and the skill's text is
+   [`docs/social/skills/bocc-linkedin-event/SKILL.md`](../social/skills/bocc-linkedin-event/SKILL.md).
 10. **One combined production release.** The prefactor and the LinkedIn work ship in a single
     production deploy (each costs 15 credits; staging is free). The release runbook checks the
     prefactor on staging and then production **before** the first live create. The docs-only
