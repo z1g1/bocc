@@ -47,6 +47,7 @@ describe("migrations", () => {
       "20261203130000_event_status_reported.sql",
       "20261203150000_event_photo_kind.sql",
       "20261203190000_held_from_events.sql",
+      "20261204120000_checkin_rate_limit.sql",
     ]);
   });
 
@@ -184,13 +185,14 @@ describe("social_checker and the auth schema (#24)", () => {
 });
 
 describe("checkin_writer keeps least privilege", () => {
-  test("table grants are exactly what migration 0003 gave it", async () => {
+  test("table grants are exactly what migration 0003 gave it, plus the rate-limit table (#67)", async () => {
     const { rows } = await owner.query(
       `select table_schema || '.' || table_name || ':' || privilege_type as g
          from information_schema.role_table_grants
         where grantee = 'checkin_writer' order by 1`);
     assert.deepEqual(rows.map((r) => r.g), [
       "public.attendees:INSERT", "public.attendees:SELECT",
+      "public.checkin_rate_limit_hits:INSERT", "public.checkin_rate_limit_hits:SELECT",
       "public.checkins:INSERT", "public.checkins:SELECT",
       "public.held_occurrences:SELECT", "public.streaks:SELECT",
     ]);

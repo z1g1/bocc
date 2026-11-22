@@ -97,6 +97,12 @@ dies with `Illegal instruction`. Locally only: `npm install --no-save --force
 - **Sponsor redirect**: `src/data/sponsor.yml` (`enabled`, `name`, `url`, `delay`); a change
   needs a deploy
 - No analytics on the check-in page
+- **Rate limit** (#67, ADR 0013): at most 200 check-in POSTs per client IP per clock hour
+  (`x-nf-client-connection-ip`, never `X-Forwarded-For`), counted in Postgres
+  (`checkin_rate_limit_hits`, SHA-256 of the IP only) by `utils/rate-limit.js` before the body
+  is parsed. Over it: 429 and nothing written; `checkin.js` shows "Too many check-in attempts…"
+  and keeps the form. A counter failure allows the check-in. Sized so a 150-person crowd on one
+  venue Wi-Fi IP fits; env `CHECKIN_RATE_LIMIT` / `CHECKIN_RATE_WINDOW_SECONDS` override it
 - `checkin/bocc-afternoon.html` was retired with the port (the afternoon series ended)
 
 ### Images
@@ -164,6 +170,8 @@ Required (set in Netlify dashboard, never committed):
 
 Optional:
 - `ALLOWED_ORIGIN`: CORS origin (defaults to `*`, set to `https://716coffee.club` in production)
+- `CHECKIN_RATE_LIMIT` / `CHECKIN_RATE_WINDOW_SECONDS`: per-IP check-in limit (defaults 200 per
+  3600 s, ADR 0013). Staging can set small values to demo the 429
 
 Local operator-only files (gitignored, never deployed): `.env.local` (Neon owner URL from `neon link`), `.env.backfill` (checkin_writer URL + Airtable creds). The Neon CLI authenticates with a project-scoped API key in `~/.config/neon/api-key` (`NEON_API_KEY="$(cat ~/.config/neon/api-key)" neon …`), because browser login doesn't work on this remote machine.
 

@@ -1,5 +1,11 @@
 const { checkInAttendee } = require('./utils/check-in');
 const config = require('./utils/config');
+const pgStore = require('./utils/pg-store');
+const { createRateLimiter } = require('./utils/rate-limit');
+
+// Per-IP rate limit (issue #67, ADR 0013). Fails open: see utils/rate-limit.js.
+const rateLimiter = createRateLimiter({ store: pgStore, ...config.checkinRateLimit });
+const RATE_LIMITED_MESSAGE = 'Too many check-in attempts. Please wait a minute and try again.';
 
 // CORS configuration — centralized in config (env-overridable, defaults to '*').
 const ALLOWED_ORIGIN = config.http.allowedOrigin;
@@ -22,6 +28,19 @@ exports.handler = async (event) => {
             statusCode: 200,
             headers,
             body: JSON.stringify({ message: 'CORS preflight response' }),
+        };
+    }
+
+    // Rate limit every POST before parsing it. The IP is the one Netlify reports
+    // (x-nf-client-connection-ip), which the client can't set; never X-Forwarded-For.
+    const clientIp = event.headers && event.headers['x-nf-client-connection-ip'];
+    const limit = await rateLimiter.check(clientIp);
+    if (!limit.allowed) {
+        console.log('Check-in rate limited, request id:', requestId);
+        return {
+            statusCode: 429,
+            headers: { ...headers, 'Retry-After': String(limit.retryAfterSeconds) },
+            body: JSON.stringify({ message: RATE_LIMITED_MESSAGE }),
         };
     }
 
