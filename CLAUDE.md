@@ -93,7 +93,8 @@ dies with `Illegal instruction`. Locally only: `npm install --no-save --force
   - POSTs to `/.netlify/functions/checkin` (same-origin)
   - URL parameters: `debug`, `token`, `eventId`, `local` (set `local=1` to skip API calls)
   - Input sanitization, honeypot (`website` field) spam detection, sponsor redirect countdown.
-    The honeypot and all spam checks are client-side only for now (#5)
+    The server checks the honeypot too (#66): a POST with `website` filled writes nothing but
+    gets the normal success response, and is logged with event id and request id only
 - **Sponsor redirect**: `src/data/sponsor.yml` (`enabled`, `name`, `url`, `delay`); a change
   needs a deploy
 - No analytics on the check-in page

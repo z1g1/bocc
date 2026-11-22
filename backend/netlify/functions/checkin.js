@@ -38,6 +38,19 @@ exports.handler = async (event) => {
         };
     }
 
+    // Server-side honeypot: real people never see the hidden `website` field, so a
+    // filled one is a bot. Write nothing, but answer exactly as a successful check-in
+    // does so the bot can't tell it was caught. Log event id + request id only (no PII).
+    if (requestBody && requestBody.website) {
+        console.warn('Honeypot caught check-in, event id:', String(requestBody.eventId).slice(0, 64),
+            'request id:', requestId);
+        return {
+            statusCode: 200,
+            headers,
+            body: JSON.stringify({ message: 'Check-in successful', streak: null, celebration: null }),
+        };
+    }
+
     try {
         const result = await checkInAttendee(requestBody);
 

@@ -326,6 +326,73 @@ describe('checkin handler', () => {
         });
     });
 
+    describe('server-side honeypot', () => {
+        const caughtBody = {
+            email: 'bot@example.com',
+            name: 'Spam Bot',
+            phone: '123-456-7890',
+            eventId: 'event123',
+            debug: '1',
+            website: 'http://spam.example'
+        };
+
+        it('writes nothing and answers like a successful check-in when website is filled', async () => {
+            const response = await handler(createEvent(caughtBody));
+
+            expect(findOrCreateAttendee).not.toHaveBeenCalled();
+            expect(insertCheckin).not.toHaveBeenCalled();
+            expect(response.statusCode).toBe(200);
+            expect(JSON.parse(response.body)).toEqual({
+                message: 'Check-in successful',
+                streak: null,
+                celebration: null
+            });
+        });
+
+        it('answers success even when the rest of the caught request is invalid', async () => {
+            const response = await handler(createEvent({ email: 'invalid', website: 'x' }));
+
+            expect(findOrCreateAttendee).not.toHaveBeenCalled();
+            expect(insertCheckin).not.toHaveBeenCalled();
+            expect(response.statusCode).toBe(200);
+            expect(JSON.parse(response.body).message).toBe('Check-in successful');
+        });
+
+        it('logs the caught request with event id and request id only', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            try {
+                await handler({
+                    ...createEvent(caughtBody),
+                    headers: { 'x-nf-request-id': 'req-42' }
+                });
+                const logged = [...logSpy.mock.calls, ...warnSpy.mock.calls]
+                    .map(args => args.join(' ')).join('\n');
+                expect(logged).toMatch(/honeypot/i);
+                expect(logged).toContain('event123');
+                expect(logged).toContain('req-42');
+                expect(logged).not.toContain('bot@example.com');
+                expect(logged).not.toContain('Spam Bot');
+                expect(logged).not.toContain('123-456-7890');
+                expect(logged).not.toContain('spam.example');
+            } finally {
+                logSpy.mockRestore();
+                warnSpy.mockRestore();
+            }
+        });
+
+        it('checks in normally when website is empty', async () => {
+            const response = await handler(createEvent({
+                email: 'user@example.com', eventId: 'event123', website: ''
+            }));
+
+            expect(response.statusCode).toBe(200);
+            expect(insertCheckin).toHaveBeenCalledWith(expect.objectContaining({
+                attendeeId: 'att123', eventId: 'event123'
+            }));
+        });
+    });
+
     describe('validation error responses', () => {
         it('should return all validation errors', async () => {
             const event = createEvent({
