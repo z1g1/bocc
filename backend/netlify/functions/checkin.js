@@ -1,14 +1,23 @@
 const { checkInAttendee } = require('./utils/check-in');
 const config = require('./utils/config');
 const pgStore = require('./utils/pg-store');
-const { createRateLimiter } = require('./utils/rate-limit');
+const { createRateLimiter, rateLimitedMessage } = require('./utils/rate-limit');
+const { isHoneypotFilled } = require('./utils/validation');
 
 // Per-IP rate limit (issue #67, ADR 0013). Fails open: see utils/rate-limit.js.
 const rateLimiter = createRateLimiter({ store: pgStore, ...config.checkinRateLimit });
-const RATE_LIMITED_MESSAGE = 'Too many check-in attempts. Please wait a minute and try again.';
 
 // CORS configuration — centralized in config (env-overridable, defaults to '*').
 const ALLOWED_ORIGIN = config.http.allowedOrigin;
+
+// The reply to a successful check-in. The honeypot reply uses it too, so a caught bot
+// gets exactly what a real check-in gets. streak/celebration feed the frontend toast;
+// null when unavailable (debug check-in, a non-fatal failure, or a caught bot).
+const successResponse = (headers, { streak = null, celebration = null } = {}) => ({
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({ message: 'Check-in successful', streak, celebration }),
+});
 
 exports.handler = async (event) => {
     // Never log the raw event: it carries attendee PII in the body and short-lived
@@ -40,7 +49,7 @@ exports.handler = async (event) => {
         return {
             statusCode: 429,
             headers: { ...headers, 'Retry-After': String(limit.retryAfterSeconds) },
-            body: JSON.stringify({ message: RATE_LIMITED_MESSAGE }),
+            body: JSON.stringify({ message: rateLimitedMessage(limit.retryAfterSeconds) }),
         };
     }
 
@@ -60,14 +69,10 @@ exports.handler = async (event) => {
     // Server-side honeypot: real people never see the hidden `website` field, so a
     // filled one is a bot. Write nothing, but answer exactly as a successful check-in
     // does so the bot can't tell it was caught. Log event id + request id only (no PII).
-    if (requestBody && requestBody.website) {
+    if (isHoneypotFilled(requestBody)) {
         console.warn('Honeypot caught check-in, event id:', String(requestBody.eventId).slice(0, 64),
             'request id:', requestId);
-        return {
-            statusCode: 200,
-            headers,
-            body: JSON.stringify({ message: 'Check-in successful', streak: null, celebration: null }),
-        };
+        return successResponse(headers);
     }
 
     try {
@@ -93,17 +98,10 @@ exports.handler = async (event) => {
                 };
 
             case 'created':
-                return {
-                    statusCode: 200,
-                    headers,
-                    body: JSON.stringify({
-                        message: 'Check-in successful',
-                        // Streak + celebration for the frontend toast; null when unavailable
-                        // (debug check-in, or a non-fatal failure).
-                        streak: result.streak || null,
-                        celebration: result.celebration || null
-                    }),
-                };
+                return successResponse(headers, {
+                    streak: result.streak || null,
+                    celebration: result.celebration || null,
+                });
 
             default:
                 // Unknown status — treat as an unexpected failure.

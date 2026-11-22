@@ -98,7 +98,9 @@ describe("the check-in handler end to end", () => {
       body: JSON.stringify({ email, name: "Limited Person", eventId: "bocc", token: "t", debug: "1" }),
     });
     assert.equal(res.statusCode, 429, res.body);
-    assert.equal(JSON.parse(res.body).message, "Too many check-in attempts. Please wait a minute and try again.");
+    // The message names the minutes left in the clock hour, matching Retry-After.
+    const minutes = Number(JSON.parse(res.body).message.match(/about (\d+) minutes?\./)[1]);
+    assert.equal(minutes, Math.ceil(Number(res.headers["Retry-After"]) / 60));
 
     const { rows } = await owner.query("select 1 from attendees where email = $1", [email]);
     assert.equal(rows.length, 0);

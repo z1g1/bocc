@@ -43,9 +43,11 @@ describe('check-in rate limit', () => {
         const res = await handler(post(validBody));
 
         expect(res.statusCode).toBe(429);
-        expect(JSON.parse(res.body).message)
-            .toBe('Too many check-in attempts. Please wait a minute and try again.');
-        expect(Number(res.headers['Retry-After'])).toBeGreaterThan(0);
+        const retryAfter = Number(res.headers['Retry-After']);
+        expect(retryAfter).toBeGreaterThan(0);
+        // The message names the minutes left in the window, matching Retry-After.
+        const minutes = Number(JSON.parse(res.body).message.match(/about (\d+) minutes?\./)[1]);
+        expect(minutes).toBe(Math.ceil(retryAfter / 60));
         expect(pg.findOrCreateAttendee).not.toHaveBeenCalled();
         expect(pg.insertCheckin).not.toHaveBeenCalled();
     });

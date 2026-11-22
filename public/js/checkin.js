@@ -70,15 +70,18 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // container: where the message goes (the form by default; the returning-visitor
-  // panel, #greeting, when the form is hidden).
+  // panel, #greeting, when the form is hidden). An existing message element elsewhere
+  // (say in the hidden form) is moved into the container so it is always visible.
   function showValidationError(message, container) {
+      var parent = container || document.getElementById('checkinForm');
       var errEl = document.getElementById('validationError');
       if (!errEl) {
           errEl = document.createElement('div');
           errEl.id = 'validationError';
           errEl.setAttribute('role', 'alert');
           errEl.setAttribute('tabindex', '-1');
-          var parent = container || document.getElementById('checkinForm');
+      }
+      if (errEl.parentNode !== parent) {
           parent.insertBefore(errEl, parent.firstChild);
       }
       errEl.textContent = message;
@@ -316,13 +319,14 @@ document.addEventListener('DOMContentLoaded', function() {
       return data;
   }
 
-  // Shown when the API answers 429 (per-IP rate limit, issue #67). The form stays so
-  // the person can try again.
-  var RATE_LIMITED_MESSAGE = 'Too many check-in attempts. Please wait a minute and try again.';
+  // Fallback for a 429 whose body can't be read. Normally the server's message is
+  // shown, since only it knows how long is left in the rate-limit window (issue #67).
+  var RATE_LIMITED_FALLBACK = 'Too many check-in attempts. Please try again later.';
 
-  // Resolves to { ok, celebration, rateLimited }. ok is false only on a network/parse
-  // failure (unchanged behavior); celebration is set only on a successful 2xx response;
-  // rateLimited is true on a 429, before the body is read (it may not be JSON).
+  // Resolves to one of:
+  //   { ok: true, celebration }   the API answered (celebration only on a 2xx)
+  //   { ok: false, celebration: null }   network/parse failure (shows "saved locally")
+  //   { ok: false, rateLimited: true, message }   refused with 429 (per-IP rate limit)
   async function sendCheckinData(data) {
       debugLog('Sending checkin data to API', { eventId: data.eventId });
       try {
@@ -340,7 +344,11 @@ document.addEventListener('DOMContentLoaded', function() {
           });
           if (response.status === 429) {
               debugLog('API response received', { status: 429 });
-              return { ok: true, celebration: null, rateLimited: true };
+              var refusal = null;
+              try { refusal = await response.json(); } catch (e) { /* not JSON */ }
+              var message = refusal && typeof refusal.message === 'string' && refusal.message
+                  ? refusal.message : RATE_LIMITED_FALLBACK;
+              return { ok: false, rateLimited: true, message: message };
           }
           var result = await response.json();
           debugLog('API response received', { status: response.status });
@@ -354,7 +362,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
   }
 
-  // Submit (or skip in local mode) and resolve to { ok, celebration }.
+  // Submit (or skip in local mode) and resolve to an outcome (see sendCheckinData).
   async function submitCheckin(data) {
       if (localOnly === '1') {
           return { ok: true, celebration: previewCelebration() };
@@ -399,6 +407,17 @@ document.addEventListener('DOMContentLoaded', function() {
       if (sponsorEl) {
           startSponsorCountdown(sponsorEl.dataset.sponsorUrl, sponsorDelay);
       }
+  }
+
+  // After a submit: a rate-limited check-in keeps the page as it was (button back,
+  // message shown in `container`) so the person can try again; anything else thanks them.
+  function showOutcome(outcome, btn, container) {
+      if (outcome.rateLimited) {
+          resetButton(btn);
+          showValidationError(outcome.message, container);
+          return;
+      }
+      showThankYou(outcome.ok, outcome.celebration);
   }
 
   function startSponsorCountdown(url, seconds) {
@@ -458,13 +477,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
           setWithExpiry(STORAGE_KEY, checkinData, STORAGE_TTL);
 
-          var outcome = await submitCheckin(checkinData);
-          if (outcome.rateLimited) {
-              resetButton(btn);
-              showValidationError(RATE_LIMITED_MESSAGE, greetingDiv);
-              return;
-          }
-          showThankYou(outcome.ok, outcome.celebration);
+          showOutcome(await submitCheckin(checkinData), btn, greetingDiv);
       });
   } else {
       var checkinForm = document.getElementById('checkinForm');
@@ -480,13 +493,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
           setWithExpiry(STORAGE_KEY, checkinData, STORAGE_TTL);
 
-          var outcome = await submitCheckin(checkinData);
-          if (outcome.rateLimited) {
-              resetButton(checkinButton);
-              showValidationError(RATE_LIMITED_MESSAGE);
-              return;
-          }
-          showThankYou(outcome.ok, outcome.celebration);
+          showOutcome(await submitCheckin(checkinData), checkinButton);
       };
 
       checkinForm.addEventListener('submit', handleSubmit);

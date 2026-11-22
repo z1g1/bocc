@@ -4,7 +4,7 @@
 // than `limit` are already recorded there, and say whether it did. The real SQL is
 // covered by tests/admin/checkin-rate-limit.test.mjs against a throwaway Postgres.
 
-const { createRateLimiter } = require('../netlify/functions/utils/rate-limit');
+const { createRateLimiter, rateLimitedMessage } = require('../netlify/functions/utils/rate-limit');
 
 const fakeStore = () => {
     const counts = new Map();
@@ -99,5 +99,18 @@ describe('check-in rate limiter', () => {
         expect((await limiter.check('')).allowed).toBe(true);
         expect(store.calls).toHaveLength(0);
         expect(logger.warn).toHaveBeenCalled();
+    });
+});
+
+describe('rateLimitedMessage', () => {
+    test('says how many minutes are left in the window, rounded up', () => {
+        expect(rateLimitedMessage(1800)).toBe('Too many check-in attempts. Please try again in about 30 minutes.');
+        expect(rateLimitedMessage(3599)).toBe('Too many check-in attempts. Please try again in about 60 minutes.');
+        expect(rateLimitedMessage(61)).toBe('Too many check-in attempts. Please try again in about 2 minutes.');
+    });
+
+    test('under a minute left reads as one minute, singular', () => {
+        expect(rateLimitedMessage(1)).toBe('Too many check-in attempts. Please try again in about 1 minute.');
+        expect(rateLimitedMessage(60)).toBe('Too many check-in attempts. Please try again in about 1 minute.');
     });
 });

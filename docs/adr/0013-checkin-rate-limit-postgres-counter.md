@@ -1,9 +1,9 @@
 # ADR 0013 — Per-IP check-in rate limit as a Postgres counter
 
-- **Status:** Accepted
+- **Status:** Accepted (2026-11-22). Spec: GitHub issue #67 (parent #5, finding L1 of the
+  pre-go-live security review).
 - **Date:** 2026-11-22
 - **Deciders:** Zack Glick
-- **Context:** issue #67 (parent #5, finding L1 of the pre-go-live security review)
 
 ## Context
 
@@ -15,22 +15,6 @@ The limit must never stop a real Tuesday. Most attendees check in within the sam
 minutes, many over the venue's shared Wi-Fi, so a whole crowd can share one public IP.
 Today's crowd is about 30 to 35 people. Before the pandemic it reached about 150.
 
-## Options
-
-1. **Netlify's built-in rate limiting.** Code-based rules are on every plan, including the
-   credit-based Free plan (2 rules per project). But:
-   - Function rules live in the function's exported `config` (with a `path`), which is the
-     v2 function format. `checkin.js` is a v1 CommonJS `exports.handler`. Rules can't be
-     set for a function in `netlify.toml`. Using it means rewriting the handler (Request
-     and Response, a custom path) for this one feature.
-   - Netlify says it "can take up to 10 seconds" before it starts blocking a client.
-     A script sending 50 requests a second writes about 500 rows before the first 429.
-   - The window is at most 180 seconds, so the limit can't be "per event".
-   - It can't run in the Jest suite or locally, so the limit logic can't be tested.
-   - Its 429 body is Netlify's page, not the API's JSON.
-2. **A counter in Postgres (chosen).** One more statement per check-in, against the
-   database the function already uses.
-
 ## Decision
 
 - **A fixed window per client IP, counted in Postgres.** Every check-in POST (valid or not,
@@ -38,8 +22,9 @@ Today's crowd is about 30 to 35 people. Before the pandemic it reached about 150
   `(client_key, window_start)`. One statement inserts the row only if the window holds
   fewer than the limit, and returns whether it did
   (`pg-store.recordAttemptUnderLimit`). Over the limit, the function returns **429** with
-  `Retry-After` and `{"message":"Too many check-in attempts. Please wait a minute and try
-  again."}`, and writes no attendee, check-in or counter row.
+  `Retry-After` (seconds left in the window) and a JSON `message` naming the minutes left
+  ("Too many check-in attempts. Please try again in about N minutes."), and writes no
+  attendee, check-in or counter row. The check-in page shows that message and keeps the form.
 - **Limits: 200 attempts per IP per clock hour** (`CHECKIN_RATE_LIMIT=200`,
   `CHECKIN_RATE_WINDOW_SECONDS=3600`). An hour covers the whole event's arrival peak, so
   the limit is effectively "per event". A 150-person crowd, the largest BOCC has had, all on
@@ -56,6 +41,23 @@ Today's crowd is about 30 to 35 people. Before the pandemic it reached about 150
   limiter exists to stop floods, and it must never be why a real attendee can't check in.
 - **Insert-only.** `checkin_writer` gets `SELECT, INSERT` on the new table and still has no
   `UPDATE` or `DELETE` anywhere (docs/backend/NEON_PERMISSIONS.md).
+
+## Alternatives considered
+
+- **Netlify's built-in rate limiting.** Code-based rules are on every plan, including the
+  credit-based Free plan (2 rules per project). Rejected because:
+  - Function rules live in the function's exported `config` (with a `path`), which is the
+    v2 function format. `checkin.js` is a v1 CommonJS `exports.handler`. Rules can't be
+    set for a function in `netlify.toml`. Using it means rewriting the handler (Request
+    and Response, a custom path) for this one feature.
+  - Netlify says it "can take up to 10 seconds" before it starts blocking a client.
+    A script sending 50 requests a second writes about 500 rows before the first 429.
+  - The window is at most 180 seconds, so the limit can't be "per event".
+  - It can't run in the Jest suite or locally, so the limit logic can't be tested.
+  - Its 429 body is Netlify's page, not the API's JSON.
+
+  A counter in Postgres (the decision above) costs one more statement per check-in, against
+  the database the function already uses.
 
 ## Consequences
 

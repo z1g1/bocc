@@ -77,14 +77,17 @@ The QR code URL contains the event token: `https://716coffee.club/checkin/bocc?t
 - Runs first, on every POST, before the body is parsed
 - At most 200 attempts per client IP per clock hour. The IP is `x-nf-client-connection-ip`
   (set by Netlify, not the client); only its SHA-256 is stored, in `checkin_rate_limit_hits`
-- Over the limit → `429` with `Retry-After`, and nothing is written. `checkin.js` shows "Too many
-  check-in attempts. Please wait a minute and try again." and keeps the form
+- Over the limit → `429` with `Retry-After` and a `message` naming the minutes left in the window
+  ("…Please try again in about N minutes."), and nothing is written. `checkin.js` shows the
+  server's message (a generic one if the body can't be read) and keeps the form
 - Sized for the crowd: 150 people (BOCC's largest) on one venue Wi-Fi IP still fit, with room
   for retries; a script gets at most 200 rows an hour per IP
 - If the counter fails (or there's no client IP) the check-in is allowed and the error logged
   without PII. Env `CHECKIN_RATE_LIMIT` / `CHECKIN_RATE_WINDOW_SECONDS` override the limit
 
 ### 3b. Backend validation (`utils/validation.js`)
+- Honeypot: a filled `website` field (`isHoneypotFilled`) means a bot. Nothing is written, the
+  reply is the normal success response, and the log has event id and request id only
 - Email: RFC 5322 format + dangerous character rejection
 - Phone: digits, spaces, hyphens, parentheses (optional)
 - Token: alphanumeric + hyphens only

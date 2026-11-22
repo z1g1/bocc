@@ -56,4 +56,10 @@ const createRateLimiter = ({ store, limit, windowSeconds, now = () => Date.now()
     return { check };
 };
 
-module.exports = { createRateLimiter };
+// The 429 message, honest about how long is left in the window (minutes, rounded up).
+const rateLimitedMessage = (retryAfterSeconds) => {
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    return `Too many check-in attempts. Please try again in about ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+};
+
+module.exports = { createRateLimiter, rateLimitedMessage };

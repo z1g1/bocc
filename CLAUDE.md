@@ -93,16 +93,17 @@ dies with `Illegal instruction`. Locally only: `npm install --no-save --force
   - POSTs to `/.netlify/functions/checkin` (same-origin)
   - URL parameters: `debug`, `token`, `eventId`, `local` (set `local=1` to skip API calls)
   - Input sanitization, honeypot (`website` field) spam detection, sponsor redirect countdown.
-    The server checks the honeypot too (#66): a POST with `website` filled writes nothing but
-    gets the normal success response, and is logged with event id and request id only
+    The server checks the honeypot too (#66, `isHoneypotFilled` in `utils/validation.js`): a POST
+    with `website` filled writes nothing but gets the normal success response, and is logged
+    with event id and request id only
 - **Sponsor redirect**: `src/data/sponsor.yml` (`enabled`, `name`, `url`, `delay`); a change
   needs a deploy
 - No analytics on the check-in page
 - **Rate limit** (#67, ADR 0013): at most 200 check-in POSTs per client IP per clock hour
   (`x-nf-client-connection-ip`, never `X-Forwarded-For`), counted in Postgres
   (`checkin_rate_limit_hits`, SHA-256 of the IP only) by `utils/rate-limit.js` before the body
-  is parsed. Over it: 429 and nothing written; `checkin.js` shows "Too many check-in attempts…"
-  and keeps the form. A counter failure allows the check-in. Sized so a 150-person crowd on one
+  is parsed. Over it: 429 with `Retry-After` and a `message` naming the minutes left in the
+  window, and nothing written; `checkin.js` shows the server's message and keeps the form. A counter failure allows the check-in. Sized so a 150-person crowd on one
   venue Wi-Fi IP fits; env `CHECKIN_RATE_LIMIT` / `CHECKIN_RATE_WINDOW_SECONDS` override it
 - `checkin/bocc-afternoon.html` was retired with the port (the afternoon series ended)
 
@@ -121,7 +122,7 @@ documented on the page `/assets/images/brand/` (`src/content/pages/brand-assets.
 cd backend
 npm install
 
-# Run all tests (~150 tests across 8 suites)
+# Run all tests (175 tests across 10 suites)
 npm test
 
 # Automated local smoke test
@@ -146,10 +147,12 @@ netlify dev
 ### Core Check-in Workflow
 
 1. Form sends attendee data (email, name, phone, businessName, okToEmail) + eventId + debug flag + token
-2. API validates all inputs via `utils/validation.js`
-3. Finds or creates the attendee in Postgres `attendees` (by lowercased email)
-4. Inserts the check-in into Postgres `checkins`. Same-day duplicates are rejected by a unique index and return "already checked in"
-5. Reads the attendee's streak from the `streaks` view (non-fatal)
+2. API rate-limits the POST per client IP before parsing it (`utils/rate-limit.js`, ADR 0013). Over the limit: 429 and nothing written. Fails open
+3. A filled `website` honeypot (`isHoneypotFilled`, `utils/validation.js`) writes nothing and gets the normal success response
+4. API validates all inputs via `utils/validation.js`
+5. Finds or creates the attendee in Postgres `attendees` (by lowercased email)
+6. Inserts the check-in into Postgres `checkins`. Same-day duplicates are rejected by a unique index and return "already checked in"
+7. Reads the attendee's streak from the `streaks` view (non-fatal)
 
 ### Data Storage (Neon Postgres)
 
@@ -184,15 +187,22 @@ See `docs/backend/NEON_PERMISSIONS.md` for permissions documentation.
 - `findOrCreateAttendee({ email, name, phone, businessName, okToEmail, debug })`
 - `insertCheckin({ attendeeId, eventId, token, debug, checkinDate })` → `{ created }`. `created: false` means a same-day duplicate
 - `getStreak(attendeeId, eventId)` reads the `streaks` view
+- `recordAttemptUnderLimit({ clientKey, windowStart, limit })` → boolean: records one rate-limit attempt only if the window isn't full (insert-only, `checkin_rate_limit_hits`)
 - `utils/db-ssl.js` `toPgConfig(url, extra)`: verify-full TLS, strips `sslmode` from URLs
+
+**Rate limit** (`utils/rate-limit.js`, ADR 0013):
+- `createRateLimiter({ store, limit, windowSeconds })` → `{ check(clientIp) }` → `{ allowed }` or `{ allowed: false, retryAfterSeconds }`. Never throws; fails open. Stores only the IP's SHA-256
+- `rateLimitedMessage(retryAfterSeconds)`: the 429 message ("…try again in about N minutes.")
 
 **Input validation** (`utils/validation.js`):
 - `validateCheckinInput(input)` → `{ isValid, errors, sanitized }`
+- `isHoneypotFilled(input)`: true when the hidden `website` field is filled (a bot)
 - Email (RFC 5322), phone, eventId, token validators
 
 ### Testing Strategy
 
-- ~150 Jest tests across 8 suites (checkin, check-in use-case, pg-store, db-ssl, config, validation, eastern-week, streak-celebration)
+- 175 Jest tests across 10 suites (checkin, checkin-rate-limit, check-in use-case, rate-limit, pg-store, db-ssl, config, validation, eastern-week, streak-celebration)
+- `npm run test:db` at the repo root runs the SQL (including the rate-limit store and grants) against a throwaway Postgres
 - Unit tests mock `pg` and the Postgres store, so no database or API keys are needed
 - Smoke tests: `test:smoke-local` (automated), `test:smoke-prod` (deployed)
 - Use `debug: "1"` for all test submissions
