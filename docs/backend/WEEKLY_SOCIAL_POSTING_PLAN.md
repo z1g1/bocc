@@ -6,7 +6,10 @@
 > admin app. The current weekly flow is in [`docs/social/README.md`](../social/README.md), and
 > the task prompts are in [`docs/social/CHROME_TASKS.md`](../social/CHROME_TASKS.md). Kept for
 > the API research below, which is the long-term option for one channel at a time. The
-> LinkedIn event CLI (`tools/linkedin-events`) is unchanged.
+> LinkedIn event CLI (`tools/linkedin-events`, `bocc-event`) that this plan builds on was
+> itself replaced by the admin app ([ADR 0012](../adr/0012-linkedin-events-from-admin-app.md))
+> and deleted in #30 (it is in git history), so the CLI commands and package layout below are
+> historical.
 
 Status: **Superseded.** Originally proposed 2026-10-27. Nothing here was built.
 

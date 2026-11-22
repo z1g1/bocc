@@ -189,8 +189,9 @@ all seven on 2026-11-16, and they are written into the ADRs.
         [Sprout](https://sproutsocial.com/insights/schedule-threads-posts/)
   - Notes: TikTok Studio schedules 15 min to 10 days ahead and needs a Business Account. LinkedIn
     Pages schedule 1 hour to 3 months ahead. Neither allows editing a scheduled post's content.
-- [x] **LinkedIn CLI:** `tools/linkedin-events/bocc_events/config.py` pins `202609`, which is
-      active until 2027-09-15. 202511 sunset on 2026-11-16, as expected.
+- [x] **LinkedIn CLI:** `tools/linkedin-events/bocc_events/config.py` pinned `202609`, which is
+      active until 2027-09-15 (the CLI is retired, #30; the pin is now `LINKEDIN_VERSION` in
+      `src/lib/linkedin/client.mjs`). 202511 sunset on 2026-11-16, as expected.
       [LinkedIn versioning](https://learn.microsoft.com/en-us/linkedin/marketing/integrations/migrations)
 
 ### ADR changes (accepted 2026-11-16, written into the ADRs)
@@ -586,8 +587,9 @@ work (to save deploy credits); everything is verified on staging first.
       node --env-file=../.env.local scripts/import-linkedin-ledger.js           # again: unchanged N, conflicts 0
       ```
       `posted` and `created` entries become ledger rows (created_by and the image null);
-      `pending` entries are SKIPPED and listed: check LinkedIn for that week, then finish it
-      with the CLI (`bocc-event post`) or `bocc-event forget` it, and re-run. A posted week
+      `pending` entries are SKIPPED and listed: check LinkedIn for that week and, if nothing
+      was created, remove the entry from `ledger.json` (what `bocc-event forget` did; the
+      CLI is retired, #30) and re-run. A posted week
       with no `linkedin_event` listing gets one. A stored web row that disagrees is a
       CONFLICT and refuses `--apply` unless `--prefer-db` (keeps the stored row). One
       `linkedin_event.import` audit row per run that changed something. Afterwards each
@@ -596,9 +598,10 @@ work (to save deploy credits); everything is verified on staging first.
 - [ ] Release runbook (`PHASE6_RELEASE.md`): prefactor checked on staging, then production,
       **before** the first live create. Reminder: `LinkedIn-Version: 202609` sunsets
       2027-09-15
-- [ ] After the first successful live create from production: delete `tools/linkedin-events/`,
+- [x] After the first successful live create from production: delete `tools/linkedin-events/`,
       rewrite the LinkedIn permissions doc for the web OAuth flow and repoint the
-      `bocc-linkedin-event` skill (docs-only, batched into a later deploy)
+      `bocc-linkedin-event` skill (docs-only, batched into a later deploy). Done in #30: the
+      skill text is `docs/social/skills/bocc-linkedin-event/SKILL.md`
 
 ## Later, not in the MVP
 

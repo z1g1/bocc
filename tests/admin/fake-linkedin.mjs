@@ -1,7 +1,7 @@
 // A fake LinkedIn client for the use-case and HTTP tests (issue #18 "Testing
 // Decisions"): the same seven operations as src/lib/linkedin/client.mjs, no network.
 // Each call is recorded in `calls` ({ op, args }); canned replies mirror the CLI's
-// tests (tools/linkedin-events/tests/test_cli.py). Queue a failure for the next call of
+// tests (tools/linkedin-events/tests/test_cli.py, in git history). Queue a failure for the next call of
 // an operation with fail(op, err), e.g. fail("createPost", new LinkedInError("validation", "x")).
 import { LinkedInError } from "../../src/lib/linkedin/client.mjs";
 

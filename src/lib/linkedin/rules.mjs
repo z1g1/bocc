@@ -52,7 +52,7 @@ export function missingScopes(granted) {
 }
 
 // ── The weekly event (issue #25) ───────────────────────────────────────────────
-// Facts carried over from the CLI (tools/linkedin-events/bocc_events/config.py).
+// Facts carried over from the retired CLI (its config.py; tools/linkedin-events in git history).
 
 export const ORGANIZER_URN = "urn:li:organization:89993057";
 export const EVENT_TZ = "America/New_York";
