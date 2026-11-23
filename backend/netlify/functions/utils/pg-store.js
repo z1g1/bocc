@@ -128,10 +128,31 @@ const getStreak = async (attendeeId, eventId) => {
   };
 };
 
+/**
+ * Rate limiter store (utils/rate-limit.js, ADR 0013). Records one check-in attempt
+ * for (clientKey, windowStart) only if fewer than `limit` are already recorded there,
+ * in one statement, and says whether it did. Insert-only, so `checkin_writer` keeps
+ * no UPDATE or DELETE. Concurrent requests can overshoot `limit` by a few; that's fine.
+ *
+ * @returns {Promise<boolean>} true = recorded (under the limit), false = window full
+ */
+const recordAttemptUnderLimit = async ({ clientKey, windowStart, limit }) => {
+  const result = await query(
+    `insert into checkin_rate_limit_hits (client_key, window_start)
+     select $1::text, $2::timestamptz
+     where (select count(*) from checkin_rate_limit_hits
+            where client_key = $1::text and window_start = $2::timestamptz) < $3::int
+     returning 1`,
+    [clientKey, windowStart, limit]
+  );
+  return result.rows.length > 0;
+};
+
 module.exports = {
   findOrCreateAttendee,
   insertCheckin,
   getStreak,
+  recordAttemptUnderLimit,
   // exposed for tests / graceful shutdown
   _getPool: getPool,
 };

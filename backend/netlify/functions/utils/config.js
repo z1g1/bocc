@@ -37,12 +37,26 @@ if (missing.length > 0) {
 // One concise boot summary replaces the per-module 'Exists / Not set' logs.
 console.log('[config] Required secrets present:', Object.keys(REQUIRED_SECRETS).join(', '));
 
+// A positive integer from the environment, or the default when unset or malformed.
+const positiveInt = (value, fallback) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+};
+
 // --- Frozen config object ---------------------------------------------------
 const config = Object.freeze({
   // Neon Postgres — the only check-in store (ADR 0005, ADR 0006).
   db: Object.freeze({
     connectionString: REQUIRED_SECRETS.CHECKIN_DB_URL,
     poolMax: Number(env.DB_POOL_MAX || 1), // serverless: one conn per instance
+  }),
+
+  // Per-IP check-in rate limit (issue #67, ADR 0013). 200 attempts per IP per clock
+  // hour: a 150-person crowd all on the venue's Wi-Fi still fits, a script doesn't.
+  // Staging can set smaller values to demo it.
+  checkinRateLimit: Object.freeze({
+    limit: positiveInt(env.CHECKIN_RATE_LIMIT, 200),
+    windowSeconds: positiveInt(env.CHECKIN_RATE_WINDOW_SECONDS, 3600),
   }),
 
   http: Object.freeze({

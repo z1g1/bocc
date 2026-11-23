@@ -73,7 +73,21 @@ The QR code URL contains the event token: `https://716coffee.club/checkin/bocc?t
 - Validates inputs client-side (email format, honeypot bot detection)
 - POSTs JSON to `/.netlify/functions/checkin` (same-origin)
 
-### 3. Backend validation (`utils/validation.js`)
+### 3. Per-IP rate limit (`utils/rate-limit.js`, ADR 0013)
+- Runs first, on every POST, before the body is parsed
+- At most 200 attempts per client IP per clock hour. The IP is `x-nf-client-connection-ip`
+  (set by Netlify, not the client); only its SHA-256 is stored, in `checkin_rate_limit_hits`
+- Over the limit → `429` with `Retry-After` and a `message` naming the minutes left in the window
+  ("…Please try again in about N minutes."), and nothing is written. `checkin.js` shows the
+  server's message (a generic one if the body can't be read) and keeps the form
+- Sized for the crowd: 150 people (BOCC's largest) on one venue Wi-Fi IP still fit, with room
+  for retries; a script gets at most 200 rows an hour per IP
+- If the counter fails (or there's no client IP) the check-in is allowed and the error logged
+  without PII. Env `CHECKIN_RATE_LIMIT` / `CHECKIN_RATE_WINDOW_SECONDS` override the limit
+
+### 3b. Backend validation (`utils/validation.js`)
+- Honeypot: a filled `website` field (`isHoneypotFilled`) means a bot. Nothing is written, the
+  reply is the normal success response, and the log has event id and request id only
 - Email: RFC 5322 format + dangerous character rejection
 - Phone: digits, spaces, hyphens, parentheses (optional)
 - Token: alphanumeric + hyphens only
@@ -96,6 +110,7 @@ The QR code URL contains the event token: `https://716coffee.club/checkin/bocc?t
 ### 7. Frontend response
 - On success: shows confirmation, plus a sponsor redirect countdown if one is enabled
 - On API failure: saves data to `localStorage` and shows "saved locally" message
+- On `429`: shows the rate-limit message and keeps the form (or the "Welcome back" button)
 
 ## Data Model
 
@@ -166,6 +181,10 @@ were backfilled to Postgres. The app no longer connects to Airtable.
 - Database: parameterized SQL, a DB-enforced dedup index, and a role that can't UPDATE,
   DELETE, or run DDL.
 
+### Rate limiting
+- Per client IP, 200 check-in POSTs per clock hour, counted in Postgres; 429 over it
+  ([ADR-0013](adr/0013-checkin-rate-limit-postgres-counter.md)). Fails open.
+
 ### CORS
 - Backend `ALLOWED_ORIGIN` env var controls allowed origins
 - Defaults to `*` in development, should be `https://716coffee.club` in production
@@ -176,7 +195,8 @@ were backfilled to Postgres. The app no longer connects to Airtable.
   [ADR-0001](adr/0001-config-fail-fast-at-import.md))
 - The static website has zero secrets; the admin app's (`ADMIN_DB_URL`, `BETTER_AUTH_SECRET`)
   are read only by on-demand routes
-- Backend env vars: required `CHECKIN_DB_URL`, plus optional `ALLOWED_ORIGIN` (see
+- Backend env vars: required `CHECKIN_DB_URL`, plus optional `ALLOWED_ORIGIN`,
+  `CHECKIN_RATE_LIMIT` and `CHECKIN_RATE_WINDOW_SECONDS` (see
   `.env.example`)
 - The Neon owner URL and Neon API key are operator-only and never deployed
 - Principle of least privilege for all API tokens and database roles
