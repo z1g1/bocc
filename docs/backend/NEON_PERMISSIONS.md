@@ -14,7 +14,7 @@ in Neon Object Storage).
 
 | Identity | Used by | Privileges | Where the credential lives |
 |---|---|---|---|
-| `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`; `SELECT` on `held_occurrences`, `streaks`; `SELECT (event_date, status)` on `events`, so the Held view can read Reported and Cancelled Events (migration `20261203190000_held_from_events.sql`) | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
+| `checkin_writer` | check-in Netlify function; backfill script | `USAGE` on `public`; `SELECT, INSERT` on `attendees`, `checkins`, `checkin_rate_limit_hits` (the per-IP rate limit, migration `20261204120000_checkin_rate_limit.sql`, ADR 0013); `SELECT` on `held_occurrences`, `streaks`; `SELECT (event_date, status)` on `events`, so the Held view can read Reported and Cancelled Events (migration `20261203190000_held_from_events.sql`) | Netlify env `CHECKIN_DB_URL`; locally `.env.backfill` (gitignored, mode 600) |
 | `admin_app` | admin app (`/admin/*`, `/api/admin/*`) and Better Auth (`/api/auth/*`), in the Astro SSR function; the `create-admin` CLI | see "admin_app" below | Netlify env `ADMIN_DB_URL`; locally `.env.admin` (gitignored, mode 600) |
 | `site_reader` | public `/events/YYYY-MM-DD/` pages and `/sitemap.xml`, rendered on request in the Astro SSR function (ADR 0009 decision 4) | `USAGE` on `public`; `SELECT` on `events`, `event_links` only | Netlify env `SITE_DB_URL` (secret) |
 | `social_checker` | the Thursday social check, a Netlify scheduled function (`backend/netlify/functions/social-check.mjs`, ADR 0011 decision 5) | `USAGE` on `public`; `SELECT` on `events`, `event_links`, `social_plans`, `social_media_posts`; `SELECT (id, event_date, kind, status)` on `event_media`; `SELECT (user_id, expires_at, display_name)` on `linkedin_authentications`; the same on the deprecated compatibility views `social_posts`, `social_post_channels`, `linkedin_connections` (see "Contract later"); nothing in `auth` | Netlify env `SOCIAL_CHECK_DB_URL` (secret) |
@@ -23,6 +23,10 @@ in Neon Object Storage).
 | Neon API key (project-scoped) | operator only: `neon` CLI | Editor on this one project, no org actions | `~/.config/neon/api-key` (mode 600), outside the repo. Revoke when idle. |
 
 `checkin_writer` has **no** `UPDATE`, `DELETE`, DDL, or access to `schema_migrations`, and no other `events` column or event table.
+`checkin_rate_limit_hits` holds only a SHA-256 of the client IP and a window start (a check
+constraint refuses anything but a hex digest). It is insert-only for `checkin_writer` and no
+other app role can read it. The app never deletes from it; the owner can prune old windows
+(`delete from checkin_rate_limit_hits where window_start < now() - interval '1 day'`).
 RLS is enabled on `attendees` and `checkins`, and both views are `security_invoker`,
 so they run with the caller's grants. The browser never talks to Postgres; it POSTs
 to `/.netlify/functions/checkin`. `checkin_writer` has no access to the `auth` schema,
@@ -442,6 +446,13 @@ Run as `checkin_writer` once `20261116120000_admin_auth.sql` is applied (on `dev
 
 - [ ] `select * from auth."user"` → permission denied for schema auth
 - [ ] `select * from user_roles` / `from audit_log` → permission denied
+
+Run as `checkin_writer` once `20261204120000_checkin_rate_limit.sql` is applied, inside
+`begin; … rollback;` (also covered by `tests/admin/checkin-rate-limit.test.mjs`):
+
+- [ ] `select count(*) from checkin_rate_limit_hits` → succeeds
+- [ ] `insert into checkin_rate_limit_hits (client_key, window_start) values (encode(sha256('x'), 'hex'), now())` → succeeds
+- [ ] `update checkin_rate_limit_hits set window_start = now()` / `delete from checkin_rate_limit_hits` → permission denied
 
 Run as `admin_app` on `dev`, then on `production`, inside `begin; … rollback;`:
 

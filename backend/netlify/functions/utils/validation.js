@@ -162,11 +162,21 @@ const validateCheckinInput = (input) => {
     };
 };
 
+/**
+ * Server-side honeypot (issue #5, #66). The check-in form has a hidden `website`
+ * field real people never see, so a filled one means a bot. The handler writes
+ * nothing for such a request and answers as if it succeeded.
+ * @param {Object} input - The parsed request body
+ * @returns {boolean} - true when the honeypot field is filled
+ */
+const isHoneypotFilled = (input) => Boolean(input && input.website);
+
 module.exports = {
     isValidEmail,
     isValidPhone,
     sanitizeText,
     isValidEventId,
     isValidToken,
-    validateCheckinInput
+    validateCheckinInput,
+    isHoneypotFilled
 };

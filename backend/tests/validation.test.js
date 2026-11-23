@@ -4,7 +4,8 @@ const {
     sanitizeText,
     isValidEventId,
     isValidToken,
-    validateCheckinInput
+    validateCheckinInput,
+    isHoneypotFilled
 } = require('../netlify/functions/utils/validation');
 
 describe('isValidEmail', () => {
@@ -472,5 +473,20 @@ describe('validateCheckinInput', () => {
             expect(result.isValid).toBe(false);
             expect(result.errors.length).toBeGreaterThan(1);
         });
+    });
+});
+
+describe('isHoneypotFilled', () => {
+    it('is true when the hidden website field has a value (a bot filled it)', () => {
+        expect(isHoneypotFilled({ email: 'a@b.co', website: 'http://spam.example' })).toBe(true);
+    });
+
+    it('is false when website is empty or missing (a person)', () => {
+        expect(isHoneypotFilled({ email: 'a@b.co', website: '' })).toBe(false);
+        expect(isHoneypotFilled({ email: 'a@b.co' })).toBe(false);
+    });
+
+    it('is false for a missing body', () => {
+        expect(isHoneypotFilled(null)).toBe(false);
     });
 });
