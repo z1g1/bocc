@@ -1,0 +1,137 @@
+---
+// /admin/luma-sync/next/: the Tuesday 9:00 PM Claude in Chrome task's Luma sync (ADR 0014,
+// spec #70). Admin and email. Built for an agent to read, like /admin/social/next/: plain
+// server-rendered HTML, no script, stable ids and labels, explicit buttons.
+//
+// Which sync: the OLDEST Event, from launch up to and including today, whose Luma sync is
+// unfinished (To do or Error); findNextLumaSync, src/lib/admin/luma-sync.mjs. It never
+// offers an Upcoming Event or one before launch. Nothing unfinished: "Nothing to add,
+// stand down." (id="stand-down"), which also names the holiday break in that week.
+//
+// Shows only the Event date, the status, any previous Error note and each person's name
+// and email: never phone, business name or anything else (ADR 0008; the email role's
+// whole reach is src/lib/admin/roles.mjs EMAIL_PATHS).
+// POSTs come back here (Origin-checked) and answer 303 to a GET with ?notice= (post/
+// redirect/get), which shows the next unfinished sync. A refused post (Error without a
+// note, a bad date) re-renders with the message.
+import Admin from "../../../layouts/Admin.astro";
+import { requireRole } from "../../../lib/admin/roles.mjs";
+import { checkOrigin } from "../../../lib/admin/csrf.mjs";
+import { longDay } from "../../../lib/admin/format.mjs";
+import { LUMA_PEOPLE_URL, NOTE_MAX, emailLine } from "../../../lib/admin/luma-sync-rules.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "email");
+if (denied) return denied;
+
+const { user, roles = [] } = Astro.locals;
+const PAGE = "/admin/luma-sync/next/";
+const lp = await import("../../../lib/admin/luma-sync-pages.mjs");
+const ls = await import("../../../lib/admin/luma-sync.mjs");
+const { pool } = await import("../../../lib/admin/db.mjs");
+
+let errors: Record<string, string> = {};
+let posted: { action: string; values: Record<string, string> } | null = null;
+if (Astro.request.method === "POST") {
+  const refused = checkOrigin(Astro.request);
+  if (refused) return refused;
+  const r: any = await lp.handleLumaSyncPost(Astro.request, user!.id, PAGE);
+  if (r.response) return r.response;
+  errors = r.errors;
+  posted = r.posted;
+  Astro.response.status = r.status;
+} else if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
+}
+
+const pick: any = await ls.findNextLumaSync(pool);
+const sync = pick.state === "sync" ? pick.sync : null;
+const notice = posted ? null : lp.noticeText(Astro.url.searchParams);
+// The agent just marked this same sync Error: it is handed out again (an Admin follows
+// up, or the next run retries), so this run stops here instead of looping on it.
+const justErrored = !posted && sync?.status === "error" && Astro.url.searchParams.get("notice") === "error"
+  && Astro.url.searchParams.get("date") === sync.date;
+const noteValue = posted?.action === "error" ? posted.values.note : "";
+---
+<Admin title="Luma sync" user={user} roles={roles}>
+  <h1 id="title">Luma sync</h1>
+  {notice && <p class="notice" role="status" id="notice">{notice}</p>}
+  {posted && errors.date && <p class="error" role="alert" id="post-error">{errors.date}</p>}
+
+  {!sync && (
+    <section id="stand-down" data-holiday={pick.holiday ? "true" : "false"} aria-labelledby="h-stand-down">
+      <h2 id="h-stand-down">Nothing to add, stand down.</h2>
+      <p id="stand-down-reason">{pick.message}</p>
+      <p>Stop here: there is no Luma sync to work on.</p>
+    </section>
+  )}
+
+  {sync && (
+    <>
+      <section id="summary" aria-labelledby="h-summary">
+        <h2 id="h-summary">Luma sync to work on</h2>
+        <dl>
+          <dt>Event date</dt><dd id="event-date" data-date={sync.date}>{sync.date} ({longDay(sync.date)})</dd>
+          <dt>Status</dt><dd id="status" data-status={sync.status}>{sync.statusLabel}</dd>
+          <dt>People to add</dt><dd id="people-count">{sync.people.length}</dd>
+          <dt>Luma people page</dt><dd><a id="luma-people-url" href={LUMA_PEOPLE_URL} rel="noopener noreferrer">{LUMA_PEOPLE_URL}</a></dd>
+          {sync.note && sync.status === "error" && <><dt>Previous Error note</dt><dd><pre id="previous-error-note">{sync.note}</pre></dd></>}
+        </dl>
+        {justErrored
+          ? <p id="next-step" data-step="stop">You marked this Luma sync Error just now. Stop here and report the Error note above. Don't retry it in this run.</p>
+          : sync.people.length > 0
+            ? <p id="next-step" data-step="add">Open the Luma people page, choose Add people, paste the emails line below and send. Then search the Luma people list for each email. If every email is found, press Mark Done. If any is missing, press Mark Error and name the missing emails in the note.</p>
+            : <p id="next-step" data-step="done">Nobody is left to add. Press Mark Done.</p>}
+      </section>
+
+      <section id="people" aria-labelledby="h-people">
+        <h2 id="h-people">People to add</h2>
+        {sync.people.length > 0
+          ? (
+            <table id="people-table">
+              <thead><tr><th scope="col">Name</th><th scope="col">Email</th></tr></thead>
+              <tbody>
+                {sync.people.map((p: any) => <tr data-email={p.email}><td>{p.name}</td><td>{p.email}</td></tr>)}
+              </tbody>
+            </table>
+          )
+          : <p id="people-empty" class="muted">Nobody.</p>}
+        <h3 id="h-emails">All emails, separated by spaces</h3>
+        <pre id="emails">{emailLine(sync.people)}</pre>
+      </section>
+
+      <section id="mark-done" aria-labelledby="h-mark-done">
+        <h2 id="h-mark-done">Mark Done</h2>
+        <p>Only when every email above is in the Luma people list. Everyone listed becomes On Luma today.</p>
+        <form method="post" action={PAGE} id="form-done">
+          <input type="hidden" name="action" value="done">
+          <input type="hidden" name="date" value={sync.date}>
+          {sync.people.map((p: any) => <input type="hidden" name="attendeeId" value={p.id}>)}
+          <button type="submit" id="button-done">Mark Done</button>
+        </form>
+      </section>
+
+      <section id="mark-error" aria-labelledby="h-mark-error">
+        <h2 id="h-mark-error">Mark Error</h2>
+        <form method="post" action={PAGE} id="form-error">
+          <input type="hidden" name="action" value="error">
+          <input type="hidden" name="date" value={sync.date}>
+          <label for="note">Error note <span class="muted">(required: the missing emails, or what went wrong)</span></label>
+          <textarea id="note" name="note" rows="3" maxlength={NOTE_MAX} required
+            aria-invalid={errors.note ? "true" : undefined}>{noteValue}</textarea>
+          {errors.note && <p class="error" role="alert" id="note-error">{errors.note}</p>}
+          <button type="submit" id="button-error">Mark Error</button>
+        </form>
+      </section>
+    </>
+  )}
+</Admin>
+
+<style>
+  section { margin-top: 2rem; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0.6rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+  dt { font-weight: 600; }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  textarea { width: 100%; padding: 0.6rem; font: inherit; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+</style>

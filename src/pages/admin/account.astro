@@ -8,7 +8,7 @@ import LinkedInAuthentication from "../../components/admin/LinkedInAuthenticatio
 import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
 export const prerender = false;
 
-const denied = requireRole(Astro.locals, "admin", "social");
+const denied = requireRole(Astro.locals, "admin", "social", "email");
 if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;

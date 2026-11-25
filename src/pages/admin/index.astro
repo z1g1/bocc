@@ -1,22 +1,23 @@
 ---
-// /admin/: landing page for both roles. The middleware has already refused anyone
+// /admin/: landing page for every role. The middleware has already refused anyone
 // without a session or a role; this page still names the roles it admits.
 //
-// The links (ADMIN_LINKS, SOCIAL_LINKS) live in src/lib/admin/nav.mjs, shared with
+// The links (ADMIN_LINKS, SOCIAL_LINKS, EMAIL_LINKS) live in src/lib/admin/nav.mjs, shared with
 // the section nav on every admin page.
 import Admin from "../../layouts/Admin.astro";
 import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
 import { longDay } from "../../lib/admin/format.mjs";
 import ReadyTag from "../../components/admin/ReadyTag.astro";
-import { ADMIN_LINKS, SOCIAL_LINKS } from "../../lib/admin/nav.mjs";
+import { ADMIN_LINKS, EMAIL_LINKS, SOCIAL_LINKS } from "../../lib/admin/nav.mjs";
 export const prerender = false;
 
-const denied = requireRole(Astro.locals, "admin", "social");
+const denied = requireRole(Astro.locals, "admin", "social", "email");
 if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const isAdmin = hasRole(Astro.locals, "admin");
 const isSocial = hasRole(Astro.locals, "social");
+const isEmail = hasRole(Astro.locals, "email");
 
 // Admin-only events block (plan Phase 3): the next events and the "report missing"
 // count, with "today" the Eastern calendar day; Event readiness at a glance (#59); every
@@ -68,6 +69,13 @@ const statusText = (s: string) => (events!.labels[s] ?? events!.labels.scheduled
       {SOCIAL_LINKS.length > 0
         ? <ul>{SOCIAL_LINKS.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
         : <p class="muted">The weekly social work order will appear here.</p>}
+    </section>
+  )}
+
+  {(isEmail || isAdmin) && (
+    <section>
+      <h2>Luma sync</h2>
+      <ul>{EMAIL_LINKS.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
     </section>
   )}
 

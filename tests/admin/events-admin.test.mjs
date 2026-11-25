@@ -568,7 +568,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     .map(([, href, cur, label]) => ({ href, label, current: Boolean(cur) }));
 
   test("admin: the full section nav on every page, the current section marked", async () => {
-    const { ADMIN_LINKS, SOCIAL_LINKS } = await import("../../src/lib/admin/nav.mjs");
+    const { ADMIN_LINKS, SOCIAL_LINKS, EMAIL_LINKS } = await import("../../src/lib/admin/nav.mjs");
     const d = pastDate();
     const cases = [
       ["/admin/", null], ["/admin/account/", null], ["/admin/events/", "/admin/events/"], [`/admin/events/${d}/`, "/admin/events/"],
@@ -582,8 +582,8 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
       assert.match(nav, /aria-label="Admin sections"/);
       const items = navItems(nav);
       assert.deepEqual(items.map((i) => i.label),
-        ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users", "Social: schedule", "Social: verify"], p);
-      assert.deepEqual(items.map((i) => i.href), [...ADMIN_LINKS, ...SOCIAL_LINKS].map((l) => l.href), p);
+        ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users", "Social: schedule", "Social: verify", "Luma sync"], p);
+      assert.deepEqual(items.map((i) => i.href), [...ADMIN_LINKS, ...SOCIAL_LINKS, ...EMAIL_LINKS].map((l) => l.href), p);
       assert.deepEqual(items.filter((i) => i.current).map((i) => i.href), current ? [current] : [], `${p}: current item`);
     }
     // The home page lists the same links (one shared module).
@@ -594,7 +594,7 @@ describe("event routes over HTTP", { timeout: 300_000 }, () => {
     }
     // The themed 404 shows the same nav, with no current item.
     const nf = sectionNav(await (await req("/admin/events/foo/bar", { cookie: admin.cookie })).text());
-    assert.deepEqual(navItems(nf).map((i) => [i.href, i.current]), [...ADMIN_LINKS, ...SOCIAL_LINKS].map((l) => [l.href, false]));
+    assert.deepEqual(navItems(nf).map((i) => [i.href, i.current]), [...ADMIN_LINKS, ...SOCIAL_LINKS, ...EMAIL_LINKS].map((l) => [l.href, false]));
   });
 
   test("social: only the social links (none of the admin sections); no role: no nav", async () => {

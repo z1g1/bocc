@@ -7,7 +7,7 @@ import { requireRole } from "../../../lib/admin/roles.mjs";
 export const prerender = false;
 
 export const GET: APIRoute = ({ locals }) => {
-  const denied = requireRole(locals, "admin", "social");
+  const denied = requireRole(locals, "admin", "social", "email");
   if (denied) return denied;
   return Response.json({ user: locals.user, roles: locals.roles });
 };

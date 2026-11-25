@@ -8,7 +8,7 @@
 // with no duplicates; admin sees every role's links. Data views add their link to
 // ADMIN_LINKS. The social role must never be shown a link to attendee, check-in,
 // streak, email-list or audit data (ADR 0008); its work order pages (Phase 5) go in
-// SOCIAL_LINKS.
+// SOCIAL_LINKS, the email role's (the Luma sync) in EMAIL_LINKS.
 //
 // To add a role's pages: give the role its own frozen list here and an entry in
 // ROLE_LINKS (the map's order is the nav's order), and an allowlist in
@@ -33,6 +33,11 @@ export const SOCIAL_LINKS = Object.freeze([
   { href: "/admin/social/verify/", label: "Social: verify", note: "confirm posts are live, first comments (Monday)" },
 ]);
 
+/** @type {ReadonlyArray<NavLink>} The email role's pages (admins see them too). Only Luma sync. */
+export const EMAIL_LINKS = Object.freeze([
+  { href: "/admin/luma-sync/next/", label: "Luma sync", note: "add new Email-list people to Luma (Tuesday)" },
+]);
+
 /**
  * Each role's section links. Admin sees them all.
  * @type {Readonly<Record<string, ReadonlyArray<NavLink>>>}
@@ -40,6 +45,7 @@ export const SOCIAL_LINKS = Object.freeze([
 export const ROLE_LINKS = Object.freeze({
   admin: ADMIN_LINKS,
   social: SOCIAL_LINKS,
+  email: EMAIL_LINKS,
 });
 
 /**

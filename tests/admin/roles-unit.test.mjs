@@ -2,20 +2,22 @@
 // checks, no database (runs inside npm run test:db with the others).
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { BASE_PATHS, ROLE_PATHS, SOCIAL_PATHS, mayReach } from "../../src/lib/admin/roles.mjs";
+import { BASE_PATHS, EMAIL_PATHS, ROLE_PATHS, SOCIAL_PATHS, mayReach } from "../../src/lib/admin/roles.mjs";
 
-// A second non-admin role that doesn't exist yet (the email role arrives with the Luma
-// sync): its own pages plus the shared base paths.
+// A test-only map with a second non-admin role: its own pages plus the shared base paths
+// (the same shape as the real email role's EMAIL_PATHS).
 const TEST_PATHS = Object.freeze({
   social: SOCIAL_PATHS,
   email: Object.freeze([...BASE_PATHS, /^\/admin\/luma-sync(\/|$)/, /^\/api\/admin\/luma-sync(\/|$)/]),
 });
 
 describe("per-role path allowlists", () => {
-  test("the default map has the social allowlist, and no admin entry (admin reaches everything)", () => {
+  test("the default map has the social and email allowlists, and no admin entry (admin reaches everything)", () => {
     assert.equal(ROLE_PATHS.social, SOCIAL_PATHS);
+    assert.equal(ROLE_PATHS.email, EMAIL_PATHS);
     assert.equal(ROLE_PATHS.admin, undefined);
     for (const r of BASE_PATHS) assert.ok(SOCIAL_PATHS.includes(r), "social includes the base paths");
+    for (const r of BASE_PATHS) assert.ok(EMAIL_PATHS.includes(r), "email includes the base paths");
   });
 
   test("a user with two non-admin roles reaches the union of both allowlists", () => {

@@ -266,20 +266,25 @@ describe("roles", () => {
     assert.deepEqual(await getUserRoles(pool, u.id), ["email"]);
   });
 
-  test("a user holding only email is refused every admin page (no allowlist yet)", async () => {
+  test("a user holding only email reaches only the base and Luma sync pages (#73 fence)", async () => {
     const { cookie } = await signedIn(["email"]);
-    const paths = ["/admin/", "/admin/account/", "/admin/users/", "/admin/events/", "/admin/email-list/",
-      "/admin/attendees/", "/admin/checkins/", "/admin/streaks/", "/admin/social/next/", "/admin/social/verify/",
-      "/api/admin/me", "/api/admin/social/next", "/api/admin/email-list.csv"];
-    for (const p of paths) {
-      const url = new URL(`${BASE_URL}${p}`);
-      const g = await guardRequest(url, new Headers({ cookie }));
+    const reach = ["/admin/", "/admin/account/", "/admin/luma-sync/next/", "/api/admin/me"];
+    const refused = ["/admin/users/", "/admin/events/", "/admin/email-list/", "/admin/attendees/", "/admin/checkins/",
+      "/admin/streaks/", "/admin/social/next/", "/admin/social/verify/", "/api/admin/social/next", "/api/admin/email-list.csv"];
+    for (const p of reach) {
+      const g = await guardRequest(new URL(`${BASE_URL}${p}`), new Headers({ cookie }));
+      assert.equal(g.response, null, p);
+      assert.deepEqual(g.roles, ["email"], p);
+    }
+    for (const p of refused) {
+      const g = await guardRequest(new URL(`${BASE_URL}${p}`), new Headers({ cookie }));
       assert.equal(g.response?.status, 403, p);
     }
-    // The social role keeps its allowlist when it also holds email.
+    // A user with social and email reaches both allowlists, and still no data views.
     assert.equal(mayReach(["social", "email"], "/admin/social/next/"), true);
+    assert.equal(mayReach(["social", "email"], "/admin/luma-sync/next/"), true);
     assert.equal(mayReach(["social", "email"], "/admin/email-list/"), false);
-    assert.equal(mayReach(["email"], "/admin/"), false);
+    assert.equal(mayReach(["email"], "/admin/"), true);
     assert.ok(ROLES.includes("email"));
   });
 
