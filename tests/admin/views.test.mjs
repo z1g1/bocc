@@ -146,9 +146,9 @@ describe("email list module", () => {
     const { rows: [{ n: before }] } = await owner.query("select count(*)::int as n from audit_log where action = 'email_list.export'");
     const { csv, rowCount } = await exportEmailList(user.id);
     const lines = csv.trimEnd().split("\r\n");
-    assert.equal(lines[0], "email,name,business_name");
+    assert.equal(lines[0], "email,name,business_name,date_added");
     assert.equal(lines.length - 1, rowCount);
-    assert.ok(lines.includes(`${fx.formula.email},"'=HYPERLINK(""http://evil"",""x"")",'@SUM(1)`), "formula cells neutralised");
+    assert.ok(lines.some((l) => l.startsWith(`${fx.formula.email},"'=HYPERLINK(""http://evil"",""x"")",'@SUM(1),`)), "formula cells neutralised");
     const { rows } = await owner.query(
       "select actor_user_id, target_table, details from audit_log where action = 'email_list.export' order by id");
     assert.equal(rows.length, before + 1);
@@ -293,6 +293,8 @@ describe("routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(streaks.includes("Rita Regular") && !streaks.includes("Tess Tester") && !streaks.includes("Larry Lapsed"));
     const list = await (await req("/admin/email-list/", { cookie: admin.cookie })).text();
     assert.ok(list.includes(fx.regular.email) && !list.includes(fx.tester.email) && !list.includes(fx.lapsed.email));
+    assert.match(list, /<th[^>]*>Date added<\/th>/);
+    assert.match(list, new RegExp(`<td[^>]*>${WEEKS[0]}</td>`), "Rita's first check-in");
   });
 
   test("mutations from another origin, or with none, are refused (403) and change nothing", async () => {
