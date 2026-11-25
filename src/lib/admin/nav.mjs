@@ -4,10 +4,16 @@
 // (src/lib/admin/error-page.mjs). No imports, no database: the error page must render
 // even when everything else is failing.
 //
-// Data views add their link to ADMIN_LINKS. The social role must never be shown a link
-// to attendee, check-in, streak, email-list or audit data (ADR 0008); its work order
-// pages (Phase 5) go in SOCIAL_LINKS. Showing a link is not access control: every
-// route still calls requireRole() itself.
+// Links are keyed by role in ROLE_LINKS. A user sees the union of their roles' links,
+// with no duplicates; admin sees every role's links. Data views add their link to
+// ADMIN_LINKS. The social role must never be shown a link to attendee, check-in,
+// streak, email-list or audit data (ADR 0008); its work order pages (Phase 5) go in
+// SOCIAL_LINKS.
+//
+// To add a role's pages: give the role its own frozen list here and an entry in
+// ROLE_LINKS (the map's order is the nav's order), and an allowlist in
+// src/lib/admin/roles.mjs ROLE_PATHS that covers every link. Showing a link is not
+// access control: the guard (ROLE_PATHS) and every route's requireRole() are.
 
 /** @typedef {{ href: string, label: string, note?: string }} NavLink */
 
@@ -28,16 +34,35 @@ export const SOCIAL_LINKS = Object.freeze([
 ]);
 
 /**
- * The section links a user's roles allow: admin gets every link, social only the
- * social ones, no role nothing.
+ * Each role's section links. Admin sees them all.
+ * @type {Readonly<Record<string, ReadonlyArray<NavLink>>>}
+ */
+export const ROLE_LINKS = Object.freeze({
+  admin: ADMIN_LINKS,
+  social: SOCIAL_LINKS,
+});
+
+/**
+ * The section links a user's roles allow: the union of their roles' links in
+ * ROLE_LINKS order, each href once; admin gets every role's links; no role nothing.
  * @param {string[]} roles
- * @param {{ admin?: ReadonlyArray<NavLink>, social?: ReadonlyArray<NavLink> }} [links]  tests pass their own
+ * @param {Readonly<Record<string, ReadonlyArray<NavLink>>>} [links]  tests pass their own;
+ *   roles they leave out keep their ROLE_LINKS entry
  * @returns {NavLink[]}
  */
-export function navLinksFor(roles = [], { admin = ADMIN_LINKS, social = SOCIAL_LINKS } = {}) {
+export function navLinksFor(roles = [], links = {}) {
+  const map = { ...ROLE_LINKS, ...links };
+  const isAdmin = roles.includes("admin");
   const out = [];
-  if (roles.includes("admin")) out.push(...admin);
-  if (roles.includes("admin") || roles.includes("social")) out.push(...social);
+  const seen = new Set();
+  for (const [role, list] of Object.entries(map)) {
+    if (!isAdmin && !roles.includes(role)) continue;
+    for (const l of list) {
+      if (seen.has(l.href)) continue;
+      seen.add(l.href);
+      out.push(l);
+    }
+  }
   return out;
 }
 

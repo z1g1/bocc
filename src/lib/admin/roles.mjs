@@ -19,10 +19,20 @@
 //     …
 //   };
 
-// The social role is also fenced in one level up: src/lib/admin/guard.mjs answers 403
-// for any /admin/* or /api/admin/* path not in SOCIAL_PATHS before the route runs
-// (ADR 0008/0011: the account the Chrome tasks use must never reach personal data).
-// A new social page goes in SOCIAL_PATHS AND names "social" in its requireRole().
+// Every role but admin is also fenced in one level up: src/lib/admin/guard.mjs answers
+// 403 for any /admin/* or /api/admin/* path outside the user's roles' allowlists
+// (ROLE_PATHS) before the route runs (ADR 0008/0011: the account the Chrome tasks use
+// must never reach personal data). A user holding several roles reaches the union of
+// their allowlists; admin reaches everything and has no entry.
+//
+// To add a role's pages:
+//   1. Name the role in ROLES (and in the public.user_roles CHECK, by a new migration).
+//   2. Give it an allowlist in ROLE_PATHS: BASE_PATHS plus its own page and API
+//      prefixes. A role with no entry reaches nothing.
+//   3. Give it nav links in ROLE_LINKS (src/lib/admin/nav.mjs).
+//   4. Each of its pages and API routes names the role in its requireRole().
+// A new page for an existing role goes in that role's allowlist AND names the role in
+// its requireRole().
 
 /** Every role public.user_roles accepts (its CHECK constraint). */
 export const ROLES = Object.freeze(["admin", "social"]);
@@ -59,27 +69,44 @@ const plain = (status, text) =>
   });
 
 /**
- * The only protected paths a user without the admin role may reach: the admin home,
- * their own account page, the social work order pages and their JSON API, and
- * /api/admin/me. Everything else (events, attendees, check-ins, streaks, the email
- * list, users, media) is refused by the guard whatever the route itself says.
+ * The paths every non-admin role may reach: the admin home, the user's own account
+ * page and /api/admin/me. Each role's allowlist starts with these.
  */
-export const SOCIAL_PATHS = Object.freeze([
+export const BASE_PATHS = Object.freeze([
   /^\/admin\/?$/,
   /^\/admin\/account\/?$/,
-  /^\/admin\/social(\/|$)/,
-  /^\/api\/admin\/social(\/|$)/,
   /^\/api\/admin\/me\/?$/,
 ]);
 
 /**
+ * The social role's allowlist: the base paths plus the social work order pages and
+ * their JSON API. Everything else (events, attendees, check-ins, streaks, the email
+ * list, users, media) is refused by the guard whatever the route itself says.
+ */
+export const SOCIAL_PATHS = Object.freeze([
+  ...BASE_PATHS,
+  /^\/admin\/social(\/|$)/,
+  /^\/api\/admin\/social(\/|$)/,
+]);
+
+/**
+ * Each non-admin role's path allowlist. See "To add a role's pages" above.
+ * @type {Readonly<Record<string, ReadonlyArray<RegExp>>>}
+ */
+export const ROLE_PATHS = Object.freeze({
+  social: SOCIAL_PATHS,
+});
+
+/**
  * May a user holding `roles` reach the protected `path` at all? admin: everything;
- * social: SOCIAL_PATHS only; no role: nothing. The route's requireRole() still runs.
+ * any other role: its ROLE_PATHS allowlist, and several roles the union of theirs;
+ * no role (or a role with no allowlist): nothing. The route's requireRole() still runs.
  * @param {string[]} roles
  * @param {string} path  a URL pathname
+ * @param {Readonly<Record<string, ReadonlyArray<RegExp>>>} [rolePaths]  tests pass their own
  */
-export function mayReach(roles = [], path = "") {
+export function mayReach(roles = [], path = "", rolePaths = ROLE_PATHS) {
   if (roles.includes("admin")) return true;
-  if (roles.includes("social")) return SOCIAL_PATHS.some((r) => r.test(path));
-  return false;
+  return roles.some((role) =>
+    Object.hasOwn(rolePaths, role) && rolePaths[role].some((r) => r.test(path)));
 }
