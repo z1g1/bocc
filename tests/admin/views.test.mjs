@@ -28,8 +28,8 @@ const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
 const { latestCheckinDate, listCheckinDates, listCheckins } = await import("../../src/lib/admin/checkins.mjs");
 const { listActiveStreaks } = await import("../../src/lib/admin/streaks.mjs");
-const { listSubscribers, exportEmailList, optOut } = await import("../../src/lib/admin/email-list.mjs");
-const { searchAttendees, getAttendee, correctAttendee, ValidationError, NotFoundError } =
+const { listEmailList, exportEmailList, optOut, onLumaLabel } = await import("../../src/lib/admin/email-list.mjs");
+const { searchAttendees, getAttendee, correctAttendee, ValidationError, RecordNotFoundError } =
   await import("../../src/lib/admin/attendees.mjs");
 
 const PASSWORD = "correct horse battery staple";
@@ -98,6 +98,11 @@ before(async () => {
   await checkin(owner, fx.lapsed, WEEKS[0]);
   for (const w of WEEKS) await checkin(owner, fx.tester, w);                // non-debug check-ins, debug attendee
   await checkin(owner, fx.formula, DAY, { debug: true });                    // a debug check-in
+  // On Luma: one since a date (02:30 UTC on Dec 1 is Nov 30 in Eastern), one before launch.
+  fx.onLuma = await attendee(owner, { name: "Lou OnLuma" });
+  fx.beforeLaunch = await attendee(owner, { name: "Bea BeforeLaunch" });
+  await owner.query("update attendees set on_luma_at = '2026-12-01T02:30:00Z' where id = $1", [fx.onLuma.id]);
+  await owner.query("update attendees set on_luma_before_launch = true where id = $1", [fx.beforeLaunch.id]);
   // A later test-only day: must not become the default "latest event".
   await checkin(owner, fx.formula, "2031-01-07", { debug: true, event: unique("debug-only") });
 });
@@ -134,11 +139,22 @@ describe("streaks module", () => {
 });
 
 describe("email list module", () => {
-  test("subscribers: ok_to_email and not debug", async () => {
-    const emails = (await listSubscribers(pool)).map((s) => s.email);
+  test("the Email list: ok_to_email and not debug", async () => {
+    const emails = (await listEmailList(pool)).map((s) => s.email);
     assert.ok(emails.includes(fx.regular.email));
     assert.ok(!emails.includes(fx.lapsed.email), "not opted in");
     assert.ok(!emails.includes(fx.tester.email), "debug attendee");
+  });
+
+  test("On Luma: since a date (Eastern), before launch, or not yet", async () => {
+    const byEmail = new Map((await listEmailList(pool)).map((s) => [s.email, s]));
+    const pick = (a) => {
+      const s = byEmail.get(a.email);
+      return { onLumaSince: s.onLumaSince, onLumaBeforeLaunch: s.onLumaBeforeLaunch, label: onLumaLabel(s) };
+    };
+    assert.deepEqual(pick(fx.onLuma), { onLumaSince: "2026-11-30", onLumaBeforeLaunch: false, label: "On Luma since Nov 30, 2026" });
+    assert.deepEqual(pick(fx.beforeLaunch), { onLumaSince: null, onLumaBeforeLaunch: true, label: "Before launch" });
+    assert.deepEqual(pick(fx.regular), { onLumaSince: null, onLumaBeforeLaunch: false, label: "Not yet" });
   });
 
   test("export is audited with its row count and escapes formulas", async () => {
@@ -146,9 +162,14 @@ describe("email list module", () => {
     const { rows: [{ n: before }] } = await owner.query("select count(*)::int as n from audit_log where action = 'email_list.export'");
     const { csv, rowCount } = await exportEmailList(user.id);
     const lines = csv.trimEnd().split("\r\n");
-    assert.equal(lines[0], "email,name,business_name");
+    assert.equal(lines[0], "email,name,business_name,date_added,on_luma");
     assert.equal(lines.length - 1, rowCount);
-    assert.ok(lines.includes(`${fx.formula.email},"'=HYPERLINK(""http://evil"",""x"")",'@SUM(1)`), "formula cells neutralised");
+    const { rows: [{ d: today }] } = await owner.query(
+      "select (created_at at time zone 'America/New_York')::date::text as d from attendees where id = $1", [fx.onLuma.id]);
+    assert.ok(lines.includes(`${fx.onLuma.email},Lou OnLuma,Biz,${today},2026-11-30`), "on_luma: an ISO date");
+    assert.ok(lines.includes(`${fx.beforeLaunch.email},Bea BeforeLaunch,Biz,${today},before_launch`), "on_luma: before_launch");
+    assert.ok(lines.includes(`${fx.regular.email},Rita Regular,Biz,${WEEKS[0]},`), "date_added: first check-in; on_luma: empty for Not yet");
+    assert.ok(lines.some((l) => l.startsWith(`${fx.formula.email},"'=HYPERLINK(""http://evil"",""x"")",'@SUM(1),`)), "formula cells neutralised");
     const { rows } = await owner.query(
       "select actor_user_id, target_table, details from audit_log where action = 'email_list.export' order by id");
     assert.equal(rows.length, before + 1);
@@ -164,8 +185,8 @@ describe("email list module", () => {
       actor_user_id: user.id, action: "attendee.opt_out",
       details: { before: { ok_to_email: true }, after: { ok_to_email: false } },
     }]);
-    await assert.rejects(optOut(user.id, "123e4567-e89b-12d3-a456-426614174000"), NotFoundError);
-    await assert.rejects(optOut(user.id, "not-a-uuid"), NotFoundError);
+    await assert.rejects(optOut(user.id, "123e4567-e89b-12d3-a456-426614174000"), RecordNotFoundError);
+    await assert.rejects(optOut(user.id, "not-a-uuid"), RecordNotFoundError);
   });
 
   test("opt-out: a failed audit insert rolls the change back", async () => {
@@ -202,7 +223,7 @@ describe("attendee corrections module", () => {
   test("invalid input and unknown ids are refused before anything is written", async () => {
     const a = await attendee(owner, { name: "Val Idate" });
     await assert.rejects(correctAttendee(null, a.id, { name: "", phone: "call me" }), (e) => e instanceof ValidationError && e.errors.length === 2);
-    await assert.rejects(correctAttendee(null, "123e4567-e89b-12d3-a456-426614174000", { name: "X" }), NotFoundError);
+    await assert.rejects(correctAttendee(null, "123e4567-e89b-12d3-a456-426614174000", { name: "X" }), RecordNotFoundError);
     assert.deepEqual(await auditRows(a.id), []);
   });
 
@@ -216,7 +237,7 @@ describe("attendee corrections module", () => {
 
 // ── 2. Over HTTP, through astro dev ─────────────────────────────────────────
 describe("routes over HTTP", { timeout: 300_000 }, () => {
-  let server, admin, social;
+  let server, admin, social, email;
   const root = fileURLToPath(new URL("../../", import.meta.url));
 
   before(async () => {
@@ -224,6 +245,7 @@ describe("routes over HTTP", { timeout: 300_000 }, () => {
     server = await dev({ root, logLevel: "error", server: { port, host: "localhost" } });
     admin = await signedIn(["admin"]);
     social = await signedIn(["social"]);
+    email = await signedIn(["email"]);
   });
   after(async () => { await server?.stop(); });
 
@@ -270,6 +292,29 @@ describe("routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(!home.includes("/admin/checkins/") && !home.includes("/admin/email-list/"), "no admin links for social");
   });
 
+  test("the email role gets 403 on every data view and mutation; only its home and Luma sync pages open (#73)", async () => {
+    for (const p of ["/admin/social/next/", "/admin/users/", "/admin/events/", ...pages()]) {
+      assert.equal((await req(p, { cookie: email.cookie })).status, 403, p);
+    }
+    for (const m of mutations()) {
+      assert.equal((await req(m.path, { cookie: email.cookie, method: "POST", form: m.form })).status, 403, m.path);
+    }
+    for (const p of ["/admin/", "/admin/account/", "/admin/luma-sync/next/"]) {
+      assert.equal((await req(p, { cookie: email.cookie })).status, 200, p);
+    }
+    const home = await (await req("/admin/", { cookie: email.cookie })).text();
+    assert.ok(home.includes('href="/admin/luma-sync/next/"'), "the Luma sync link");
+    for (const p of ["/admin/checkins/", "/admin/email-list/", "/admin/attendees/", "/admin/social/"]) {
+      assert.ok(!home.includes(`href="${p}`), `no link to ${p}`);
+    }
+  });
+
+  test("the users page offers email as a role to grant and to create with", async () => {
+    const html = await (await req("/admin/users/", { cookie: admin.cookie })).text();
+    assert.match(html, /<input type="hidden" name="role" value="email"/);
+    assert.match(html, /<option value="email"/);
+  });
+
   test("admin gets 200 on every page, with the admin CSP", async () => {
     for (const p of pages()) {
       const res = await req(p, { cookie: admin.cookie });
@@ -293,6 +338,17 @@ describe("routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(streaks.includes("Rita Regular") && !streaks.includes("Tess Tester") && !streaks.includes("Larry Lapsed"));
     const list = await (await req("/admin/email-list/", { cookie: admin.cookie })).text();
     assert.ok(list.includes(fx.regular.email) && !list.includes(fx.tester.email) && !list.includes(fx.lapsed.email));
+    assert.match(list, /<th[^>]*>Date added<\/th>/);
+    assert.match(list, new RegExp(`<td[^>]*>${WEEKS[0]}</td>`), "Rita's first check-in");
+  });
+
+  test("the Email list page shows the three On Luma states", async () => {
+    const list = await (await req("/admin/email-list/", { cookie: admin.cookie })).text();
+    assert.match(list, /<th[^>]*>On Luma<\/th>/);
+    const rowOf = (a) => list.split("<tr").find((r) => r.includes(a.email)) ?? "";
+    assert.match(rowOf(fx.onLuma), /On Luma since Nov 30, 2026/);
+    assert.match(rowOf(fx.beforeLaunch), /Before launch/);
+    assert.match(rowOf(fx.regular), /Not yet/);
   });
 
   test("mutations from another origin, or with none, are refused (403) and change nothing", async () => {

@@ -45,6 +45,11 @@ Options checked against current docs on 2026-11-16:
    - `social`: reads the social work order and its media, and updates channel status and post
      URLs. **It has no access to attendees, check-ins, streaks, the email list or the audit
      log.**
+   - `email` (amended 2026-11-25, ADR 0014): the Luma sync pages only
+     (`/admin/luma-sync/*`). It reads the names and emails of the people to add and marks a
+     sync Done or Error. **It has no access to the email list, the CSV export, opt-out,
+     attendees, check-ins, streaks or the audit log.** One user may hold several roles and
+     reaches the union of their allowlists (`roles.mjs` `ROLE_PATHS`).
    - A user with no role sees nothing. This is what blocks access even if a sign-up path were
      left open.
 5. **Sessions:** a 30-day sliding expiry, long enough for the weekly Chrome tasks.
@@ -52,8 +57,12 @@ Options checked against current docs on 2026-11-16:
    the admin function reads sessions on every request anyway.
    - `auth` schema: full read/write on Better Auth's tables
    - `attendees`, `checkins`, `held_occurrences`, `streaks`: SELECT
-   - `attendees`: **column-level UPDATE** on `ok_to_email`, `name`, `business_name`, `phone`.
-     No DELETE anywhere on attendee or check-in data
+   - `attendees`: **column-level UPDATE** on `ok_to_email`, `name`, `business_name`, `phone`,
+     and (amended 2026-11-25, ADR 0014) `on_luma_at`, `on_luma_before_launch`. A trigger
+     refuses clearing either On Luma column, for every role. No DELETE anywhere on attendee
+     or check-in data
+   - `luma_syncs` (amended 2026-11-25, ADR 0014; migration
+     `20261205120000_luma_sync.sql`): SELECT, INSERT, UPDATE. No DELETE
    - `events`, `event_reports`, `event_links`, `event_media`, `social_posts`,
      `social_post_channels`: SELECT, INSERT, UPDATE. DELETE only on `event_media` and
      `event_links` (amended 2026-11-18: removing a wrong listing is a normal edit, and the

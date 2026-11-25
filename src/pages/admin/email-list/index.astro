@@ -11,30 +11,32 @@ if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const { pool } = await import("../../../lib/admin/db.mjs");
-const { listSubscribers } = await import("../../../lib/admin/email-list.mjs");
-const subscribers = await listSubscribers(pool);
+const { listEmailList, onLumaLabel } = await import("../../../lib/admin/email-list.mjs");
+const people = await listEmailList(pool);
 const notice = Astro.url.searchParams.get("notice");
 ---
 <Admin title="Email list" user={user} roles={roles} wide>
   <h1>Email list</h1>
   {notice === "opted-out" && <p class="notice" role="status">Opted out. They won't be in the next export.</p>}
 
-  <p>{subscribers.length} attendee{subscribers.length === 1 ? "" : "s"} agreed to email.</p>
+  <p>{people.length} attendee{people.length === 1 ? "" : "s"} agreed to email.</p>
   <form method="post" action="/api/admin/email-list.csv">
     <button type="submit">Download CSV</button>
     <span class="muted"> Each download is recorded in the audit log.</span>
   </form>
 
-  {subscribers.length > 0 && (
+  {people.length > 0 && (
     <div class="scroll">
       <table class="data">
-        <thead><tr><th>Name</th><th>Business</th><th>Email</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Business</th><th>Email</th><th>Date added</th><th>On Luma</th><th></th></tr></thead>
         <tbody>
-          {subscribers.map((s: any) => (
+          {people.map((s: any) => (
             <tr>
               <td><a href={`/admin/attendees/${s.id}/`}>{s.name}</a></td>
               <td>{s.businessName}</td>
               <td>{s.email}</td>
+              <td>{s.dateAdded}</td>
+              <td>{onLumaLabel(s)}</td>
               <td>
                 <form method="post" action="/api/admin/email-list/opt-out" class="inline">
                   <input type="hidden" name="attendeeId" value={s.id}>

@@ -472,10 +472,12 @@ Since #56 (the glossary rename, spec #49) one Event's work order is its **Social
   `POST /api/admin/social/channel`. No script; one `<section id="channel-<key>">` per channel,
   the exact texts in `<pre>`, "Save <Channel>" / "Mark <Channel> live|failed" / "First comment
   posted on <Channel>" buttons, PRG. Statuses: any change except live -> pending; scheduling
-  needs an actionable post, live a post URL on the channel's domain, failed a note. The
-  `social` role is fenced by the guard to `/admin/`, `/admin/account/`, `/admin/social/*`,
-  `/api/admin/social/*` and `/api/admin/me` (`roles.mjs` `SOCIAL_PATHS`); everything else is
-  403, unknown paths included
+  needs an actionable post, live a post URL on the channel's domain, failed a note. Every
+  non-admin role is fenced by the guard to its own allowlist in `roles.mjs` `ROLE_PATHS`, each
+  starting from `BASE_PATHS` (`/admin/`, `/admin/account/`, `/api/admin/me`): `social` adds
+  `/admin/social/*` and `/api/admin/social/*` (`SOCIAL_PATHS`), and `email` (ADR 0014) adds
+  `/admin/luma-sync/*` (`EMAIL_PATHS`). A user with several roles reaches the union; everything
+  else is 403, unknown paths included
 - [ ] A `social` account for Modron, signed in by hand once in its Chrome profile
 - [ ] Chrome scheduled tasks: Wednesday (schedule) and Monday about 7:20 AM ET (verify and post
       the first comment), rehearsed against the staging branch deploy

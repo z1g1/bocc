@@ -44,7 +44,9 @@
 //     with submitted_by = the editor, so a re-run of the import never overwrites it.
 //
 // Errors for the caller to map: ValidationError (400; .errors is { field: message }),
-// ConflictError (409; a refused state change, .errors likewise).
+// ConflictError (409; a refused state change, .errors likewise), NotFoundError (404; a
+// ValidationError too, so the event page renders it like any refused save; social-plan.mjs
+// and luma-sync.mjs throw it).
 
 import { withAudit } from "./db.mjs";
 import { parseDate } from "./checkins.mjs";
@@ -83,6 +85,9 @@ export class ValidationError extends Error {
 }
 export class ConflictError extends ValidationError {
   status = 409;
+}
+export class NotFoundError extends ValidationError {
+  status = 404;
 }
 
 const TZ = "America/New_York";

@@ -1,22 +1,23 @@
 ---
-// /admin/: landing page for both roles. The middleware has already refused anyone
+// /admin/: landing page for every role. The middleware has already refused anyone
 // without a session or a role; this page still names the roles it admits.
 //
-// The links (ADMIN_LINKS, SOCIAL_LINKS) live in src/lib/admin/nav.mjs, shared with
-// the section nav on every admin page.
+// The link sections come from src/lib/admin/nav.mjs (homeSectionsFor: ROLE_LINKS with
+// ROLE_TITLES), shared with the section nav on every admin page, so a new role needs no
+// change here.
 import Admin from "../../layouts/Admin.astro";
-import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
+import { ROLES, hasRole, requireRole } from "../../lib/admin/roles.mjs";
 import { longDay } from "../../lib/admin/format.mjs";
 import ReadyTag from "../../components/admin/ReadyTag.astro";
-import { ADMIN_LINKS, SOCIAL_LINKS } from "../../lib/admin/nav.mjs";
+import { homeSectionsFor } from "../../lib/admin/nav.mjs";
 export const prerender = false;
 
-const denied = requireRole(Astro.locals, "admin", "social");
+const denied = requireRole(Astro.locals, ...ROLES);
 if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const isAdmin = hasRole(Astro.locals, "admin");
-const isSocial = hasRole(Astro.locals, "social");
+const sections = homeSectionsFor(roles);
 
 // Admin-only events block (plan Phase 3): the next events and the "report missing"
 // count, with "today" the Eastern calendar day; Event readiness at a glance (#59); every
@@ -53,23 +54,12 @@ const statusText = (s: string) => (events!.labels[s] ?? events!.labels.scheduled
     </section>
   )}
 
-  {isAdmin && (
+  {sections.map((s) => (
     <section>
-      <h2>Admin</h2>
-      {ADMIN_LINKS.length > 0
-        ? <ul>{ADMIN_LINKS.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
-        : <p class="muted">Check-ins, streaks, the email list and user management are on the way.</p>}
+      <h2>{s.title}</h2>
+      <ul>{s.links.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
     </section>
-  )}
-
-  {(isSocial || isAdmin) && (
-    <section>
-      <h2>Social</h2>
-      {SOCIAL_LINKS.length > 0
-        ? <ul>{SOCIAL_LINKS.map((l) => <li><a href={l.href}>{l.label}</a>{l.note && <span class="muted"> {l.note}</span>}</li>)}</ul>
-        : <p class="muted">The weekly social work order will appear here.</p>}
-    </section>
-  )}
+  ))}
 
   <p><a href="/admin/account/">Your account</a>: add a passkey for this device.</p>
 </Admin>

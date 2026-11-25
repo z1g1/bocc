@@ -3,7 +3,7 @@
 // skips it) is tested in events-admin.test.mjs, since events.mjs needs the admin env.
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { HOLIDAY_BREAK, HOLIDAY_BREAK_LABEL, isHolidayWeek } from "../../src/lib/holiday-weeks.mjs";
+import { HOLIDAY_BREAK, HOLIDAY_BREAK_LABEL, addDays, isHolidayWeek, isTuesday, meetingTuesdays } from "../../src/lib/holiday-weeks.mjs";
 
 describe("isHolidayWeek", () => {
   test("the boundaries: 12/21 no, 12/22 yes, 1/4 yes, 1/5 no", () => {
@@ -41,5 +41,20 @@ describe("isHolidayWeek", () => {
     for (const bad of ["2026-12-2", "12/22/2026", "", null, undefined, 20261222]) {
       assert.throws(() => isHolidayWeek(bad), /YYYY-MM-DD/);
     }
+  });
+});
+
+describe("addDays, isTuesday, meetingTuesdays", () => {
+  test("addDays crosses months and years, both ways", () => {
+    assert.equal(addDays("2026-12-29", 7), "2027-01-05");
+    assert.equal(addDays("2027-03-01", -1), "2027-02-28");
+    assert.equal(isTuesday("2026-12-01"), true);
+    assert.equal(isTuesday("2026-12-02"), false);
+  });
+
+  test("the Tuesdays from any day up to an inclusive end, skipping the holiday break", () => {
+    assert.deepEqual(meetingTuesdays("2026-12-01", "2027-01-12"), ["2026-12-01", "2026-12-08", "2026-12-15", "2027-01-05", "2027-01-12"]);
+    assert.deepEqual(meetingTuesdays("2026-11-26", "2026-12-08"), ["2026-12-01", "2026-12-08"], "starts at the next Tuesday");
+    assert.deepEqual(meetingTuesdays("2026-12-02", "2026-12-07"), []);
   });
 });

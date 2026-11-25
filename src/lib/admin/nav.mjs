@@ -4,10 +4,18 @@
 // (src/lib/admin/error-page.mjs). No imports, no database: the error page must render
 // even when everything else is failing.
 //
-// Data views add their link to ADMIN_LINKS. The social role must never be shown a link
-// to attendee, check-in, streak, email-list or audit data (ADR 0008); its work order
-// pages (Phase 5) go in SOCIAL_LINKS. Showing a link is not access control: every
-// route still calls requireRole() itself.
+// Links are keyed by role in ROLE_LINKS. A user sees the union of their roles' links,
+// with no duplicates; admin sees every role's links. Data views add their link to
+// ADMIN_LINKS. The social role must never be shown a link to attendee, check-in,
+// streak, email-list or audit data (ADR 0008); its work order pages (Phase 5) go in
+// SOCIAL_LINKS, the email role's (the Luma sync) in EMAIL_LINKS.
+//
+// To add a role's pages (the full list is in src/lib/admin/roles.mjs): give the role
+// its own frozen list here, an entry in ROLE_LINKS (the map's order is the nav's and the
+// home page's order) and a heading in ROLE_TITLES (its section on the admin home,
+// homeSectionsFor), and an allowlist in src/lib/admin/roles.mjs ROLE_PATHS that covers
+// every link. Showing a link is not access control: the guard (ROLE_PATHS) and every
+// route's requireRole() are.
 
 /** @typedef {{ href: string, label: string, note?: string }} NavLink */
 
@@ -27,17 +35,68 @@ export const SOCIAL_LINKS = Object.freeze([
   { href: "/admin/social/verify/", label: "Social: verify", note: "confirm posts are live, first comments (Monday)" },
 ]);
 
+/** @type {ReadonlyArray<NavLink>} The email role's pages (admins see them too). Only Luma sync. */
+export const EMAIL_LINKS = Object.freeze([
+  { href: "/admin/luma-sync/next/", label: "Luma sync", note: "add new Email-list people to Luma (Tuesday)" },
+]);
+
 /**
- * The section links a user's roles allow: admin gets every link, social only the
- * social ones, no role nothing.
+ * Each role's section links. Admin sees them all.
+ * @type {Readonly<Record<string, ReadonlyArray<NavLink>>>}
+ */
+export const ROLE_LINKS = Object.freeze({
+  admin: ADMIN_LINKS,
+  social: SOCIAL_LINKS,
+  email: EMAIL_LINKS,
+});
+
+/**
+ * Each role's heading on the admin home (src/pages/admin/index.astro), keyed like
+ * ROLE_LINKS.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const ROLE_TITLES = Object.freeze({
+  admin: "Admin",
+  social: "Social",
+  email: "Luma sync",
+});
+
+/**
+ * The admin home's link sections: one per role in ROLE_LINKS order that the user holds
+ * (admin: every role's), each with its ROLE_TITLES heading and its links.
  * @param {string[]} roles
- * @param {{ admin?: ReadonlyArray<NavLink>, social?: ReadonlyArray<NavLink> }} [links]  tests pass their own
+ * @param {Readonly<Record<string, ReadonlyArray<NavLink>>>} [links]  tests pass their own
+ * @returns {{ role: string, title: string, links: ReadonlyArray<NavLink> }[]}
+ */
+export function homeSectionsFor(roles = [], links = {}) {
+  const map = { ...ROLE_LINKS, ...links };
+  const isAdmin = roles.includes("admin");
+  return Object.entries(map)
+    .filter(([role, list]) => (isAdmin || roles.includes(role)) && list.length > 0)
+    .map(([role, list]) => ({ role, title: ROLE_TITLES[role] ?? role, links: list }));
+}
+
+/**
+ * The section links a user's roles allow: the union of their roles' links in
+ * ROLE_LINKS order, each href once; admin gets every role's links; no role nothing.
+ * @param {string[]} roles
+ * @param {Readonly<Record<string, ReadonlyArray<NavLink>>>} [links]  tests pass their own;
+ *   roles they leave out keep their ROLE_LINKS entry
  * @returns {NavLink[]}
  */
-export function navLinksFor(roles = [], { admin = ADMIN_LINKS, social = SOCIAL_LINKS } = {}) {
+export function navLinksFor(roles = [], links = {}) {
+  const map = { ...ROLE_LINKS, ...links };
+  const isAdmin = roles.includes("admin");
   const out = [];
-  if (roles.includes("admin")) out.push(...admin);
-  if (roles.includes("admin") || roles.includes("social")) out.push(...social);
+  const seen = new Set();
+  for (const [role, list] of Object.entries(map)) {
+    if (!isAdmin && !roles.includes(role)) continue;
+    for (const l of list) {
+      if (seen.has(l.href)) continue;
+      seen.add(l.href);
+      out.push(l);
+    }
+  }
   return out;
 }
 

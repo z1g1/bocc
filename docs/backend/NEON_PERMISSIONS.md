@@ -45,7 +45,8 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | schema `public` | `USAGE` |
 | `attendees`, `checkins`, `held_occurrences`, `streaks` | `SELECT` |
 | `attendees` columns `ok_to_email`, `name`, `business_name`, `phone` | `UPDATE` (no other column) |
-| `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`) |
+| `attendees` columns `on_luma_at`, `on_luma_before_launch` | `UPDATE` (migration `20261205120000_luma_sync.sql`, ADR 0014: On Luma. The app only sets them; a trigger refuses turning either off, even for the owner) |
+| `user_roles` | `SELECT, INSERT, DELETE` (no `UPDATE`). Roles: `admin`, `social`, and `email` (the Luma sync Chrome task, added by migration `20261205120000_luma_sync.sql`) |
 | `audit_log` | `SELECT, INSERT`; `USAGE` on `audit_log_id_seq` |
 | `events`, `event_reports` | `SELECT, INSERT, UPDATE` (migration `20261118120000_events_media.sql`; covers `events.event_image_media_id`, the Event Image picked from a Photo from Event, migration `20261128120000_event_image_reference.sql`, no new grant) |
 | `event_media` | `SELECT, INSERT, UPDATE, DELETE` (the app deletes the objects too; covers the Event Image kind and its 16:9 Event Image `image_16x9_key`, migration `20261125120000_event_image.sql`, and `image_16x9_outdated`, migration `20261202120000_event_media_cover_outdated.sql`, both renamed from `cover_*` by migration `20261203120000_glossary_rename_expand.sql`, no new grant) |
@@ -53,6 +54,7 @@ Created `NOLOGIN NOINHERIT` by migration `20261116120000_admin_auth.sql`; the op
 | `social_plans` (was `social_posts`), `social_media_posts` (was `social_post_channels`) | `SELECT, INSERT, UPDATE` (migration `20261122120000_social_posts.sql`, tables renamed by `20261203120000_glossary_rename_expand.sql`; no DELETE: a Social plan is never removed (set its Plan status back to To do instead); covers the Thumbnail `thumbnail_media_id` (was `cover_media_id`), migration `20261127120000_social_post_cover.sql`, no new grant, and the post `status` that replaced `ready`, migration `20261201120000_social_post_status.sql`, which restates the table grants and keeps the deprecated `ready` column for now: see "Contract later" below) |
 | `linkedin_authentications` (was `linkedin_connections`) | `SELECT, INSERT, UPDATE, DELETE` (migration `20261124120000_linkedin_connections.sql`, renamed by `20261203120000_glossary_rename_expand.sql`, ADR 0012; one row per Admin's LinkedIn authentication, the access token AES-256-GCM encrypted under `LINKEDIN_TOKEN_KEY`; DELETE is Remove LinkedIn authentication) |
 | `social_posts`, `social_post_channels`, `linkedin_connections` (views) | DEPRECATED compatibility views under the old table names, with the same privileges as their tables (see "Contract later: the glossary rename") |
+| `luma_syncs` | `SELECT, INSERT, UPDATE` (migration `20261205120000_luma_sync.sql`, ADR 0014; one Luma sync per Event, created lazily by the first status write. No DELETE: the history stays) |
 | `linkedin_events` | `SELECT, INSERT, UPDATE` (migration `20261129120000_linkedin_events.sql`, ADR 0012; the LinkedIn event ledger. No DELETE: allow-retry *retires* a stuck `pending` row, which frees the date through a partial unique index on `event_date where status <> 'retired'`; a trigger allows only forward status moves. `post_claimed_at`, migration `20261130120000_linkedin_events_post_claim.sql`, is the one-Publish-at-a-time claim; no new grant) |
 
 RLS policies `admin_app_select` (attendees, checkins) and `admin_app_update` (attendees) let it
@@ -75,7 +77,9 @@ no `site_reader` grant. `linkedin_authentications` (Phase 6) is granted to `admi
 `user_id`, `expires_at` and `display_name` only, for the Thursday expiry alert (migration
 `20261126120000_social_checker_linkedin.sql`), never the token or member URN. The database holds only ciphertext; the key
 is in Netlify env, never in Postgres. `linkedin_events` (Phase 6) is
-`admin_app` only, and without DELETE.
+`admin_app` only, and without DELETE. `luma_syncs` (ADR 0014) is the same: `admin_app` only,
+without DELETE; `checkin_writer`, `site_reader` and `social_checker` get nothing, and no app
+role but `admin_app` may set the On Luma columns on `attendees`.
 
 **Contract later: `social_posts.ready`.** Migration `20261201120000_social_post_status.sql`
 is expand-only: it adds and backfills `status` and drops the old `social_posts_ready_ck`, but
@@ -477,6 +481,15 @@ Run as `admin_app` once `20261118120000_events_media.sql` is applied, inside `be
       `delete from event_media where false` → succeeds
 - [ ] `truncate event_media` → permission denied
 - [ ] as `checkin_writer`: `select * from events` → permission denied
+
+Run as `admin_app` once `20261205120000_luma_sync.sql` is applied, inside `begin; … rollback;`
+(also covered by `tests/admin/luma-sync-schema.test.mjs`):
+
+- [ ] `update attendees set on_luma_before_launch = on_luma_before_launch where false` → succeeds
+- [ ] `select count(*) from luma_syncs` → succeeds; `delete from luma_syncs where false` →
+      permission denied
+- [ ] as `checkin_writer`: `select * from luma_syncs` → permission denied;
+      `update attendees set on_luma_at = now() where false` → permission denied
 
 Run as `social_checker` once `20261123120000_social_checker.sql` is applied, inside
 `begin; … rollback;`:
