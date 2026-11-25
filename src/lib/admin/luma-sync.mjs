@@ -4,8 +4,9 @@
 // Parameterized SQL only, as admin_app (SELECT/INSERT/UPDATE on luma_syncs; column
 // UPDATE on attendees.on_luma_at; migration 20261205120000_luma_sync.sql).
 //
-// Reads (take `db`, the pool or a client, first; `opts` is { now, today, launch }, all
-// optional: today defaults to the Eastern day of `now`, launch to lumaSyncLaunchDate()):
+// Reads (take `db`, the pool or a client, first; `opts` is the clock { now, today, launch },
+// all optional: today defaults to the Eastern day of `now`, launch to lumaSyncLaunchDate().
+// Each exported function resolves it once, resolveClock, and passes it down whole):
 //   getLumaSync(db, date, opts)     -> LumaSync (below), for any date
 //   findNextLumaSync(db, opts)      -> { state: "sync", sync: LumaSync }
 //                                    | { state: "stand_down", today, holiday, message }
@@ -52,8 +53,6 @@ import { CANCELLED, ConflictError, NotFoundError, ValidationError, parseDate, to
 import { HOLIDAY_BREAK_LABEL, addDays, isHolidayWeek, isTuesday, meetingTuesdays } from "../holiday-weeks.mjs";
 import { errorNoteProblem, erroredRecently, lumaSyncLaunchDate, lumaSyncStatus } from "./luma-sync-rules.mjs";
 
-export { NotFoundError };
-
 // The Email list Attendees who joined at the Event on ${d} (a SQL date expression).
 const JOINED_AT = (d) => `a.ok_to_email and not a.debug
    and exists (select 1 from public.checkins c
@@ -61,6 +60,9 @@ const JOINED_AT = (d) => `a.ok_to_email and not a.debug
    and not exists (select 1 from public.checkins c
                     where c.attendee_id = a.id and c.checkin_date < ${d} and not c.debug)`;
 const NOT_ON_LUMA = "a.on_luma_at is null and not a.on_luma_before_launch";
+// How many are still to add at the Event on ${d}: the sync's live list, counted.
+const TO_ADD_COUNT = (d) =>
+  `(select count(*)::int from public.attendees a where ${JOINED_AT(d)} and ${NOT_ON_LUMA})`;
 
 const JOINED_SQL = `
   select a.id, a.name, a.email,
@@ -72,24 +74,43 @@ const JOINED_SQL = `
    order by (select min(c.checkin_at) from public.checkins c
               where c.attendee_id = a.id and c.checkin_date = $1::date and not c.debug), a.email`;
 
-function resolveOpts({ now = new Date(), today, launch } = {}) {
+/**
+ * The clock every function here works from, with the defaults filled in. Resolving an
+ * already resolved clock changes nothing.
+ * @param {{ now?: Date, today?: string, launch?: string }} [opts]
+ * @returns {{ now: Date, today: string, launch: string }}
+ */
+function resolveClock({ now = new Date(), today, launch } = {}) {
   return { now, today: today ?? todayEastern(now), launch: launch ?? lumaSyncLaunchDate() };
 }
 
-/** The sync's shape from its parts (see the header). */
-function shape({ date, eventStatus, hasRow, stored, people, joined, now, today, launch }) {
+/**
+ * What the date and its events row say about an Event, before any sync data: whether it
+ * is an Event at all, before launch, Upcoming or Cancelled, and so whether it has a sync.
+ * @param {string} date
+ * @param {string | null} eventStatus  the events row's status, null without a row
+ * @param {{ today: string, launch: string }} clock
+ */
+function eventFacts(date, eventStatus, { today, launch }) {
   const isEvent = eventStatus != null || (isTuesday(date) && !isHolidayWeek(date));
   const beforeLaunch = date < launch;
-  const applies = isEvent && !beforeLaunch;
-  const cancelled = eventStatus === CANCELLED;
-  const { status, statusLabel, unfinished } = applies
-    ? lumaSyncStatus({ stored: stored?.status ?? null, people: people.length, cancelled })
+  return {
+    isEvent, beforeLaunch, applies: isEvent && !beforeLaunch,
+    cancelled: eventStatus === CANCELLED, upcoming: date > today,
+  };
+}
+
+/** The sync's shape from its parts (see the header). */
+function shape({ date, eventStatus, stored, people, joined }, clock) {
+  const facts = eventFacts(date, eventStatus, clock);
+  const { status, statusLabel, unfinished } = facts.applies
+    ? lumaSyncStatus({ stored: stored?.status ?? null, people: people.length, cancelled: facts.cancelled })
     : { status: null, statusLabel: null, unfinished: false };
   return {
-    date, applies, isEvent, cancelled, upcoming: date > today, beforeLaunch,
-    stored: hasRow ? stored : null,
+    date, ...facts,
+    stored,
     status, statusLabel, unfinished,
-    stopAfterError: erroredRecently({ status, updatedAt: stored?.updatedAt }, now),
+    stopAfterError: erroredRecently({ status, updatedAt: stored?.updatedAt }, clock.now),
     note: stored?.note ?? null,
     people, joined,
   };
@@ -103,7 +124,7 @@ function shape({ date, eventStatus, hasRow, stored, people, joined, now, today, 
  */
 export async function getLumaSync(db, date, opts) {
   if (!parseDate(date)) throw new Error("getLumaSync: date must be YYYY-MM-DD");
-  const { now, today, launch } = resolveOpts(opts);
+  const clock = resolveClock(opts);
   const [{ rows: [row] }, { rows }] = await Promise.all([
     db.query(
       `select e.status as "eventStatus", s.event_date is not null as "hasRow", s.status, s.note,
@@ -116,10 +137,10 @@ export async function getLumaSync(db, date, opts) {
   const joined = rows.map(({ toAdd, ...p }) => ({ ...p, dateAdded: date }));
   const people = rows.filter((p) => p.toAdd).map(({ id, name, email }) => ({ id, name, email }));
   return shape({
-    date, eventStatus: row.eventStatus, hasRow: row.hasRow,
+    date, eventStatus: row.eventStatus,
     stored: row.hasRow ? { status: row.status, note: row.note, updatedAt: row.updatedAt, updatedBy: row.updatedBy } : null,
-    people, joined, now, today, launch,
-  });
+    people, joined,
+  }, clock);
 }
 
 const STAND_DOWN = "Nothing to add, stand down.";
@@ -133,7 +154,8 @@ const STAND_DOWN = "Nothing to add, stand down.";
  * @param {{ now?: Date, today?: string, launch?: string }} [opts]
  */
 export async function findNextLumaSync(db, opts) {
-  const { now, today, launch } = resolveOpts(opts);
+  const clock = resolveClock(opts);
+  const { today, launch } = clock;
   if (launch <= today) {
     const { rows: saved } = await db.query(
       `select event_date::text as date from public.events where event_date between $1::date and $2::date`, [launch, today]);
@@ -141,7 +163,7 @@ export async function findNextLumaSync(db, opts) {
     for (const d of meetingTuesdays(launch, today)) dates.add(d);
     const { rows } = await db.query(
       `select x.d::text as date, e.status as "eventStatus", s.status as stored,
-              (select count(*)::int from public.attendees a where ${JOINED_AT("x.d")} and ${NOT_ON_LUMA}) as people
+              ${TO_ADD_COUNT("x.d")} as people
          from unnest($1::date[]) as x(d)
          left join public.events e on e.event_date = x.d
          left join public.luma_syncs s on s.event_date = x.d
@@ -149,7 +171,7 @@ export async function findNextLumaSync(db, opts) {
     const first = rows.find((r) => lumaSyncStatus({
       stored: r.stored, people: r.people, cancelled: r.eventStatus === CANCELLED,
     }).unfinished);
-    if (first) return { state: "sync", sync: await getLumaSync(db, first.date, { now, today, launch }) };
+    if (first) return { state: "sync", sync: await getLumaSync(db, first.date, clock) };
   }
   const holiday = isHolidayWeek(today);
   if (!holiday) return { state: "stand_down", today, holiday, message: STAND_DOWN };
@@ -169,13 +191,12 @@ export async function findNextLumaSync(db, opts) {
  * the events row it needs, on the first write), so two writes to one sync take turns.
  * Returns the stored status before this write (null: there was no row).
  */
-async function lockSync(client, date, opts) {
+async function lockSync(client, date, clock) {
   if (!parseDate(date)) throw new ValidationError({ date: "Pick a valid date (YYYY-MM-DD)." });
-  const { today, launch } = opts;
   const { rows: [ev] } = await client.query("select status from public.events where event_date = $1::date", [date]);
-  const facts = shape({ date, eventStatus: ev?.status ?? null, hasRow: false, stored: null, people: [], joined: [], today, launch });
+  const facts = eventFacts(date, ev?.status ?? null, clock);
   if (!facts.isEvent) throw new NotFoundError({ date: `There is no Event on ${date}.` });
-  if (facts.beforeLaunch) throw new ConflictError({ date: `Events before ${launch} have no Luma sync.` });
+  if (facts.beforeLaunch) throw new ConflictError({ date: `Events before ${clock.launch} have no Luma sync.` });
   if (facts.upcoming) throw new ConflictError({ date: `The Event on ${date} hasn't happened yet.` });
   if (facts.cancelled) throw new ConflictError({ date: `The Event on ${date} was Cancelled: its Luma sync is Nothing to add.` });
   const lock = "select status from public.luma_syncs where event_date = $1::date for update";
@@ -194,15 +215,15 @@ async function lockSync(client, date, opts) {
  * @param {{ attendeeIds?: string[] | null, now?: Date, today?: string, launch?: string }} [opts]
  */
 export async function markDone(actorUserId, date, opts = {}) {
-  const resolved = resolveOpts(opts);
+  const clock = resolveClock(opts);
   const ids = opts.attendeeIds == null ? null : [...new Set(opts.attendeeIds)].filter((id) => typeof id === "string");
   return withAudit(actorUserId, async (client) => {
-    const { stored } = await lockSync(client, date, resolved);
+    const { stored } = await lockSync(client, date, clock);
     const { rows } = await client.query(
       `update public.attendees a set on_luma_at = $2
         where ${JOINED_AT("$1::date")} and ${NOT_ON_LUMA}
           and ($3::text[] is null or a.id::text = any($3::text[]))
-        returning a.id`, [date, resolved.now, ids]);
+        returning a.id`, [date, clock.now, ids]);
     await client.query(
       "update public.luma_syncs set status = 'done', updated_by = $2 where event_date = $1::date", [date, actorUserId]);
     return { date, people: rows.length, attendeeIds: rows.map((r) => r.id).sort(), before: stored };
@@ -223,11 +244,10 @@ export async function markError(actorUserId, date, note, opts = {}) {
   const problem = errorNoteProblem(note);
   if (problem) throw new ValidationError({ note: problem });
   const text = /** @type {string} */ (note).trim();
-  const resolved = resolveOpts(opts);
+  const clock = resolveClock(opts);
   return withAudit(actorUserId, async (client) => {
-    const { stored } = await lockSync(client, date, resolved);
-    const { rows: [{ people }] } = await client.query(
-      `select count(*)::int as people from public.attendees a where ${JOINED_AT("$1::date")} and ${NOT_ON_LUMA}`, [date]);
+    const { stored } = await lockSync(client, date, clock);
+    const { rows: [{ people }] } = await client.query(`select ${TO_ADD_COUNT("$1::date")} as people`, [date]);
     await client.query(
       "update public.luma_syncs set status = 'error', note = $2, updated_by = $3 where event_date = $1::date",
       [date, text, actorUserId]);

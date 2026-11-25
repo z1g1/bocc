@@ -29,7 +29,7 @@ const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
 const { latestCheckinDate, listCheckinDates, listCheckins } = await import("../../src/lib/admin/checkins.mjs");
 const { listActiveStreaks } = await import("../../src/lib/admin/streaks.mjs");
 const { listEmailList, exportEmailList, optOut, onLumaLabel } = await import("../../src/lib/admin/email-list.mjs");
-const { searchAttendees, getAttendee, correctAttendee, ValidationError, NotFoundError } =
+const { searchAttendees, getAttendee, correctAttendee, ValidationError, RecordNotFoundError } =
   await import("../../src/lib/admin/attendees.mjs");
 
 const PASSWORD = "correct horse battery staple";
@@ -185,8 +185,8 @@ describe("email list module", () => {
       actor_user_id: user.id, action: "attendee.opt_out",
       details: { before: { ok_to_email: true }, after: { ok_to_email: false } },
     }]);
-    await assert.rejects(optOut(user.id, "123e4567-e89b-12d3-a456-426614174000"), NotFoundError);
-    await assert.rejects(optOut(user.id, "not-a-uuid"), NotFoundError);
+    await assert.rejects(optOut(user.id, "123e4567-e89b-12d3-a456-426614174000"), RecordNotFoundError);
+    await assert.rejects(optOut(user.id, "not-a-uuid"), RecordNotFoundError);
   });
 
   test("opt-out: a failed audit insert rolls the change back", async () => {
@@ -223,7 +223,7 @@ describe("attendee corrections module", () => {
   test("invalid input and unknown ids are refused before anything is written", async () => {
     const a = await attendee(owner, { name: "Val Idate" });
     await assert.rejects(correctAttendee(null, a.id, { name: "", phone: "call me" }), (e) => e instanceof ValidationError && e.errors.length === 2);
-    await assert.rejects(correctAttendee(null, "123e4567-e89b-12d3-a456-426614174000", { name: "X" }), NotFoundError);
+    await assert.rejects(correctAttendee(null, "123e4567-e89b-12d3-a456-426614174000", { name: "X" }), RecordNotFoundError);
     assert.deepEqual(await auditRows(a.id), []);
   });
 

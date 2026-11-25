@@ -17,7 +17,7 @@
 // Neither = Not yet.
 
 import { withAudit } from "./db.mjs";
-import { NotFoundError, isUuid } from "./attendees.mjs";
+import { RecordNotFoundError, isUuid } from "./attendees.mjs";
 import { shortDay } from "./format.mjs";
 
 const EMAIL_LIST_SQL = `
@@ -92,13 +92,13 @@ export async function exportEmailList(actorUserId) {
  * @param {string} attendeeId
  */
 export async function optOut(actorUserId, attendeeId) {
-  if (!isUuid(attendeeId)) throw new NotFoundError("attendee not found");
+  if (!isUuid(attendeeId)) throw new RecordNotFoundError("attendee not found");
   return withAudit(
     actorUserId,
     async (client) => {
       const { rows } = await client.query(
         "select ok_to_email from public.attendees where id = $1 for update", [attendeeId]);
-      if (rows.length === 0) throw new NotFoundError("attendee not found");
+      if (rows.length === 0) throw new RecordNotFoundError("attendee not found");
       const res = await client.query("update public.attendees set ok_to_email = false where id = $1", [attendeeId]);
       if (res.rowCount !== 1) throw new Error("opt-out did not apply");
       return { wasOptedIn: rows[0].ok_to_email === true };

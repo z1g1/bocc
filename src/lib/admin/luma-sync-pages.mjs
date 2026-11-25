@@ -12,12 +12,16 @@
 //       Refused: { status, errors, posted: { action, values } } for the page to re-render.
 //   noticeText(params) -> the message for ?notice=… after the redirect, or null
 
-import { ValidationError } from "./events.mjs";
+import { ValidationError, parseDate } from "./events.mjs";
+import { formField } from "./form.mjs";
 import { plainText } from "./headers.mjs";
 import { markDone, markError } from "./luma-sync.mjs";
 import { pushLumaSyncError } from "./luma-sync-alert.mjs";
+import { peopleAre } from "./luma-sync-rules.mjs";
 
-const see = (location) => new Response(null, { status: 303, headers: { location, "cache-control": "no-store" } });
+/** 303 See Other to the page's GET (post/redirect/get). */
+const redirectAfterPost = (location) =>
+  new Response(null, { status: 303, headers: { location, "cache-control": "no-store" } });
 
 /**
  * @param {Request} request
@@ -35,21 +39,20 @@ export async function handleLumaSyncPost(request, userId, page, options = {}) {
   } catch {
     return { response: plainText(400, "Bad Request") };
   }
-  const str = (k) => (typeof data.get(k) === "string" ? /** @type {string} */ (data.get(k)) : "");
-  const action = str("action");
-  const date = str("date");
-  const values = { date, note: str("note") };
+  const action = formField(data, "action");
+  const date = formField(data, "date");
+  const values = { date, note: formField(data, "note") };
   try {
     if (action === "done") {
       const attendeeIds = data.getAll("attendeeId").filter((v) => typeof v === "string");
       const result = await markDone(userId, date, { ...opts, attendeeIds });
-      return { result, response: see(`${page}?notice=done&date=${date}&people=${result.people}`) };
+      return { result, response: redirectAfterPost(`${page}?notice=done&date=${date}&people=${result.people}`) };
     }
     if (action === "error") {
       const result = await markError(userId, date, values.note, opts);
       // After the commit. Never throws: a failed push is only logged.
       await pushLumaSyncError(result, ntfy);
-      return { result, response: see(`${page}?notice=error&date=${date}`) };
+      return { result, response: redirectAfterPost(`${page}?notice=error&date=${date}`) };
     }
     return { response: plainText(400, "Bad Request: unknown action") };
   } catch (err) {
@@ -60,12 +63,12 @@ export async function handleLumaSyncPost(request, userId, page, options = {}) {
 
 /** The notice after a redirect, or null. */
 export function noticeText(params) {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date") : null;
+  const date = parseDate(params.get("date"));
   if (!date) return null;
   switch (params.get("notice")) {
     case "done": {
       const people = Number(params.get("people"));
-      const who = Number.isInteger(people) && people >= 0 ? `${people} ${people === 1 ? "person is" : "people are"} now On Luma` : "Saved";
+      const who = Number.isInteger(people) && people >= 0 ? `${peopleAre(people)} now On Luma` : "Saved";
       return `Marked the Luma sync for ${date} Done. ${who}.`;
     }
     case "error": return `Marked the Luma sync for ${date} Error.`;
