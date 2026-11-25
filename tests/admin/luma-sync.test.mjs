@@ -1,8 +1,9 @@
 // Luma sync (ADR 0014, spec #70, ticket #73), against the throwaway database (npm run test:db):
 //   1. pure rules: the displayed status, unfinished, the Error note, the email line, the
 //      launch date, the email role's allowlist and nav
-//   2. src/lib/admin/luma-sync.mjs as admin_app with an injected clock in far-future years
-//      (2066-2069) so other tests' data doesn't interfere: who is in a sync, every displayed
+//   2. src/lib/admin/luma-sync.mjs as admin_app with an injected clock in past years
+//      (2011-2014) so other tests' data doesn't interfere (and these check-ins never
+//      become anyone's "latest check-in day"): who is in a sync, every displayed
 //      status rule, oldest unfinished first (never Upcoming or pre-launch), the holiday
 //      stand-down, Done marking everyone On Luma in the same transaction, Error kept
 //      being handed out, the audit rows
@@ -170,7 +171,7 @@ describe("rules", () => {
 // ── 2. The module, as admin_app, injected clock ─────────────────────────────
 describe("luma-sync.mjs (admin_app, injected clock)", () => {
   test("who is in a sync: first non-debug Check-in only, Email list only, not On Luma; opt-outs drop off", async () => {
-    const T = tuesday("2066-03-01");
+    const T = tuesday("2011-03-01");
     const launch = addDays(T, -14);
     const opts = { today: addDays(T, 1), launch };
     const first = await person({ checkins: [T], name: "Ann First" });
@@ -197,7 +198,7 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
   });
 
   test("displayed status: no row, Cancelled, Done, a late joiner reopening Done, Error until Done", async () => {
-    const T = tuesday("2066-05-01");
+    const T = tuesday("2011-05-01");
     const opts = { today: addDays(T, 1), launch: addDays(T, -7), now: noon(addDays(T, 1)) };
     assert.equal((await ls.getLumaSync(pool, T, opts)).status, "nothing_to_add", "nobody and no row");
     const a = await person({ checkins: [T] });
@@ -234,7 +235,7 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
   });
 
   test("oldest unfinished first; never Upcoming or pre-launch; Error is handed out again", async () => {
-    const T1 = tuesday("2067-02-01");
+    const T1 = tuesday("2012-02-01");
     const [T0, T2, T3, T4] = [addDays(T1, -7), addDays(T1, 7), addDays(T1, 14), addDays(T1, 21)];
     const today = addDays(T3, 1); // the Wednesday after T3: T4 is Upcoming
     const opts = { today, launch: T1, now: noon(today) };
@@ -268,11 +269,11 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     await assert.rejects(ls.markDone(actor.id, T4, opts), (e) => e.status === 409 && /hasn't happened/.test(e.errors.date));
     await assert.rejects(ls.markDone(actor.id, T0, opts), (e) => e.status === 409 && /before/.test(e.errors.date));
     await assert.rejects(ls.markDone(actor.id, addDays(T1, 1), opts), (e) => e.status === 404, "a Wednesday is not an Event");
-    await assert.rejects(ls.markDone(actor.id, "2067-02-30", opts), (e) => e.status === 400);
+    await assert.rejects(ls.markDone(actor.id, "2012-02-30", opts), (e) => e.status === 400);
   });
 
   test("the holiday break: stand down and say so; a holiday Tuesday is an Event only with a saved row", async () => {
-    const H = tuesday("2068-12-22");
+    const H = tuesday("2013-12-22");
     assert.ok(isHolidayWeek(H));
     const opts = { today: H, launch: addDays(H, -7), now: noon(H) };
     await person({ checkins: [H] });
@@ -288,7 +289,7 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
   });
 
   test("Done marks everyone listed On Luma in the same transaction; only the ids the agent saw; audited", async () => {
-    const T = tuesday("2069-03-01");
+    const T = tuesday("2014-03-01");
     const now = noon(addDays(T, 0));
     const opts = { today: T, launch: T, now };
     const a = await person({ checkins: [T] });
