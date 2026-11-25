@@ -19,6 +19,7 @@ import {
   alertSiteUrl, contextAllowed, longDate, readNtfyConfig, sendNtfy, shortDate,
 } from "../social-alert/alert.mjs";
 import { log as logLine, span } from "../telemetry.mjs";
+import { peopleAre } from "./luma-sync-rules.mjs";
 
 const log = (level, msg) => logLine(level, `[luma-sync] ${msg}`);
 
@@ -29,7 +30,7 @@ const log = (level, msg) => logLine(level, `[luma-sync] ${msg}`);
 export function lumaSyncErrorAlert({ date, note, people = null, siteUrl = null }) {
   const lines = [String(note ?? "").trim(), "", `Event: ${longDate(date)}.`];
   if (Number.isInteger(people)) {
-    lines.push(`${people} ${people === 1 ? "person is" : "people are"} still to add to Luma.`);
+    lines.push(`${peopleAre(people)} still to add to Luma.`);
   }
   lines.push(`Follow up on /admin/events/${date}/.`);
   let origin = null;

@@ -1,6 +1,7 @@
 // The Luma sync's pure rules (ADR 0014, spec #70): its statuses, the displayed status,
-// the launch date, the Luma people page and the Error note check. No database, no
-// imports from the admin data layer, so unit tests and any page can use them.
+// the launch date, the Luma people page and the Error note check. No database. Its one
+// import, parseDate from ./checkins.mjs, imports nothing, so unit tests and any page can
+// use these.
 //
 //   LUMA_SYNC_STATUSES, LUMA_SYNC_STATUS_LABELS   todo | nothing_to_add | done | error
 //   displayedStatus({ stored, people, cancelled }) -> the status to show and act on
@@ -10,6 +11,10 @@
 //   LUMA_PEOPLE_URL                                the Luma calendar's people page
 //   NOTE_MAX, errorNoteProblem(note)               -> null when the trimmed note is fine, else the message
 //   emailLine(people)                              -> "a@x.com b@y.com" (Luma's Add people input)
+//   peopleAre(n)                                   -> "1 person is" | "3 people are"
+//   ERROR_STOP_HOURS, erroredRecently(s, now)      -> stop the run: an Error set in the last 12 hours
+
+import { parseDate } from "./checkins.mjs";
 
 export const LUMA_SYNC_STATUSES = Object.freeze(["todo", "nothing_to_add", "done", "error"]);
 
@@ -34,8 +39,7 @@ export const LUMA_SYNC_LAUNCH_DATE = "2026-12-01";
 
 /** @param {Record<string, string | undefined>} [env] */
 export function lumaSyncLaunchDate(env = process.env) {
-  const v = env.LUMA_SYNC_LAUNCH_DATE;
-  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : LUMA_SYNC_LAUNCH_DATE;
+  return parseDate(env.LUMA_SYNC_LAUNCH_DATE) ?? LUMA_SYNC_LAUNCH_DATE;
 }
 
 /** luma_syncs.note's limit (its CHECK). */
@@ -90,3 +94,24 @@ export function errorNoteProblem(note) {
 
 /** All the emails, separated by single spaces (Luma's Add people input takes that). */
 export const emailLine = (people) => people.map((p) => p.email).join(" ");
+
+/** "1 person is", "3 people are" (the Done notice, the Error push). @param {number} n */
+export const peopleAre = (n) => `${n} ${n === 1 ? "person is" : "people are"}`;
+
+/**
+ * How long after an Error is set /admin/luma-sync/next/ tells the agent to stop rather
+ * than retry it. Longer than one run, much shorter than the week between runs: the run
+ * that set it stops however it reloads the page, and the next run retries (spec story 17).
+ */
+export const ERROR_STOP_HOURS = 12;
+
+/**
+ * Was this sync set to Error within ERROR_STOP_HOURS of `now`? A time slightly in the
+ * future (the database's clock a little ahead of the app's) counts as recent.
+ * @param {{ status: string | null, updatedAt?: Date | string | null }} s  displayed status, stored updated_at
+ * @param {Date} now
+ */
+export function erroredRecently({ status, updatedAt = null }, now) {
+  if (status !== "error" || updatedAt == null) return false;
+  return now.getTime() - new Date(updatedAt).getTime() < ERROR_STOP_HOURS * 3_600_000;
+}

@@ -16,7 +16,7 @@
 --    turning either off, because unsubscribing happens entirely in Luma and the app
 --    can't see it. admin_app gets column-level UPDATE on just these two columns.
 --
--- 3. luma_syncs: one row per Event (keyed by event date, like social_posts), created
+-- 3. luma_syncs: one row per Event (keyed by event date, like social_plans), created
 --    lazily by the first status write. No row = To do or Nothing to add, as computed
 --    on read from the live list. Grants: admin_app SELECT, INSERT, UPDATE (no DELETE:
 --    the history stays). checkin_writer and site_reader nothing.

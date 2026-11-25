@@ -39,11 +39,11 @@ import { randomUUID } from "node:crypto";
 import { pool, withAudit, writeAudit } from "./db.mjs";
 import { inUseMessage } from "./event-image-rules.mjs";
 import { EVENT_PHOTO_KIND } from "./media-rules.mjs";
-import { NotFoundError, ValidationError, isUuid } from "./attendees.mjs";
+import { RecordNotFoundError, ValidationError, isUuid } from "./attendees.mjs";
 import { extForContentType, isIsoDate, mediaKey } from "./storage.mjs";
 import { IMAGE_16X9_LIMITS } from "../linkedin/rules.mjs";
 
-export { NotFoundError, ValidationError };
+export { RecordNotFoundError, ValidationError };
 
 export const PHOTO_KINDS = Object.freeze(["signin_board", EVENT_PHOTO_KIND]);
 // DEPRECATED (#54): the kind's old name. A tab opened before the deploy runs the old
@@ -238,9 +238,9 @@ const MEDIA_COLUMNS = `
   content_type as "contentType", size_bytes::int8 as "sizeBytes", publicly_usable as "publiclyUsable", status, uploaded_by as "uploadedBy", created_at as "createdAt"`;
 
 async function getRow(db, id) {
-  if (!isUuid(id)) throw new NotFoundError("media not found");
+  if (!isUuid(id)) throw new RecordNotFoundError("media not found");
   const { rows } = await db.query(`select ${MEDIA_COLUMNS} from public.event_media where id = $1`, [id]);
-  if (!rows.length) throw new NotFoundError("media not found");
+  if (!rows.length) throw new RecordNotFoundError("media not found");
   const r = rows[0];
   return { ...r, sizeBytes: Number(r.sizeBytes) };
 }
@@ -340,7 +340,7 @@ export async function completeUpload(actorUserId, storage, id, { db, log }) {
  * @param {{ log?: (msg: string) => void }} [opts]
  */
 export async function deleteMedia(actorUserId, storage, id, { log = (m) => console.error(m) } = {}) {
-  if (!isUuid(id)) throw new NotFoundError("media not found");
+  if (!isUuid(id)) throw new RecordNotFoundError("media not found");
   const row = await withAudit(actorUserId, async (client) => {
     // A photo picked as an event's Event Image (events.event_image_media_id, ticket
     // #21) is refused, naming the events; the FK would refuse it too, without names.
@@ -360,7 +360,7 @@ export async function deleteMedia(actorUserId, storage, id, { log = (m) => conso
     const { rows } = await client.query(
       `delete from public.event_media where id = $1
        returning event_date::text as "eventDate", kind, status, original_key, display_key, thumb_key, image_16x9_key`, [id]);
-    if (!rows.length) throw new NotFoundError("media not found");
+    if (!rows.length) throw new RecordNotFoundError("media not found");
     return { ...rows[0], detachedFromSocialPlan: detached.length > 0 };
   }, (r) => ({
     action: "media.delete", targetTable: "event_media", targetId: id,

@@ -5,12 +5,12 @@
 // Astro ranks a rest parameter below every static or named route, so this never
 // shadows a real admin API.
 import type { APIRoute } from "astro";
-import { requireRole } from "../../../lib/admin/roles.mjs";
+import { ROLES, requireRole } from "../../../lib/admin/roles.mjs";
 
 export const prerender = false;
 
 export const ALL: APIRoute = ({ locals }) => {
-  const denied = requireRole(locals, "admin", "social", "email");
+  const denied = requireRole(locals, ...ROLES);
   if (denied) return denied;
   return Response.json({ error: "not found" }, { status: 404, headers: { "cache-control": "no-store" } });
 };

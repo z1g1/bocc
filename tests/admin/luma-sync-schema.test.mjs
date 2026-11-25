@@ -56,15 +56,15 @@ describe("migration 20261205120000_luma_sync.sql: launch backfill", () => {
   test("every non-debug Email-list Attendee is Before launch; everyone else is Not yet; no syncs", () =>
     inRollback(owner, async () => {
       await unapply(owner);
-      const subscriber = await attendee(owner);
-      const debugSubscriber = await attendee(owner, { debug: true });
+      const onList = await attendee(owner);
+      const debugOptedIn = await attendee(owner, { debug: true });
       const notOptedIn = await attendee(owner, { ok: false });
       const debugNotOptedIn = await attendee(owner, { ok: false, debug: true });
 
       await owner.query(MIGRATION);
 
-      assert.deepEqual(await onLuma(owner, subscriber), { on_luma_at: null, on_luma_before_launch: true });
-      for (const id of [debugSubscriber, notOptedIn, debugNotOptedIn]) {
+      assert.deepEqual(await onLuma(owner, onList), { on_luma_at: null, on_luma_before_launch: true });
+      for (const id of [debugOptedIn, notOptedIn, debugNotOptedIn]) {
         assert.deepEqual(await onLuma(owner, id), { on_luma_at: null, on_luma_before_launch: false }, id);
       }
       const { rows: [{ count }] } = await owner.query("select count(*)::int as count from luma_syncs");

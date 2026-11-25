@@ -27,16 +27,22 @@
 //
 // To add a role's pages:
 //   1. Name the role in ROLES (and in the public.user_roles CHECK, by a new migration).
+//      The routes every role reaches (the admin home, account, /api/admin/me and both
+//      [...rest] 404 routes) call requireRole(locals, ...ROLES), so they admit it at once.
 //   2. Give it an allowlist in ROLE_PATHS: BASE_PATHS plus its own page and API
 //      prefixes. A role with no entry reaches nothing.
-//   3. Give it nav links in ROLE_LINKS (src/lib/admin/nav.mjs).
-//   4. Each of its pages and API routes names the role in its requireRole().
-// A new page for an existing role goes in that role's allowlist AND names the role in
-// its requireRole().
+//   3. Give it nav links in ROLE_LINKS and a home-page heading in ROLE_TITLES
+//      (src/lib/admin/nav.mjs). The admin home renders its section from those.
+//   4. Each of its own pages and API routes names the role in its requireRole().
+// Nothing else lists the roles. A new page for an existing role goes in that role's
+// allowlist AND names the role in its requireRole().
 
 import { plainText } from "./headers.mjs";
 
-/** Every role public.user_roles accepts (its CHECK constraint). */
+/**
+ * Every role public.user_roles accepts (its CHECK constraint). The routes open to every
+ * role spread it: requireRole(locals, ...ROLES).
+ */
 export const ROLES = Object.freeze(["admin", "social", "email"]);
 
 /**
