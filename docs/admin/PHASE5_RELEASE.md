@@ -243,4 +243,7 @@ Developer-facing facts for shipping the Luma sync. The human release steps (gran
   first Tuesday after the migration runs. Otherwise the people who joined the Email list
   between the default date and the migration are marked "Before launch" by the migration's
   backfill **without ever being added to Luma**, and no sync lists them.
+- **A staging rehearsal before 2026-12-01 must set `LUMA_SYNC_LAUNCH_DATE`** on the `dev`
+  branch deploy to a past Tuesday (for example the latest one). Without it every date is before
+  launch and `/admin/luma-sync/next/` only ever says to stand down (ADR 0014, "Deviations").
 - **Granting `email`, the Chrome task prompt and the launch check:** see #76.

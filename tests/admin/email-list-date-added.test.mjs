@@ -8,7 +8,7 @@ import { OWNER_URL, connect, unique, useAdminEnv } from "./helpers.mjs";
 useAdminEnv();
 const { pool } = await import("../../src/lib/auth/auth.mjs");
 const { createUser } = await import("../../src/lib/admin/users.mjs");
-const { listSubscribers, exportEmailList } = await import("../../src/lib/admin/email-list.mjs");
+const { listEmailList, exportEmailList } = await import("../../src/lib/admin/email-list.mjs");
 
 let owner;
 const fx = {};
@@ -48,7 +48,7 @@ before(async () => {
 after(async () => { await owner?.end(); await pool.end(); });
 
 describe("email list Date added", () => {
-  const byEmail = async () => new Map((await listSubscribers(pool)).map((s) => [s.email, s]));
+  const byEmail = async () => new Map((await listEmailList(pool)).map((s) => [s.email, s]));
 
   test("is the Eastern date of the first non-debug check-in", async () => {
     assert.equal((await byEmail()).get(fx.regular.email).dateAdded, "2026-03-10");
@@ -66,8 +66,8 @@ describe("email list Date added", () => {
     assert.equal((await byEmail()).get(fx.imported.email).dateAdded, "2024-05-20");
   });
 
-  test("every subscriber has an ISO Date added", async () => {
-    for (const s of await listSubscribers(pool)) assert.match(s.dateAdded, /^\d{4}-\d{2}-\d{2}$/, s.email);
+  test("everyone on the Email list has an ISO Date added", async () => {
+    for (const s of await listEmailList(pool)) assert.match(s.dateAdded, /^\d{4}-\d{2}-\d{2}$/, s.email);
   });
 
   test("the CSV has date_added before on_luma, and formula escaping still applies", async () => {

@@ -28,7 +28,7 @@ const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
 const { latestCheckinDate, listCheckinDates, listCheckins } = await import("../../src/lib/admin/checkins.mjs");
 const { listActiveStreaks } = await import("../../src/lib/admin/streaks.mjs");
-const { listSubscribers, exportEmailList, optOut, onLumaLabel } = await import("../../src/lib/admin/email-list.mjs");
+const { listEmailList, exportEmailList, optOut, onLumaLabel } = await import("../../src/lib/admin/email-list.mjs");
 const { searchAttendees, getAttendee, correctAttendee, ValidationError, NotFoundError } =
   await import("../../src/lib/admin/attendees.mjs");
 
@@ -139,15 +139,15 @@ describe("streaks module", () => {
 });
 
 describe("email list module", () => {
-  test("subscribers: ok_to_email and not debug", async () => {
-    const emails = (await listSubscribers(pool)).map((s) => s.email);
+  test("the Email list: ok_to_email and not debug", async () => {
+    const emails = (await listEmailList(pool)).map((s) => s.email);
     assert.ok(emails.includes(fx.regular.email));
     assert.ok(!emails.includes(fx.lapsed.email), "not opted in");
     assert.ok(!emails.includes(fx.tester.email), "debug attendee");
   });
 
   test("On Luma: since a date (Eastern), before launch, or not yet", async () => {
-    const byEmail = new Map((await listSubscribers(pool)).map((s) => [s.email, s]));
+    const byEmail = new Map((await listEmailList(pool)).map((s) => [s.email, s]));
     const pick = (a) => {
       const s = byEmail.get(a.email);
       return { onLumaSince: s.onLumaSince, onLumaBeforeLaunch: s.onLumaBeforeLaunch, label: onLumaLabel(s) };

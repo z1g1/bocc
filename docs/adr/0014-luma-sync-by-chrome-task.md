@@ -46,8 +46,9 @@ subscription, which BOCC doesn't have. So the adding has to happen in Luma's web
    Luma's own link is invisible to the app, and unsubscribing is handled entirely by Luma.
 6. **Email list columns.** The Email list page and its CSV gain **Date added** (the date of
    the first non-debug Check-in, or the attendee row's creation date if there is none) and
-   **On Luma** ("On Luma since <date>", "Before launch" or "Not yet"). The Admin event page
-   shows that Event's Luma sync status and its people.
+   **On Luma**. The page shows the labels "On Luma since <date>", "Before launch" or "Not
+   yet". The CSV's `on_luma` column holds the matching values: an ISO date, `before_launch`
+   or empty. The Admin event page shows that Event's Luma sync status and its people.
 7. **Launch.** Everyone on the Email list at launch is marked On Luma "Before launch". No syncs
    are created for past Events. A one-time manual check, not built into the app, compares the
    Luma subscribers with the Email list and reports anyone missing so they can be added by hand.
@@ -66,7 +67,28 @@ subscription, which BOCC doesn't have. So the adding has to happen in Luma's web
 - After the agent marks Error, `/admin/luma-sync/next` tells it to stop the run, and the
   next run starts again from the oldest unfinished sync. So an Error that keeps coming back
   blocks every newer week until an Admin marks it Done. The ntfy push on each Error is
-  what surfaces it.
+  what surfaces it. The stop doesn't depend on the redirect's URL: while the sync it hands
+  out was set to Error in the last 12 hours (`luma_syncs.updated_at`), the page shows "Stop
+  here and report" (`data-step="stop"`) however it is loaded, so reloading `/next` never
+  retries in the same run. A week later the Error is older than that, so the next run gets
+  the normal instructions and retries it (spec story 17). An Admin who fixes the problem the
+  same night marks the sync Done on the Admin event page.
+
+## Deviations from the spec (#70)
+
+1. **Done marks only the people the page showed.** The spec says setting Done marks everyone
+   in the live list On Luma. Instead, both the agent's Mark Done on `/admin/luma-sync/next`
+   and the Admin's "Mark Done (handled by hand)" on the Admin event page send the Attendees
+   listed when the page loaded, and only those are marked On Luma. Someone who joins the
+   Email list at that Event after the page loaded was never pasted into Luma, so they stay
+   Not yet and the sync shows To do again (story 39's rule), to be handed out on the next run.
+2. **The launch date is a code constant with an override.** Events before
+   `LUMA_SYNC_LAUNCH_DATE` have no sync (story 36). It defaults to **2026-12-01**
+   (`src/lib/admin/luma-sync-rules.mjs`), and the `LUMA_SYNC_LAUNCH_DATE` environment variable
+   (YYYY-MM-DD) overrides it. Before 2026-12-01 the page always says to stand down, so **a
+   staging rehearsal before that date must set `LUMA_SYNC_LAUNCH_DATE`** on the `dev` branch
+   deploy to a past Tuesday. Release details: `docs/admin/PHASE5_RELEASE.md`, "Luma sync
+   release".
 - Missed runs are silent by design. The Admin event page and "Not yet" on the Email list are
   how someone would notice.
 - As with ADR 0011, the agent is exposed to anything planted in the Luma pages it reads.
