@@ -2,25 +2,26 @@
 // it. Pure checks, no database (runs inside npm run test:db with the others).
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { ADMIN_LINKS, ROLE_LINKS, SOCIAL_LINKS, currentHref, navLinksFor, sectionNavHtml } from "../../src/lib/admin/nav.mjs";
+import { ADMIN_LINKS, EMAIL_LINKS, ROLE_LINKS, SOCIAL_LINKS, currentHref, navLinksFor, sectionNavHtml } from "../../src/lib/admin/nav.mjs";
 import { errorPageHtml } from "../../src/lib/admin/error-page.mjs";
 
 const FAKE_SOCIAL = [{ href: "/admin/social/", label: "Work order" }];
 
 describe("section nav links", () => {
   test("admin gets every link; social only the social ones; no role nothing", () => {
-    assert.deepEqual(navLinksFor(["admin"]).map((l) => l.href), [...ADMIN_LINKS, ...SOCIAL_LINKS].map((l) => l.href));
+    assert.deepEqual(navLinksFor(["admin"]).map((l) => l.href), [...ADMIN_LINKS, ...SOCIAL_LINKS, ...EMAIL_LINKS].map((l) => l.href));
     assert.deepEqual(navLinksFor(["social"]), [...SOCIAL_LINKS]);
     assert.deepEqual(navLinksFor([]), []);
     assert.deepEqual(navLinksFor(["admin"], { social: FAKE_SOCIAL }).map((l) => l.label),
-      ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users", "Work order"]);
+      ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users", "Work order", "Luma sync"]);
     assert.deepEqual(navLinksFor(["social"], { social: FAKE_SOCIAL }), FAKE_SOCIAL);
-    assert.equal(navLinksFor(["admin", "social"], { social: FAKE_SOCIAL }).length, ADMIN_LINKS.length + 1, "no duplicates");
+    assert.equal(navLinksFor(["admin", "social"], { social: FAKE_SOCIAL }).length, ADMIN_LINKS.length + 1 + EMAIL_LINKS.length, "no duplicates");
   });
 
   test("links are keyed by role; several roles see the union with no duplicates; admin sees all", () => {
     assert.equal(ROLE_LINKS.admin, ADMIN_LINKS);
     assert.equal(ROLE_LINKS.social, SOCIAL_LINKS);
+    assert.equal(ROLE_LINKS.email, EMAIL_LINKS);
     const shared = { href: "/admin/shared/", label: "Shared" };
     const links = {
       admin: [{ href: "/admin/events/", label: "Events" }],

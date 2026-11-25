@@ -292,12 +292,20 @@ describe("routes over HTTP", { timeout: 300_000 }, () => {
     assert.ok(!home.includes("/admin/checkins/") && !home.includes("/admin/email-list/"), "no admin links for social");
   });
 
-  test("the email role (no allowlist yet, #72) gets 403 on every page and mutation, the home page included", async () => {
-    for (const p of ["/admin/", "/admin/account/", "/admin/social/next/", "/admin/users/", ...pages()]) {
+  test("the email role gets 403 on every data view and mutation; only its home and Luma sync pages open (#73)", async () => {
+    for (const p of ["/admin/social/next/", "/admin/users/", "/admin/events/", ...pages()]) {
       assert.equal((await req(p, { cookie: email.cookie })).status, 403, p);
     }
     for (const m of mutations()) {
       assert.equal((await req(m.path, { cookie: email.cookie, method: "POST", form: m.form })).status, 403, m.path);
+    }
+    for (const p of ["/admin/", "/admin/account/", "/admin/luma-sync/next/"]) {
+      assert.equal((await req(p, { cookie: email.cookie })).status, 200, p);
+    }
+    const home = await (await req("/admin/", { cookie: email.cookie })).text();
+    assert.ok(home.includes('href="/admin/luma-sync/next/"'), "the Luma sync link");
+    for (const p of ["/admin/checkins/", "/admin/email-list/", "/admin/attendees/", "/admin/social/"]) {
+      assert.ok(!home.includes(`href="${p}`), `no link to ${p}`);
     }
   });
 

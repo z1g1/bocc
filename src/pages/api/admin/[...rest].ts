@@ -10,7 +10,7 @@ import { requireRole } from "../../../lib/admin/roles.mjs";
 export const prerender = false;
 
 export const ALL: APIRoute = ({ locals }) => {
-  const denied = requireRole(locals, "admin", "social");
+  const denied = requireRole(locals, "admin", "social", "email");
   if (denied) return denied;
   return Response.json({ error: "not found" }, { status: 404, headers: { "cache-control": "no-store" } });
 };

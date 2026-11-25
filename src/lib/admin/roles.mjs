@@ -34,9 +34,6 @@
 // A new page for an existing role goes in that role's allowlist AND names the role in
 // its requireRole().
 
-// The email role (ADR 0014, the Luma sync Chrome task) has no ROLE_PATHS entry yet: until its
-// pages land, mayReach() refuses it everywhere, like a role with an empty allowlist.
-
 /** Every role public.user_roles accepts (its CHECK constraint). */
 export const ROLES = Object.freeze(["admin", "social", "email"]);
 
@@ -93,17 +90,30 @@ export const SOCIAL_PATHS = Object.freeze([
 ]);
 
 /**
+ * The email role's allowlist (ADR 0014, the Luma sync Chrome task): the base paths plus
+ * the Luma sync pages and their API. Never the Email list, Attendees, the CSV export,
+ * opt-out or the Admin event page: an agent exposed to planted instructions on Luma's
+ * pages must not be able to read or change the whole list.
+ */
+export const EMAIL_PATHS = Object.freeze([
+  ...BASE_PATHS,
+  /^\/admin\/luma-sync(\/|$)/,
+  /^\/api\/admin\/luma-sync(\/|$)/,
+]);
+
+/**
  * Each non-admin role's path allowlist. See "To add a role's pages" above.
  * @type {Readonly<Record<string, ReadonlyArray<RegExp>>>}
  */
 export const ROLE_PATHS = Object.freeze({
   social: SOCIAL_PATHS,
+  email: EMAIL_PATHS,
 });
 
 /**
  * May a user holding `roles` reach the protected `path` at all? admin: everything;
  * any other role: its ROLE_PATHS allowlist, and several roles the union of theirs;
- * no role (or a role with no allowlist, like email for now): nothing. The route's
+ * no role (or a role with no allowlist): nothing. The route's
  * requireRole() still runs.
  * @param {string[]} roles
  * @param {string} path  a URL pathname

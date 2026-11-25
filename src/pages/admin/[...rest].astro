@@ -9,7 +9,7 @@
 import { requireRole } from "../../lib/admin/roles.mjs";
 export const prerender = false;
 
-const denied = requireRole(Astro.locals, "admin", "social");
+const denied = requireRole(Astro.locals, "admin", "social", "email");
 if (denied) return denied;
 
 return new Response("Not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
