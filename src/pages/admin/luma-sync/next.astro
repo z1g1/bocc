@@ -17,8 +17,8 @@
 import Admin from "../../../layouts/Admin.astro";
 import { requireRole } from "../../../lib/admin/roles.mjs";
 import { checkOrigin } from "../../../lib/admin/csrf.mjs";
-import { longDay } from "../../../lib/admin/format.mjs";
-import { LUMA_PEOPLE_URL, NOTE_MAX, emailLine } from "../../../lib/admin/luma-sync-rules.mjs";
+import { easternDateTime, longDay } from "../../../lib/admin/format.mjs";
+import { ERROR_STOP_HOURS, LUMA_PEOPLE_URL, NOTE_MAX, emailLine } from "../../../lib/admin/luma-sync-rules.mjs";
 export const prerender = false;
 
 const denied = requireRole(Astro.locals, "admin", "email");
@@ -47,13 +47,15 @@ if (Astro.request.method === "POST") {
 const pick: any = await findNextLumaSync(pool);
 const sync = pick.state === "sync" ? pick.sync : null;
 const notice = posted ? null : noticeText(Astro.url.searchParams);
-// The agent just marked this same sync Error: it is handed out again (an Admin follows
-// up, or the next run retries), so this run stops here instead of looping on it. The
-// oldest unfinished sync always comes first, so an Error that keeps coming back blocks
-// every newer week until an Admin marks it Done (on the Admin event page). The ntfy push
-// on each Error (luma-sync-alert.mjs) is what tells someone (ADR 0014, Consequences).
-const justErrored = !posted && sync?.status === "error" && Astro.url.searchParams.get("notice") === "error"
-  && Astro.url.searchParams.get("date") === sync.date;
+// The stop after Error: while the sync handed out was set to Error in the last
+// ERROR_STOP_HOURS (12; getLumaSync's stopAfterError, luma-sync-rules.mjs erroredRecently),
+// the page says "Stop here and report" (data-step="stop") however it is loaded, with or
+// without the redirect's ?notice=error, so the run that set it never retries it. A week
+// later the Error is older, so the next run gets the normal instructions and retries it
+// (spec story 17). The oldest unfinished sync always comes first, so an Error that keeps
+// coming back blocks every newer week until an Admin marks it Done (on the Admin event
+// page). The ntfy push on each Error (luma-sync-alert.mjs) is what tells someone (ADR 0014,
+// Consequences).
 const noteValue = posted?.action === "error" ? posted.values.note : "";
 ---
 <Admin title="Luma sync" user={user} roles={roles}>
@@ -80,8 +82,8 @@ const noteValue = posted?.action === "error" ? posted.values.note : "";
           <dt>Luma people page</dt><dd><a id="luma-people-url" href={LUMA_PEOPLE_URL} rel="noopener noreferrer">{LUMA_PEOPLE_URL}</a></dd>
           {sync.note && sync.status === "error" && <><dt>Previous Error note</dt><dd><pre id="previous-error-note">{sync.note}</pre></dd></>}
         </dl>
-        {justErrored
-          ? <p id="next-step" data-step="stop">You marked this Luma sync Error just now. Stop here and report the Error note above. Don't retry it in this run.</p>
+        {sync.stopAfterError
+          ? <p id="next-step" data-step="stop">This Luma sync was marked Error on {easternDateTime(sync.stored.updatedAt)} (less than {ERROR_STOP_HOURS} hours ago). Stop here and report the Error note above. Don't retry it in this run: the next run retries it.</p>
           : sync.people.length > 0
             ? <p id="next-step" data-step="add">Open the Luma people page, choose Add people, paste the emails line below and send. Then search the Luma people list for each email. If every email is found, press Mark Done. If any is missing, press Mark Error and name the missing emails in the note.</p>
             : <p id="next-step" data-step="done">Nobody is left to add. Press Mark Done.</p>}

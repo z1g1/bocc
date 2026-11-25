@@ -32,6 +32,8 @@
 //   isEvent, cancelled, upcoming (after today), beforeLaunch,
 //   stored: { status, note, updatedAt, updatedBy } | null,
 //   status: displayedStatus() (null when !applies), statusLabel, unfinished,
+//   stopAfterError: Error set within ERROR_STOP_HOURS of `now` (luma-sync-rules.mjs): the
+//           page tells the agent to stop this run instead of retrying it,
 //   note: the stored note (an Error's text; kept as history after Done),
 //   people: [{ id, name, email }]  the live list: still to add, oldest check-in first
 //   joined: [{ id, name, email, dateAdded, onLumaSince, onLumaBeforeLaunch }]
@@ -47,8 +49,8 @@
 
 import { withAudit } from "./db.mjs";
 import { CANCELLED, ConflictError, NotFoundError, ValidationError, parseDate, todayEastern } from "./events.mjs";
-import { HOLIDAY_BREAK_LABEL, isHolidayWeek, isTuesday, meetingTuesdays } from "../holiday-weeks.mjs";
-import { errorNoteProblem, lumaSyncLaunchDate, lumaSyncStatus } from "./luma-sync-rules.mjs";
+import { HOLIDAY_BREAK_LABEL, addDays, isHolidayWeek, isTuesday, meetingTuesdays } from "../holiday-weeks.mjs";
+import { errorNoteProblem, erroredRecently, lumaSyncLaunchDate, lumaSyncStatus } from "./luma-sync-rules.mjs";
 
 export { NotFoundError };
 
@@ -75,7 +77,7 @@ function resolveOpts({ now = new Date(), today, launch } = {}) {
 }
 
 /** The sync's shape from its parts (see the header). */
-function shape({ date, eventStatus, hasRow, stored, people, joined, today, launch }) {
+function shape({ date, eventStatus, hasRow, stored, people, joined, now, today, launch }) {
   const isEvent = eventStatus != null || (isTuesday(date) && !isHolidayWeek(date));
   const beforeLaunch = date < launch;
   const applies = isEvent && !beforeLaunch;
@@ -87,6 +89,7 @@ function shape({ date, eventStatus, hasRow, stored, people, joined, today, launc
     date, applies, isEvent, cancelled, upcoming: date > today, beforeLaunch,
     stored: hasRow ? stored : null,
     status, statusLabel, unfinished,
+    stopAfterError: erroredRecently({ status, updatedAt: stored?.updatedAt }, now),
     note: stored?.note ?? null,
     people, joined,
   };
@@ -100,7 +103,7 @@ function shape({ date, eventStatus, hasRow, stored, people, joined, today, launc
  */
 export async function getLumaSync(db, date, opts) {
   if (!parseDate(date)) throw new Error("getLumaSync: date must be YYYY-MM-DD");
-  const { today, launch } = resolveOpts(opts);
+  const { now, today, launch } = resolveOpts(opts);
   const [{ rows: [row] }, { rows }] = await Promise.all([
     db.query(
       `select e.status as "eventStatus", s.event_date is not null as "hasRow", s.status, s.note,
@@ -115,19 +118,22 @@ export async function getLumaSync(db, date, opts) {
   return shape({
     date, eventStatus: row.eventStatus, hasRow: row.hasRow,
     stored: row.hasRow ? { status: row.status, note: row.note, updatedAt: row.updatedAt, updatedBy: row.updatedBy } : null,
-    people, joined, today, launch,
+    people, joined, now, today, launch,
   });
 }
+
+const STAND_DOWN = "Nothing to add, stand down.";
 
 /**
  * The oldest Event, from launch up to and including today, whose displayed Luma sync is
  * unfinished (To do or Error); never an Upcoming or pre-launch Event. Nothing
- * unfinished: stand down (and say so for the holiday break when today is in it).
+ * unfinished: stand down. When today is in the holiday break, the message says so, and
+ * says whether this week has an Event (a row saved on a holiday Tuesday) or none.
  * @param {{ query: Function }} db
  * @param {{ now?: Date, today?: string, launch?: string }} [opts]
  */
 export async function findNextLumaSync(db, opts) {
-  const { today, launch } = resolveOpts(opts);
+  const { now, today, launch } = resolveOpts(opts);
   if (launch <= today) {
     const { rows: saved } = await db.query(
       `select event_date::text as date from public.events where event_date between $1::date and $2::date`, [launch, today]);
@@ -143,15 +149,19 @@ export async function findNextLumaSync(db, opts) {
     const first = rows.find((r) => lumaSyncStatus({
       stored: r.stored, people: r.people, cancelled: r.eventStatus === CANCELLED,
     }).unfinished);
-    if (first) return { state: "sync", sync: await getLumaSync(db, first.date, { today, launch }) };
+    if (first) return { state: "sync", sync: await getLumaSync(db, first.date, { now, today, launch }) };
   }
   const holiday = isHolidayWeek(today);
-  return {
-    state: "stand_down", today, holiday,
-    message: holiday
-      ? `Nothing to add, stand down. It's the holiday break (${HOLIDAY_BREAK_LABEL}), so there is no Event this week.`
-      : "Nothing to add, stand down.",
-  };
+  if (!holiday) return { state: "stand_down", today, holiday, message: STAND_DOWN };
+  // This week's Tuesday (the week runs Tuesday to Monday): a saved row there is an Event
+  // even in the break (the override), so don't say there is none.
+  let tuesday = today;
+  while (!isTuesday(tuesday)) tuesday = addDays(tuesday, -1);
+  const { rows: [held] } = await db.query("select 1 from public.events where event_date = $1::date", [tuesday]);
+  const why = held
+    ? `but this week's Event (${tuesday}) has nothing to add.`
+    : "so there is no Event this week.";
+  return { state: "stand_down", today, holiday, message: `${STAND_DOWN} It's the holiday break (${HOLIDAY_BREAK_LABEL}), ${why}` };
 }
 
 /**

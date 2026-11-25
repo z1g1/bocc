@@ -139,6 +139,20 @@ describe("rules", () => {
     assert.equal(rules.LUMA_PEOPLE_URL, "https://luma.com/calendar/manage/cal-v2LiFTJpdPAP6rW/people");
   });
 
+  test("stop after Error: only an Error set in the last 12 hours", () => {
+    const at = new Date("2066-03-03T02:00:00Z");
+    const hours = (h) => new Date(at.getTime() + h * 3_600_000);
+    const er = rules.erroredRecently;
+    assert.equal(rules.ERROR_STOP_HOURS, 12);
+    assert.equal(er({ status: "error", updatedAt: at }, hours(0)), true);
+    assert.equal(er({ status: "error", updatedAt: at.toISOString() }, hours(11.9)), true);
+    assert.equal(er({ status: "error", updatedAt: at }, hours(-0.01)), true, "the database clock a little ahead");
+    assert.equal(er({ status: "error", updatedAt: at }, hours(12)), false);
+    assert.equal(er({ status: "error", updatedAt: at }, hours(24 * 7)), false, "the next week's run retries it");
+    for (const status of ["todo", "done", "nothing_to_add", null]) assert.equal(er({ status, updatedAt: at }, hours(1)), false, String(status));
+    assert.equal(er({ status: "error", updatedAt: null }, hours(1)), false);
+  });
+
   test("the email role reaches only the Luma sync pages; social+email the union; admin everything", () => {
     assert.equal(ROLE_PATHS.email, EMAIL_PATHS);
     const luma = ["/admin/luma-sync/", "/admin/luma-sync/next/"];
@@ -260,6 +274,13 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     await lumaSync.markError(actor.id, T3, `${c2.email} missing`, opts);
     next = await lumaSync.findNextLumaSync(pool, opts);
     assert.deepEqual([next.sync.date, next.sync.status, next.sync.note], [T3, "error", `${c2.email} missing`], "Error is handed out again");
+    // The stop after Error goes by luma_syncs.updated_at (the database's clock), so these
+    // use the real time: the same night it says stop, a week later it is retried.
+    const realNow = new Date();
+    next = await lumaSync.findNextLumaSync(pool, { ...opts, now: realNow });
+    assert.equal(next.sync.stopAfterError, true, "the run that set Error stops");
+    next = await lumaSync.findNextLumaSync(pool, { ...opts, now: new Date(realNow.getTime() + 7 * 24 * 3_600_000) });
+    assert.deepEqual([next.sync.date, next.sync.status, next.sync.stopAfterError], [T3, "error", false], "the next run retries it (story 17)");
 
     await lumaSync.markDone(actor.id, T3, opts);
     next = await lumaSync.findNextLumaSync(pool, opts);
@@ -289,6 +310,17 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     await owner.query("insert into events (event_date) values ($1)", [H]); // the override
     next = await lumaSync.findNextLumaSync(pool, opts);
     assert.equal(next.sync?.date, H, "a saved row on a holiday date is an Event");
+
+    // That Event done: stand down, without claiming there is no Event this week.
+    await lumaSync.markDone(actor.id, H, opts);
+    for (const today of [H, addDays(H, 2)]) {
+      next = await lumaSync.findNextLumaSync(pool, { ...opts, today });
+      assert.equal(next.state, "stand_down", today);
+      assert.equal(next.holiday, true);
+      assert.equal(next.message,
+        `Nothing to add, stand down. It's the holiday break (December 22 to January 4), but this week's Event (${H}) has nothing to add.`, today);
+      assert.ok(!/no Event/.test(next.message), today);
+    }
   });
 
   test("Done marks everyone listed On Luma in the same transaction; only the ids the agent saw; audited", async () => {
@@ -515,8 +547,11 @@ describe("the Luma sync page over HTTP", { timeout: 300_000 }, () => {
     assert.ok(back.includes(`Marked the Luma sync for ${T} Error.`));
     assert.ok(back.includes('data-status="error"') && inner(back, "pre", "previous-error-note") === `${p2.email} missing`);
     assert.ok(back.includes('id="next-step" data-step="stop"'), "stop after marking Error, not loop");
+    // Reloading /next without the redirect's query still says stop: the same run never
+    // retries it (the next run, a week later, does: the module test checks that).
     const plain = await body(await req(PAGE, { cookie: email.cookie }));
-    assert.ok(plain.includes(`data-date="${T}"`) && plain.includes('data-step="add"'), "the Error is still handed out");
+    assert.ok(plain.includes(`data-date="${T}"`) && plain.includes('id="next-step" data-step="stop"'), "still stop without ?notice=error");
+    assert.ok(!plain.includes('id="notice"'));
 
     // Mark Done with the people the page listed, then loop until stand down (another test
     // file's check-in today can add a sync of today's).
