@@ -22,7 +22,7 @@ export const isJsonRequest = (request) => (request.headers.get("content-type") ?
 
 /**
  * Run `handler` for an admin, Origin-checked POST with storage configured. Maps
- * ValidationError -> 400, NotFoundError -> 404, anything else -> a logged 500.
+ * ValidationError -> 400, RecordNotFoundError -> 404, anything else -> a logged 500.
  * @param {{ locals: any, request: Request }} ctx
  * @param {(args: { storage: import("./storage.mjs").Storage, user: { id: string }, request: Request }) => Promise<Response>} handler
  * @param {{ getStorage?: typeof getStorage }} [deps]

@@ -95,13 +95,13 @@
 //       always has its events row, so a holiday-week plan is the override and counts):
 //       { state: "verify", order, todo, allDone } or { state: "nothing", message, nextPublish }.
 //
-// Errors: ValidationError (400; .errors is { field: message }), ConflictError (409)
-// from ./events.mjs, NotFoundError (404) from here.
+// Errors: ValidationError (400; .errors is { field: message }), ConflictError (409) and
+// NotFoundError (404) from ./events.mjs (NotFoundError is re-exported here).
 
 import { withAudit, writeAudit } from "./db.mjs";
-import { ConflictError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
+import { ConflictError, NotFoundError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
 import { isUuid } from "./attendees.mjs";
-import { isHolidayWeek } from "../holiday-weeks.mjs";
+import { addDays, isHolidayWeek, meetingTuesdays } from "../holiday-weeks.mjs";
 import { getEventImage, PICK_EVENTS } from "./event-image.mjs";
 import {
   CHANNELS, CHANNEL_KEYS, COMMENT_CHANNELS, LIMITS, OFFERED_PLAN_STATUSES, PLAN_STATUSES, PLAN_STATUS_LABELS, POST_STATUSES,
@@ -269,9 +269,7 @@ export function validateSocialMediaPostInput(channel, input) {
   return { caption, firstComment };
 }
 
-export class NotFoundError extends ValidationError {
-  status = 404;
-}
+export { NotFoundError };
 
 function checkDate(date) {
   if (!parseDate(date)) throw new ValidationError({ date: "Not a date (YYYY-MM-DD)." });
@@ -611,12 +609,6 @@ async function followPlanStatus(client, actorUserId, date, current, channel, cha
 
 // ── The social role's picks ──────────────────────────────────────────────────
 
-const addDays = (date, n) => {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-};
-
 /** The Social plan for the Wednesday task (see the header). */
 export async function findNext(db, { now = new Date(), today = todayEastern(now) } = {}) {
   // Every upcoming events row with its plan (a plan always has its events row:
@@ -640,7 +632,7 @@ export async function findNext(db, { now = new Date(), today = todayEastern(now)
   const first = nextTuesday(today);
   const last = rows.length && rows.at(-1).date > first ? rows.at(-1).date : first;
   const dates = new Set(rows.map((r) => r.date));
-  for (let d = first; d <= last; d = addDays(d, 7)) if (!isHolidayWeek(d)) dates.add(d);
+  for (const d of meetingTuesdays(first, last)) dates.add(d);
   const events = [...dates].sort().map((d) => byDate.get(d) ?? { date: d, status: "scheduled", hasPost: false })
     .filter((r) => r.status !== "cancelled");
 

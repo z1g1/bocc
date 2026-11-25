@@ -19,13 +19,31 @@
 //     …
 //   };
 
-// The social role is also fenced in one level up: src/lib/admin/guard.mjs answers 403
-// for any /admin/* or /api/admin/* path not in SOCIAL_PATHS before the route runs
-// (ADR 0008/0011: the account the Chrome tasks use must never reach personal data).
-// A new social page goes in SOCIAL_PATHS AND names "social" in its requireRole().
+// Every role but admin is also fenced in one level up: src/lib/admin/guard.mjs answers
+// 403 for any /admin/* or /api/admin/* path outside the user's roles' allowlists
+// (ROLE_PATHS) before the route runs (ADR 0008/0011: the account the Chrome tasks use
+// must never reach personal data). A user holding several roles reaches the union of
+// their allowlists; admin reaches everything and has no entry.
+//
+// To add a role's pages:
+//   1. Name the role in ROLES (and in the public.user_roles CHECK, by a new migration).
+//      The routes every role reaches (the admin home, account, /api/admin/me and both
+//      [...rest] 404 routes) call requireRole(locals, ...ROLES), so they admit it at once.
+//   2. Give it an allowlist in ROLE_PATHS: BASE_PATHS plus its own page and API
+//      prefixes. A role with no entry reaches nothing.
+//   3. Give it nav links in ROLE_LINKS and a home-page heading in ROLE_TITLES
+//      (src/lib/admin/nav.mjs). The admin home renders its section from those.
+//   4. Each of its own pages and API routes names the role in its requireRole().
+// Nothing else lists the roles. A new page for an existing role goes in that role's
+// allowlist AND names the role in its requireRole().
 
-/** Every role public.user_roles accepts (its CHECK constraint). */
-export const ROLES = Object.freeze(["admin", "social"]);
+import { plainText } from "./headers.mjs";
+
+/**
+ * Every role public.user_roles accepts (its CHECK constraint). The routes open to every
+ * role spread it: requireRole(locals, ...ROLES).
+ */
+export const ROLES = Object.freeze(["admin", "social", "email"]);
 
 /**
  * @param {{ roles?: string[] }} locals
@@ -47,39 +65,63 @@ export function requireRole(locals, ...roles) {
   for (const r of roles) {
     if (!ROLES.includes(r)) throw new Error(`requireRole: unknown role "${r}"`);
   }
-  if (!locals?.user) return plain(401, "Unauthorized");
-  if (!hasRole(locals, ...roles)) return plain(403, "Forbidden");
+  if (!locals?.user) return plainText(401, "Unauthorized");
+  if (!hasRole(locals, ...roles)) return plainText(403, "Forbidden");
   return null;
 }
 
-const plain = (status, text) =>
-  new Response(text, {
-    status,
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-  });
-
 /**
- * The only protected paths a user without the admin role may reach: the admin home,
- * their own account page, the social work order pages and their JSON API, and
- * /api/admin/me. Everything else (events, attendees, check-ins, streaks, the email
- * list, users, media) is refused by the guard whatever the route itself says.
+ * The paths every non-admin role may reach: the admin home, the user's own account
+ * page and /api/admin/me. Each role's allowlist starts with these.
  */
-export const SOCIAL_PATHS = Object.freeze([
+export const BASE_PATHS = Object.freeze([
   /^\/admin\/?$/,
   /^\/admin\/account\/?$/,
-  /^\/admin\/social(\/|$)/,
-  /^\/api\/admin\/social(\/|$)/,
   /^\/api\/admin\/me\/?$/,
 ]);
 
 /**
+ * The social role's allowlist: the base paths plus the social work order pages and
+ * their JSON API. Everything else (events, attendees, check-ins, streaks, the email
+ * list, users, media) is refused by the guard whatever the route itself says.
+ */
+export const SOCIAL_PATHS = Object.freeze([
+  ...BASE_PATHS,
+  /^\/admin\/social(\/|$)/,
+  /^\/api\/admin\/social(\/|$)/,
+]);
+
+/**
+ * The email role's allowlist (ADR 0014, the Luma sync Chrome task): the base paths plus
+ * the Luma sync pages (there is no Luma sync JSON API). Never the Email list, Attendees, the CSV export,
+ * opt-out or the Admin event page: an agent exposed to planted instructions on Luma's
+ * pages must not be able to read or change the whole list.
+ */
+export const EMAIL_PATHS = Object.freeze([
+  ...BASE_PATHS,
+  /^\/admin\/luma-sync(\/|$)/,
+]);
+
+/**
+ * Each non-admin role's path allowlist. See "To add a role's pages" above.
+ * @type {Readonly<Record<string, ReadonlyArray<RegExp>>>}
+ */
+export const ROLE_PATHS = Object.freeze({
+  social: SOCIAL_PATHS,
+  email: EMAIL_PATHS,
+});
+
+/**
  * May a user holding `roles` reach the protected `path` at all? admin: everything;
- * social: SOCIAL_PATHS only; no role: nothing. The route's requireRole() still runs.
+ * any other role: its ROLE_PATHS allowlist, and several roles the union of theirs;
+ * no role (or a role with no allowlist): nothing. The route's
+ * requireRole() still runs.
  * @param {string[]} roles
  * @param {string} path  a URL pathname
+ * @param {Readonly<Record<string, ReadonlyArray<RegExp>>>} [rolePaths]  tests pass their own
  */
-export function mayReach(roles = [], path = "") {
+export function mayReach(roles = [], path = "", rolePaths = ROLE_PATHS) {
   if (roles.includes("admin")) return true;
-  if (roles.includes("social")) return SOCIAL_PATHS.some((r) => r.test(path));
-  return false;
+  return roles.some((role) =>
+    Object.hasOwn(rolePaths, role) && rolePaths[role].some((r) => r.test(path)));
 }

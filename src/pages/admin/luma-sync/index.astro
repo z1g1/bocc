@@ -1,0 +1,10 @@
+---
+// /admin/luma-sync/: no page of its own; sends admin and email users to the Luma sync
+// the Chrome task works on (/admin/luma-sync/next/).
+import { requireRole } from "../../../lib/admin/roles.mjs";
+export const prerender = false;
+
+const denied = requireRole(Astro.locals, "admin", "email");
+if (denied) return denied;
+return Astro.redirect("/admin/luma-sync/next/", 302);
+---

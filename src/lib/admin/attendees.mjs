@@ -13,11 +13,13 @@
 //   validateCorrection(input)                    -> { ok, errors, values }
 //   correctAttendee(actorUserId, id, input)      -> { changed: string[] }  (audited, one transaction)
 //
-// Errors thrown for the caller to map: NotFoundError (404), ValidationError (400).
+// Errors thrown for the caller to map: RecordNotFoundError (404), ValidationError (400).
 
 import { withAudit } from "./db.mjs";
 
-export class NotFoundError extends Error {
+// A missing attendee or media row, by id (a plain message, no .errors). Not the same as
+// events.mjs NotFoundError, a ValidationError keyed by field for the event-date pages.
+export class RecordNotFoundError extends Error {
   status = 404;
 }
 export class ValidationError extends Error {
@@ -151,7 +153,7 @@ class NoChange extends Error {}
  * @param {{ name?: unknown, businessName?: unknown, phone?: unknown }} input
  */
 export async function correctAttendee(actorUserId, id, input) {
-  if (!isUuid(id)) throw new NotFoundError("attendee not found");
+  if (!isUuid(id)) throw new RecordNotFoundError("attendee not found");
   const v = validateCorrection(input);
   if (!v.ok) throw new ValidationError(v.errors);
 
@@ -161,7 +163,7 @@ export async function correctAttendee(actorUserId, id, input) {
     await withAudit(actorUserId, async (client) => {
       const { rows } = await client.query(
         `select name, business_name, phone from public.attendees where id = $1 for update`, [id]);
-      if (rows.length === 0) throw new NotFoundError("attendee not found");
+      if (rows.length === 0) throw new RecordNotFoundError("attendee not found");
       const sets = [];
       const params = [id];
       for (const [key, col] of FIELDS) {

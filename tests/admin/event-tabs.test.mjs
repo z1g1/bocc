@@ -43,7 +43,7 @@ const futureDate = () => day(2040, m++);
 const SECTIONS = {
   info: ["h-details", "h-links", "h-linkedin"],
   social: ["h-social"],
-  post: ["h-report", "h-media-signin", "h-media-social"],
+  post: ["h-report", "h-luma-sync", "h-media-signin", "h-media-social"],
 };
 const ALL_SECTIONS = Object.values(SECTIONS).flat();
 

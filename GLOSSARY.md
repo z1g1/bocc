@@ -187,3 +187,32 @@ to the most recent Held Event, and their **personal best** is their longest stre
 **Celebration**:
 The short message an Attendee sees right after checking in, chosen from their Streak: first
 visit, top streak, first streak, tied for top, continued, or restart.
+
+## Email list
+
+**Email list**:
+The Attendees who agreed to be emailed, BOCC's own record of who may be emailed. An Attendee
+joins it by ticking the box at their first Check-in and leaves it only by an explicit opt-out.
+_Avoid_: Mailing list, subscribers (for our own list)
+
+**Date added**:
+The day an Attendee joined the Email list.
+
+**Luma subscribers**:
+The people on the BOCC calendar's people list on Luma, who get Luma's emails. Kept in step
+with the Email list by hand, through Luma syncs.
+_Avoid_: Email list (for Luma's list)
+
+**On Luma**:
+Whether an Attendee on the Email list is among the Luma subscribers, however they got there:
+added by a Luma sync or subscribed on their own.
+_Avoid_: Synced, added to Luma (both suggest only we put them there)
+
+**Luma sync**:
+One Event's task of adding the Attendees who joined the Email list at that Event, and are not
+yet On Luma, to the Luma subscribers. Every Event has one, even when nobody needs adding.
+_Avoid_: Work order, ticket
+
+**Luma sync status**:
+Where a Luma sync stands: **To do**, **Nothing to add** (no one to add, or no Event that
+week), **Done** (everyone is On Luma) or **Error**.

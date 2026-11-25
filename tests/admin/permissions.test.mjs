@@ -48,6 +48,7 @@ describe("migrations", () => {
       "20261203150000_event_photo_kind.sql",
       "20261203190000_held_from_events.sql",
       "20261204120000_checkin_rate_limit.sql",
+      "20261205120000_luma_sync.sql",
     ]);
   });
 

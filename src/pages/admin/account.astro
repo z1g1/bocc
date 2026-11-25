@@ -5,10 +5,10 @@
 // Admins also see their LinkedIn authentication here (ADR 0012, LinkedInAuthentication).
 import Admin from "../../layouts/Admin.astro";
 import LinkedInAuthentication from "../../components/admin/LinkedInAuthentication.astro";
-import { hasRole, requireRole } from "../../lib/admin/roles.mjs";
+import { ROLES, hasRole, requireRole } from "../../lib/admin/roles.mjs";
 export const prerender = false;
 
-const denied = requireRole(Astro.locals, "admin", "social");
+const denied = requireRole(Astro.locals, ...ROLES);
 if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;

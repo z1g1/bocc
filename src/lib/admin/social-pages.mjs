@@ -19,6 +19,7 @@
 import { pool } from "./db.mjs";
 import { getStorage } from "./storage.mjs";
 import { ValidationError } from "./events.mjs";
+import { plainText } from "./headers.mjs";
 import { CHANNELS, findNext, findVerify, isChannel, setPostResult } from "./social-plan.mjs";
 
 /** How long the video download link works (the Chrome task downloads it right away). */
@@ -117,9 +118,6 @@ export function resultInput(values) {
   return out;
 }
 
-const plain = (status, text) =>
-  new Response(text, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
-
 /**
  * A page's channel form POST (the caller has checked the role and the Origin). Fields:
  * date, channel, and resultInput()'s. Success: a 303 back to `page` with
@@ -135,12 +133,12 @@ export async function handleChannelPost(request, userId, page) {
   try {
     data = await request.formData();
   } catch {
-    return { response: plain(400, "Bad Request") };
+    return { response: plainText(400, "Bad Request") };
   }
   const values = {};
   for (const [k, v] of data) if (typeof v === "string") values[k] = v;
   const { channel = "", date = "" } = values;
-  if (!isChannel(channel)) return { response: plain(400, "Bad Request: unknown channel") };
+  if (!isChannel(channel)) return { response: plainText(400, "Bad Request: unknown channel") };
   try {
     const r = await setPostResult(userId, date, channel, resultInput(values));
     const notice = r.changed ? (values.commentPosted !== undefined && values.status === undefined ? "comment" : "saved") : "unchanged";

@@ -23,6 +23,8 @@
 
 import { ROLES, requireRole } from "./roles.mjs";
 import { checkOrigin } from "./csrf.mjs";
+import { formField } from "./form.mjs";
+import { plainText } from "./headers.mjs";
 import { log } from "../telemetry.mjs";
 
 /** Fixed notices for the redirect after a change (?done=…); nothing user-supplied is echoed. */
@@ -46,25 +48,15 @@ class UserActionError extends Error {
 }
 const fail = (status, message) => { throw new UserActionError(status, message); };
 
-const plain = (status, text) =>
-  new Response(text, {
-    status,
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-  });
-
-const field = (form, name) => {
-  const v = form.get(name);
-  return typeof v === "string" ? v : "";
-};
 
 const roleField = (form) => {
-  const role = field(form, "role");
+  const role = formField(form, "role");
   if (!ROLES.includes(role)) fail(400, `Role must be one of: ${ROLES.join(", ")}.`);
   return role;
 };
 
 const userIdField = (form) => {
-  const id = field(form, "userId").trim();
+  const id = formField(form, "userId").trim();
   if (!id || id.length > 200) fail(400, "Missing user.");
   return id;
 };
@@ -80,9 +72,9 @@ async function userExists(db, userId) {
 async function createAction(form, actorId) {
   const { createUser, grantRole } = await import("./users.mjs");
   const { withAudit, query } = await import("./db.mjs");
-  const email = field(form, "email").trim().toLowerCase();
-  const name = field(form, "name").trim();
-  const password = field(form, "password");
+  const email = formField(form, "email").trim().toLowerCase();
+  const name = formField(form, "name").trim();
+  const password = formField(form, "password");
   const role = roleField(form);
   if (!EMAIL.test(email) || email.length > MAX_EMAIL) fail(400, "Enter a valid email address.");
   if (!name || name.length > MAX_NAME) fail(400, `Enter a name (at most ${MAX_NAME} characters).`);
@@ -118,7 +110,7 @@ async function resetAction(form, actorId) {
   const { setUserPassword } = await import("./users.mjs");
   const { writeAudit, pool } = await import("./db.mjs");
   const userId = userIdField(form);
-  const password = field(form, "password");
+  const password = formField(form, "password");
   if (!(await userExists(pool, userId))) fail(404, "That user no longer exists.");
   // Audit row first, in a transaction left open across the reset (see "Atomicity").
   const client = await pool.connect();
@@ -229,10 +221,10 @@ export async function usersPage(request, locals, opts = {}) {
     try {
       data = await request.formData();
     } catch {
-      return { response: plain(400, "Bad request") };
+      return { response: plainText(400, "Bad request") };
     }
-    const action = ACTIONS[field(data, "action")];
-    if (!action) return { response: plain(400, "Bad request: unknown action") };
+    const action = ACTIONS[formField(data, "action")];
+    if (!action) return { response: plainText(400, "Bad request: unknown action") };
     try {
       const done = await action(data, locals.user.id);
       return {
@@ -240,14 +232,14 @@ export async function usersPage(request, locals, opts = {}) {
       };
     } catch (err) {
       if (!(err instanceof UserActionError)) {
-        log("error", `[admin users] ${field(data, "action")} failed: ${err?.message}`, { action: field(data, "action") });
+        log("error", `[admin users] ${formField(data, "action")} failed: ${err?.message}`, { action: formField(data, "action") });
         throw err;
       }
       status = err.status;
       error = err.message;
-      if (field(data, "action") === "create") {
+      if (formField(data, "action") === "create") {
         // Re-fill the create form, never the password.
-        form = { email: field(data, "email"), name: field(data, "name"), role: field(data, "role") };
+        form = { email: formField(data, "email"), name: formField(data, "name"), role: formField(data, "role") };
       }
     }
   } else if (request.method !== "GET" && request.method !== "HEAD") {

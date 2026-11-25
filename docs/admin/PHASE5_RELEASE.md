@@ -65,6 +65,14 @@ same button works in production. Locally, `netlify dev` followed by
 
 The Click link uses existing variables: Netlify's own `URL` / site URL, and `BETTER_AUTH_URL`.
 
+The same topic also gets the **Luma sync Error** push (spec #70, ticket #74;
+`src/lib/admin/luma-sync-alert.mjs`). The admin app's server-rendered function sends it when
+a Luma sync is set to Error on `/admin/luma-sync/next/`, so the variable must reach that
+function too (Netlify's default "all scopes" does this). Its title names the Event date, the
+body carries the note, and Click opens `/admin/events/<date>/` on `BETTER_AUTH_URL`. A failed
+push is logged as `[luma-sync] … Error push failed` and the Error stays saved. Deploy
+previews never push.
+
 ## Before you start
 
 - [ ] `cd backend && npm test`, `npm run test:db` (needs Docker) and `npm run build` pass on
@@ -218,3 +226,24 @@ These steps fold into the combined release in [PHASE4_RELEASE.md](PHASE4_RELEASE
 Phases 3 and 4 back with it. The scheduled function goes with that deploy too. To stop only
 the alerts, delete production's `SOCIAL_ALERT_NTFY_TOPIC` and redeploy. Leave the migrations
 and the `social_checker` role in place: they are additive, and the old code ignores them.
+
+## Luma sync release (spec #70, ADR 0014)
+
+Developer-facing facts for shipping the Luma sync. The human release steps (granting
+`email`, the Claude in Chrome task, the one-time launch check) are in issue #76.
+
+- **Migrate before deploying.** Apply `20261205120000_luma_sync.sql` with
+  `cd backend && npm run migrate` on the target Neon branch **before** the code that uses it
+  is deployed (the `dev` branch for staging, `production` before the merge to `main`). It adds
+  the `email` role to `user_roles`, the two On Luma columns on `attendees` and `luma_syncs`, and
+  marks everyone on the Email list at that moment On Luma "Before launch".
+- **`LUMA_SYNC_LAUNCH_DATE`** (optional env var, YYYY-MM-DD; the code default is
+  **2026-12-01**, `src/lib/admin/luma-sync-rules.mjs`) is the first Event that has a Luma sync.
+  If the migration runs **after** that Tuesday's Event, set `LUMA_SYNC_LAUNCH_DATE` to the
+  first Tuesday after the migration runs. Otherwise the people who joined the Email list
+  between the default date and the migration are marked "Before launch" by the migration's
+  backfill **without ever being added to Luma**, and no sync lists them.
+- **A staging rehearsal before 2026-12-01 must set `LUMA_SYNC_LAUNCH_DATE`** on the `dev`
+  branch deploy to a past Tuesday (for example the latest one). Without it every date is before
+  launch and `/admin/luma-sync/next/` only ever says to stand down (ADR 0014, "Deviations").
+- **Granting `email`, the Chrome task prompt and the launch check:** see #76.
