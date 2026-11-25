@@ -51,7 +51,7 @@ export async function guardRequest(url, headers, load) {
     return { response, setCookies: ctx.setCookies };
   }
   if (!mayReach(ctx.roles, url.pathname)) {
-    // The social role outside its allowlist (roles.mjs SOCIAL_PATHS): refused here,
+    // A non-admin role outside its allowlists (roles.mjs ROLE_PATHS): refused here,
     // before the route runs, whatever the route's own requireRole() would say.
     const response = isApi
       ? Response.json({ error: "forbidden" }, { status: 403 })

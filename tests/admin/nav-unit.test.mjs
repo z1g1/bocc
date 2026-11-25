@@ -2,7 +2,7 @@
 // it. Pure checks, no database (runs inside npm run test:db with the others).
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { ADMIN_LINKS, SOCIAL_LINKS, currentHref, navLinksFor, sectionNavHtml } from "../../src/lib/admin/nav.mjs";
+import { ADMIN_LINKS, ROLE_LINKS, SOCIAL_LINKS, currentHref, navLinksFor, sectionNavHtml } from "../../src/lib/admin/nav.mjs";
 import { errorPageHtml } from "../../src/lib/admin/error-page.mjs";
 
 const FAKE_SOCIAL = [{ href: "/admin/social/", label: "Work order" }];
@@ -16,6 +16,23 @@ describe("section nav links", () => {
       ["Events", "Check-ins", "Active streaks", "Email list", "Attendees", "Users", "Work order"]);
     assert.deepEqual(navLinksFor(["social"], { social: FAKE_SOCIAL }), FAKE_SOCIAL);
     assert.equal(navLinksFor(["admin", "social"], { social: FAKE_SOCIAL }).length, ADMIN_LINKS.length + 1, "no duplicates");
+  });
+
+  test("links are keyed by role; several roles see the union with no duplicates; admin sees all", () => {
+    assert.equal(ROLE_LINKS.admin, ADMIN_LINKS);
+    assert.equal(ROLE_LINKS.social, SOCIAL_LINKS);
+    const shared = { href: "/admin/shared/", label: "Shared" };
+    const links = {
+      admin: [{ href: "/admin/events/", label: "Events" }],
+      social: [{ href: "/admin/social/", label: "Work order" }, shared],
+      email: [{ href: "/admin/luma-sync/", label: "Luma sync" }, shared],
+    };
+    assert.deepEqual(navLinksFor(["social", "email"], links).map((l) => l.href),
+      ["/admin/social/", "/admin/shared/", "/admin/luma-sync/"]);
+    assert.deepEqual(navLinksFor(["email"], links).map((l) => l.href), ["/admin/luma-sync/", "/admin/shared/"]);
+    assert.deepEqual(navLinksFor(["admin"], links).map((l) => l.href),
+      ["/admin/events/", "/admin/social/", "/admin/shared/", "/admin/luma-sync/"]);
+    assert.deepEqual(navLinksFor(["nobody"], links), []);
   });
 
   test("social is never shown a link to attendee, check-in, streak, email-list or user data", () => {
