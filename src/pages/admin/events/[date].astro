@@ -263,12 +263,16 @@ const linkedInListing = links.linkedin_event?.url ?? null;
 const linkedInOpen = !linkedInListing || Boolean(linkedInResult)
   || (Astro.url.searchParams.get("notice") ?? "").startsWith("linkedin_");
 const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
-// The Luma sync, read only for the Post Event tab.
-const lumaRules = await import("../../../lib/admin/luma-sync-rules.mjs");
-const lumaLaunch = lumaRules.lumaSyncLaunchDate();
-const lumaSync = tab === "post"
-  ? await (await import("../../../lib/admin/luma-sync.mjs")).getLumaSync(pool, date, { launch: lumaLaunch })
-  : null;
+// The Luma sync, loaded and read only for the Post Event tab.
+let lumaSync: any = null;
+let lumaLaunch = "";
+if (tab === "post") {
+  const [{ lumaSyncLaunchDate }, { getLumaSync }] = await Promise.all([
+    import("../../../lib/admin/luma-sync-rules.mjs"), import("../../../lib/admin/luma-sync.mjs"),
+  ]);
+  lumaLaunch = lumaSyncLaunchDate();
+  lumaSync = await getLumaSync(pool, date, { launch: lumaLaunch });
+}
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
   <p><a href="/admin/events/">← Events</a></p>

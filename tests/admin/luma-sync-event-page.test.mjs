@@ -31,7 +31,7 @@ const { handleAuthRequest } = await import("../../src/lib/auth/handler.mjs");
 const { withAudit } = await import("../../src/lib/admin/db.mjs");
 const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
 const { isHolidayWeek } = await import("../../src/lib/holiday-weeks.mjs");
-const ls = await import("../../src/lib/admin/luma-sync.mjs");
+const lumaSync = await import("../../src/lib/admin/luma-sync.mjs");
 
 const PASSWORD = "correct horse battery staple";
 const addDays = (date, n) => {
@@ -181,7 +181,7 @@ describe("the Luma sync section on the Admin event page", { timeout: 300_000 }, 
 
   test("Error: the note, and the manual Done clears it", async () => {
     const p = await person({ checkins: [E] });
-    await ls.markError(admin.user.id, E, `${p.email} <missing>`);
+    await lumaSync.markError(admin.user.id, E, `${p.email} <missing>`);
     const h = await get(E);
     assert.ok(h.includes('data-status="error">Error</strong>'));
     assert.ok(h.includes(`<pre id="luma-sync-note">${p.email} &lt;missing&gt;</pre>`));

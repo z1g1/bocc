@@ -34,6 +34,8 @@
 // A new page for an existing role goes in that role's allowlist AND names the role in
 // its requireRole().
 
+import { plainText } from "./headers.mjs";
+
 /** Every role public.user_roles accepts (its CHECK constraint). */
 export const ROLES = Object.freeze(["admin", "social", "email"]);
 
@@ -57,16 +59,10 @@ export function requireRole(locals, ...roles) {
   for (const r of roles) {
     if (!ROLES.includes(r)) throw new Error(`requireRole: unknown role "${r}"`);
   }
-  if (!locals?.user) return plain(401, "Unauthorized");
-  if (!hasRole(locals, ...roles)) return plain(403, "Forbidden");
+  if (!locals?.user) return plainText(401, "Unauthorized");
+  if (!hasRole(locals, ...roles)) return plainText(403, "Forbidden");
   return null;
 }
-
-const plain = (status, text) =>
-  new Response(text, {
-    status,
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-  });
 
 /**
  * The paths every non-admin role may reach: the admin home, the user's own account
@@ -91,14 +87,13 @@ export const SOCIAL_PATHS = Object.freeze([
 
 /**
  * The email role's allowlist (ADR 0014, the Luma sync Chrome task): the base paths plus
- * the Luma sync pages and their API. Never the Email list, Attendees, the CSV export,
+ * the Luma sync pages (there is no Luma sync JSON API). Never the Email list, Attendees, the CSV export,
  * opt-out or the Admin event page: an agent exposed to planted instructions on Luma's
  * pages must not be able to read or change the whole list.
  */
 export const EMAIL_PATHS = Object.freeze([
   ...BASE_PATHS,
   /^\/admin\/luma-sync(\/|$)/,
-  /^\/api\/admin\/luma-sync(\/|$)/,
 ]);
 
 /**

@@ -13,11 +13,9 @@
 //   noticeText(params) -> the message for ?notice=… after the redirect, or null
 
 import { ValidationError } from "./events.mjs";
+import { plainText } from "./headers.mjs";
 import { markDone, markError } from "./luma-sync.mjs";
 import { pushLumaSyncError } from "./luma-sync-alert.mjs";
-
-const plain = (status, text) =>
-  new Response(text, { status, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
 
 const see = (location) => new Response(null, { status: 303, headers: { location, "cache-control": "no-store" } });
 
@@ -35,7 +33,7 @@ export async function handleLumaSyncPost(request, userId, page, options = {}) {
   try {
     data = await request.formData();
   } catch {
-    return { response: plain(400, "Bad Request") };
+    return { response: plainText(400, "Bad Request") };
   }
   const str = (k) => (typeof data.get(k) === "string" ? /** @type {string} */ (data.get(k)) : "");
   const action = str("action");
@@ -53,7 +51,7 @@ export async function handleLumaSyncPost(request, userId, page, options = {}) {
       await pushLumaSyncError(result, ntfy);
       return { result, response: see(`${page}?notice=error&date=${date}`) };
     }
-    return { response: plain(400, "Bad Request: unknown action") };
+    return { response: plainText(400, "Bad Request: unknown action") };
   } catch (err) {
     if (err instanceof ValidationError) return { status: err.status, errors: err.errors, posted: { action, values } };
     throw err;
@@ -66,8 +64,8 @@ export function noticeText(params) {
   if (!date) return null;
   switch (params.get("notice")) {
     case "done": {
-      const n = Number(params.get("people"));
-      const who = Number.isInteger(n) && n >= 0 ? `${n} ${n === 1 ? "person is" : "people are"} now On Luma` : "Saved";
+      const people = Number(params.get("people"));
+      const who = Number.isInteger(people) && people >= 0 ? `${people} ${people === 1 ? "person is" : "people are"} now On Luma` : "Saved";
       return `Marked the Luma sync for ${date} Done. ${who}.`;
     }
     case "error": return `Marked the Luma sync for ${date} Error.`;

@@ -32,8 +32,8 @@ const { createUser, grantRole } = await import("../../src/lib/admin/users.mjs");
 const { todayEastern } = await import("../../src/lib/admin/events.mjs");
 const { isHolidayWeek } = await import("../../src/lib/holiday-weeks.mjs");
 const rules = await import("../../src/lib/admin/luma-sync-rules.mjs");
-const ls = await import("../../src/lib/admin/luma-sync.mjs");
-const lp = await import("../../src/lib/admin/luma-sync-pages.mjs");
+const lumaSync = await import("../../src/lib/admin/luma-sync.mjs");
+const lumaSyncPages = await import("../../src/lib/admin/luma-sync-pages.mjs");
 const { mayReach, EMAIL_PATHS, ROLE_PATHS } = await import("../../src/lib/admin/roles.mjs");
 const { navLinksFor, EMAIL_LINKS, SOCIAL_LINKS } = await import("../../src/lib/admin/nav.mjs");
 
@@ -121,6 +121,8 @@ describe("rules", () => {
     }
     assert.deepEqual(rules.LUMA_SYNC_STATUSES.filter(rules.isUnfinished), ["todo", "error"]);
     assert.deepEqual(Object.values(rules.LUMA_SYNC_STATUS_LABELS), ["To do", "Nothing to add", "Done", "Error"]);
+    assert.deepEqual(rules.lumaSyncStatus({ stored: "done", people: 1 }), { status: "todo", statusLabel: "To do", unfinished: true });
+    assert.deepEqual(rules.lumaSyncStatus({ stored: "done", people: 0 }), { status: "done", statusLabel: "Done", unfinished: false });
   });
 
   test("Error note, email line, launch date, Luma people URL", () => {
@@ -139,11 +141,12 @@ describe("rules", () => {
 
   test("the email role reaches only the Luma sync pages; social+email the union; admin everything", () => {
     assert.equal(ROLE_PATHS.email, EMAIL_PATHS);
-    const luma = ["/admin/luma-sync/", "/admin/luma-sync/next/", "/api/admin/luma-sync/next"];
+    const luma = ["/admin/luma-sync/", "/admin/luma-sync/next/"];
     const base = ["/admin/", "/admin/account/", "/api/admin/me"];
     const social = ["/admin/social/next/", "/api/admin/social/next"];
     const never = ["/admin/email-list/", "/api/admin/email-list.csv", "/api/admin/email-list/opt-out", "/admin/attendees/",
-      "/admin/events/", "/admin/events/2066-03-02/", "/admin/checkins/", "/admin/streaks/", "/admin/users/", "/admin/luma-syncx/"];
+      "/admin/events/", "/admin/events/2066-03-02/", "/admin/checkins/", "/admin/streaks/", "/admin/users/", "/admin/luma-syncx/",
+      "/api/admin/luma-sync/next"];
     for (const p of [...luma, ...base]) assert.equal(mayReach(["email"], p), true, p);
     for (const p of [...social, ...never]) assert.equal(mayReach(["email"], p), false, p);
     for (const p of [...luma, ...base, ...social]) assert.equal(mayReach(["social", "email"], p), true, p);
@@ -160,11 +163,11 @@ describe("rules", () => {
 
   test("noticeText after the redirect", () => {
     const q = (s) => new URLSearchParams(s);
-    assert.equal(lp.noticeText(q("notice=done&date=2066-03-02&people=2")), "Marked the Luma sync for 2066-03-02 Done. 2 people are now On Luma.");
-    assert.equal(lp.noticeText(q("notice=done&date=2066-03-02&people=1")), "Marked the Luma sync for 2066-03-02 Done. 1 person is now On Luma.");
-    assert.equal(lp.noticeText(q("notice=error&date=2066-03-02")), "Marked the Luma sync for 2066-03-02 Error.");
-    assert.equal(lp.noticeText(q("notice=error&date=<b>")), null);
-    assert.equal(lp.noticeText(q("")), null);
+    assert.equal(lumaSyncPages.noticeText(q("notice=done&date=2066-03-02&people=2")), "Marked the Luma sync for 2066-03-02 Done. 2 people are now On Luma.");
+    assert.equal(lumaSyncPages.noticeText(q("notice=done&date=2066-03-02&people=1")), "Marked the Luma sync for 2066-03-02 Done. 1 person is now On Luma.");
+    assert.equal(lumaSyncPages.noticeText(q("notice=error&date=2066-03-02")), "Marked the Luma sync for 2066-03-02 Error.");
+    assert.equal(lumaSyncPages.noticeText(q("notice=error&date=<b>")), null);
+    assert.equal(lumaSyncPages.noticeText(q("")), null);
   });
 });
 
@@ -183,7 +186,7 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     const onlyDebug = await person({ checkins: [{ date: T, debug: true }] });
     const later = await person({ checkins: [addDays(T, 7)] });
 
-    const s = await ls.getLumaSync(pool, T, opts);
+    const s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual(s.people.map((p) => p.id).sort(), [first.id, debugEarlier.id].sort());
     assert.deepEqual(Object.keys(s.people[0]).sort(), ["email", "id", "name"], "name and email only");
     assert.deepEqual(s.joined.map((p) => p.id).sort(), [first.id, debugEarlier.id, already.id].sort(), "joined includes On Luma");
@@ -193,44 +196,44 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     for (const p of [returning, noEmail, tester, onlyDebug, later]) assert.ok(!s.people.some((x) => x.id === p.id));
 
     await owner.query("update attendees set ok_to_email = false where id = $1", [first.id]);
-    const after = await ls.getLumaSync(pool, T, opts);
+    const after = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual(after.people.map((p) => p.id), [debugEarlier.id], "an opt-out drops off at once");
   });
 
   test("displayed status: no row, Cancelled, Done, a late joiner reopening Done, Error until Done", async () => {
     const T = tuesday("2011-05-01");
     const opts = { today: addDays(T, 1), launch: addDays(T, -7), now: noon(addDays(T, 1)) };
-    assert.equal((await ls.getLumaSync(pool, T, opts)).status, "nothing_to_add", "nobody and no row");
+    assert.equal((await lumaSync.getLumaSync(pool, T, opts)).status, "nothing_to_add", "nobody and no row");
     const a = await person({ checkins: [T] });
-    let s = await ls.getLumaSync(pool, T, opts);
+    let s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual([s.status, s.statusLabel, s.unfinished, s.stored], ["todo", "To do", true, null]);
 
-    const r = await ls.markDone(actor.id, T, opts);
+    const r = await lumaSync.markDone(actor.id, T, opts);
     assert.deepEqual([r.people, r.before, r.attendeeIds], [1, null, [a.id]]);
-    s = await ls.getLumaSync(pool, T, opts);
+    s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual([s.status, s.people.length, s.stored.status], ["done", 0, "done"]);
 
     const late = await person({ checkins: [T] });
-    s = await ls.getLumaSync(pool, T, opts);
+    s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual([s.status, s.stored.status, s.people.map((p) => p.id)], ["todo", "done", [late.id]], "a late joiner reopens Done");
 
-    await ls.markError(actor.id, T, "  late@example.com missing  ", opts);
-    s = await ls.getLumaSync(pool, T, opts);
+    await lumaSync.markError(actor.id, T, "  late@example.com missing  ", opts);
+    s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual([s.status, s.note], ["error", "late@example.com missing"]);
     await owner.query("update attendees set ok_to_email = false where id = $1", [late.id]);
-    assert.equal((await ls.getLumaSync(pool, T, opts)).status, "error", "Error stays Error with nobody left");
-    await ls.markDone(actor.id, T, opts);
-    s = await ls.getLumaSync(pool, T, opts);
+    assert.equal((await lumaSync.getLumaSync(pool, T, opts)).status, "error", "Error stays Error with nobody left");
+    await lumaSync.markDone(actor.id, T, opts);
+    s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual([s.status, s.note], ["done", "late@example.com missing"], "the note is kept as history");
 
     // A Cancelled Event is always Nothing to add, and can't be marked.
     const C = addDays(T, -7);
     await person({ checkins: [C] });
     await owner.query(`insert into events (event_date, status, cancel_reason) values ($1, 'cancelled', 'weather')`, [C]);
-    s = await ls.getLumaSync(pool, C, opts);
+    s = await lumaSync.getLumaSync(pool, C, opts);
     assert.deepEqual([s.status, s.cancelled, s.people.length], ["nothing_to_add", true, 1]);
-    await assert.rejects(ls.markDone(actor.id, C, opts), (e) => e.status === 409 && /Cancelled/.test(e.errors.date));
-    await assert.rejects(ls.markError(actor.id, C, "x", opts), (e) => e.status === 409);
+    await assert.rejects(lumaSync.markDone(actor.id, C, opts), (e) => e.status === 409 && /Cancelled/.test(e.errors.date));
+    await assert.rejects(lumaSync.markError(actor.id, C, "x", opts), (e) => e.status === 409);
     assert.equal(await syncRow(C), null);
   });
 
@@ -245,31 +248,31 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     const c2 = await person({ checkins: [T3] });
     await person({ checkins: [T4] }); // Upcoming
 
-    let next = await ls.findNextLumaSync(pool, opts);
+    let next = await lumaSync.findNextLumaSync(pool, opts);
     assert.equal(next.state, "sync");
     assert.equal(next.sync.date, T2, "T1 has nobody to add; T0 is before launch");
     assert.deepEqual(next.sync.people.map((p) => p.id), [b.id]);
-    await ls.markDone(actor.id, T2, opts);
+    await lumaSync.markDone(actor.id, T2, opts);
 
-    next = await ls.findNextLumaSync(pool, opts);
+    next = await lumaSync.findNextLumaSync(pool, opts);
     assert.equal(next.sync.date, T3);
     assert.deepEqual(next.sync.people.map((p) => p.id), [c1.id, c2.id], "in check-in order");
-    await ls.markError(actor.id, T3, `${c2.email} missing`, opts);
-    next = await ls.findNextLumaSync(pool, opts);
+    await lumaSync.markError(actor.id, T3, `${c2.email} missing`, opts);
+    next = await lumaSync.findNextLumaSync(pool, opts);
     assert.deepEqual([next.sync.date, next.sync.status, next.sync.note], [T3, "error", `${c2.email} missing`], "Error is handed out again");
 
-    await ls.markDone(actor.id, T3, opts);
-    next = await ls.findNextLumaSync(pool, opts);
+    await lumaSync.markDone(actor.id, T3, opts);
+    next = await lumaSync.findNextLumaSync(pool, opts);
     assert.deepEqual(next, { state: "stand_down", today, holiday: false, message: "Nothing to add, stand down." });
 
     // Today's Event is handed out (up to and including today); the next day's isn't.
-    next = await ls.findNextLumaSync(pool, { ...opts, today: T4 });
+    next = await lumaSync.findNextLumaSync(pool, { ...opts, today: T4 });
     assert.equal(next.sync.date, T4);
     // Upcoming and pre-launch Events can't be marked either.
-    await assert.rejects(ls.markDone(actor.id, T4, opts), (e) => e.status === 409 && /hasn't happened/.test(e.errors.date));
-    await assert.rejects(ls.markDone(actor.id, T0, opts), (e) => e.status === 409 && /before/.test(e.errors.date));
-    await assert.rejects(ls.markDone(actor.id, addDays(T1, 1), opts), (e) => e.status === 404, "a Wednesday is not an Event");
-    await assert.rejects(ls.markDone(actor.id, "2012-02-30", opts), (e) => e.status === 400);
+    await assert.rejects(lumaSync.markDone(actor.id, T4, opts), (e) => e.status === 409 && /hasn't happened/.test(e.errors.date));
+    await assert.rejects(lumaSync.markDone(actor.id, T0, opts), (e) => e.status === 409 && /before/.test(e.errors.date));
+    await assert.rejects(lumaSync.markDone(actor.id, addDays(T1, 1), opts), (e) => e.status === 404, "a Wednesday is not an Event");
+    await assert.rejects(lumaSync.markDone(actor.id, "2012-02-30", opts), (e) => e.status === 400);
   });
 
   test("the holiday break: stand down and say so; a holiday Tuesday is an Event only with a saved row", async () => {
@@ -277,14 +280,14 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     assert.ok(isHolidayWeek(H));
     const opts = { today: H, launch: addDays(H, -7), now: noon(H) };
     await person({ checkins: [H] });
-    let next = await ls.findNextLumaSync(pool, opts);
+    let next = await lumaSync.findNextLumaSync(pool, opts);
     assert.equal(next.state, "stand_down");
     assert.equal(next.holiday, true);
     assert.match(next.message, /^Nothing to add, stand down\. It's the holiday break \(December 22 to January 4\)/);
-    assert.equal((await ls.getLumaSync(pool, H, opts)).applies, false);
+    assert.equal((await lumaSync.getLumaSync(pool, H, opts)).applies, false);
 
     await owner.query("insert into events (event_date) values ($1)", [H]); // the override
-    next = await ls.findNextLumaSync(pool, opts);
+    next = await lumaSync.findNextLumaSync(pool, opts);
     assert.equal(next.sync?.date, H, "a saved row on a holiday date is an Event");
   });
 
@@ -302,7 +305,7 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
       begin if new.target_id = '${T}' then raise exception 'forced audit failure'; end if; return new; end $$`);
     await owner.query(`create trigger ${name} before insert on audit_log for each row execute function ${name}()`);
     try {
-      await assert.rejects(ls.markDone(actor.id, T, { ...opts, attendeeIds: [a.id, b.id] }), /forced audit failure/);
+      await assert.rejects(lumaSync.markDone(actor.id, T, { ...opts, attendeeIds: [a.id, b.id] }), /forced audit failure/);
     } finally {
       await owner.query(`drop trigger ${name} on audit_log`);
       await owner.query(`drop function ${name}()`);
@@ -310,19 +313,19 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     assert.equal(await onLumaAt(a.id), null);
     assert.equal(await syncRow(T), null);
 
-    const r = await ls.markDone(actor.id, T, { ...opts, attendeeIds: [a.id, b.id, a.id] });
+    const r = await lumaSync.markDone(actor.id, T, { ...opts, attendeeIds: [a.id, b.id, a.id] });
     assert.deepEqual([r.people, r.attendeeIds], [2, [a.id, b.id].sort()]);
     assert.equal((await onLumaAt(a.id)).getTime(), now.getTime());
     assert.equal((await onLumaAt(b.id)).getTime(), now.getTime());
     assert.equal(await onLumaAt(joinedSince.id), null, "not on the page the agent saw: still to add");
     assert.deepEqual(await syncRow(T), { status: "done", note: null, updated_by: actor.id });
-    const s = await ls.getLumaSync(pool, T, opts);
+    const s = await lumaSync.getLumaSync(pool, T, opts);
     assert.deepEqual([s.status, s.people.map((p) => p.id)], ["todo", [joinedSince.id]]);
 
-    await assert.rejects(ls.markError(actor.id, T, "  ", opts), (e) => e.status === 400 && /Write what went wrong/.test(e.errors.note));
-    const e = await ls.markError(actor.id, T, `${joinedSince.email} not found`, opts);
+    await assert.rejects(lumaSync.markError(actor.id, T, "  ", opts), (e) => e.status === 400 && /Write what went wrong/.test(e.errors.note));
+    const e = await lumaSync.markError(actor.id, T, `${joinedSince.email} not found`, opts);
     assert.deepEqual(e, { date: T, note: `${joinedSince.email} not found`, people: 1, before: "done" });
-    const marked = await ls.markDone(actor.id, T, opts);
+    const marked = await lumaSync.markDone(actor.id, T, opts);
     assert.deepEqual([marked.people, marked.before], [1, "error"]);
     assert.equal((await onLumaAt(a.id)).getTime(), now.getTime(), "never touched again");
 
@@ -341,7 +344,7 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
     const opts = { today: addDays(T, 1), launch: addDays(T, -7), now: noon(addDays(T, 1)) };
     const a = await person({ checkins: [T] });
     const env = { SOCIAL_ALERT_NTFY_TOPIC: "bocc-secret-topic", BETTER_AUTH_URL: "https://716coffee.club" };
-    const post = (form, ntfy) => lp.handleLumaSyncPost(new Request("http://x/", {
+    const post = (form, ntfy) => lumaSyncPages.handleLumaSyncPost(new Request("http://x/", {
       method: "POST", body: new URLSearchParams(form),
     }), actor.id, "/admin/luma-sync/next/", { ...opts, ntfy });
     const quiet = async (fn) => {

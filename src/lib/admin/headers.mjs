@@ -13,6 +13,18 @@
 // video player (Phase 5; the same presigned GETs).
 
 /**
+ * A short plain-text response that is never cached (401/403 from requireRole, a 400 for
+ * a bad form post).
+ * @param {number} status
+ * @param {string} text
+ */
+export const plainText = (status, text) =>
+  new Response(text, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+  });
+
+/**
  * @param {{ dev?: boolean, mediaOrigin?: string|null }} [opts]
  *   dev relaxes script-src for Vite's inline dev scripts; mediaOrigin is the bucket's
  *   origin (from storageOrigin()), or null/undefined when media is off
