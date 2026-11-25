@@ -70,12 +70,12 @@ describe("email list Date added", () => {
     for (const s of await listSubscribers(pool)) assert.match(s.dateAdded, /^\d{4}-\d{2}-\d{2}$/, s.email);
   });
 
-  test("the CSV ends with date_added, and formula escaping still applies", async () => {
+  test("the CSV has date_added before on_luma, and formula escaping still applies", async () => {
     const user = await createUser({ email: `${unique("da")}@example.com`, name: "Date Added Admin", password: "correct horse battery staple" });
     const { csv } = await exportEmailList(user.id);
     const lines = csv.trimEnd().split("\r\n");
-    assert.equal(lines[0], "email,name,business_name,date_added");
-    assert.ok(lines.includes(`${fx.regular.email},Dana Dated,Biz,2026-03-10`));
-    assert.ok(lines.includes(`${fx.imported.email},'=Imogen Imported,'+Old Co,2024-05-20`), "formula cells neutralised");
+    assert.equal(lines[0], "email,name,business_name,date_added,on_luma");
+    assert.ok(lines.includes(`${fx.regular.email},Dana Dated,Biz,2026-03-10,`), "Not yet: empty on_luma");
+    assert.ok(lines.includes(`${fx.imported.email},'=Imogen Imported,'+Old Co,2024-05-20,`), "formula cells neutralised");
   });
 });
