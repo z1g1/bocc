@@ -10,10 +10,12 @@
 // streak, email-list or audit data (ADR 0008); its work order pages (Phase 5) go in
 // SOCIAL_LINKS, the email role's (the Luma sync) in EMAIL_LINKS.
 //
-// To add a role's pages: give the role its own frozen list here and an entry in
-// ROLE_LINKS (the map's order is the nav's order), and an allowlist in
-// src/lib/admin/roles.mjs ROLE_PATHS that covers every link. Showing a link is not
-// access control: the guard (ROLE_PATHS) and every route's requireRole() are.
+// To add a role's pages (the full list is in src/lib/admin/roles.mjs): give the role
+// its own frozen list here, an entry in ROLE_LINKS (the map's order is the nav's and the
+// home page's order) and a heading in ROLE_TITLES (its section on the admin home,
+// homeSectionsFor), and an allowlist in src/lib/admin/roles.mjs ROLE_PATHS that covers
+// every link. Showing a link is not access control: the guard (ROLE_PATHS) and every
+// route's requireRole() are.
 
 /** @typedef {{ href: string, label: string, note?: string }} NavLink */
 
@@ -47,6 +49,32 @@ export const ROLE_LINKS = Object.freeze({
   social: SOCIAL_LINKS,
   email: EMAIL_LINKS,
 });
+
+/**
+ * Each role's heading on the admin home (src/pages/admin/index.astro), keyed like
+ * ROLE_LINKS.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const ROLE_TITLES = Object.freeze({
+  admin: "Admin",
+  social: "Social",
+  email: "Luma sync",
+});
+
+/**
+ * The admin home's link sections: one per role in ROLE_LINKS order that the user holds
+ * (admin: every role's), each with its ROLE_TITLES heading and its links.
+ * @param {string[]} roles
+ * @param {Readonly<Record<string, ReadonlyArray<NavLink>>>} [links]  tests pass their own
+ * @returns {{ role: string, title: string, links: ReadonlyArray<NavLink> }[]}
+ */
+export function homeSectionsFor(roles = [], links = {}) {
+  const map = { ...ROLE_LINKS, ...links };
+  const isAdmin = roles.includes("admin");
+  return Object.entries(map)
+    .filter(([role, list]) => (isAdmin || roles.includes(role)) && list.length > 0)
+    .map(([role, list]) => ({ role, title: ROLE_TITLES[role] ?? role, links: list }));
+}
 
 /**
  * The section links a user's roles allow: the union of their roles' links in
