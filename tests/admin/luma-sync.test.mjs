@@ -335,6 +335,51 @@ describe("luma-sync.mjs (admin_app, injected clock)", () => {
         details: { people: 1, attendeeIds: [joinedSince.id], before: "error" } },
     ]);
   });
+
+  test("the Error push (#74): one push after Error is saved, none on Done, a failed push still saves", async () => {
+    const T = tuesday("2014-06-01");
+    const opts = { today: addDays(T, 1), launch: addDays(T, -7), now: noon(addDays(T, 1)) };
+    const a = await person({ checkins: [T] });
+    const env = { SOCIAL_ALERT_NTFY_TOPIC: "bocc-secret-topic", BETTER_AUTH_URL: "https://716coffee.club" };
+    const post = (form, ntfy) => lp.handleLumaSyncPost(new Request("http://x/", {
+      method: "POST", body: new URLSearchParams(form),
+    }), actor.id, "/admin/luma-sync/next/", { ...opts, ntfy });
+    const quiet = async (fn) => {
+      const { log, info, error } = console;
+      console.log = console.info = console.error = () => {};
+      try { return await fn(); } finally { Object.assign(console, { log, info, error }); }
+    };
+
+    // The push happens after the commit: the fetch sees the Error already stored.
+    const calls = [];
+    const f = async (url, init) => { calls.push({ url, body: JSON.parse(init.body), row: await syncRow(T) }); return new Response("{}"); };
+    const r = await quiet(() => post({ action: "error", date: T, note: "  Luma refused the import  " }, { env, fetch: f }));
+    assert.equal(r.response.status, 303);
+    assert.equal(calls.length, 1, "exactly one push");
+    assert.equal(calls[0].url, "https://ntfy.sh/");
+    assert.equal(calls[0].row.status, "error", "sent after the commit");
+    assert.match(calls[0].body.title, /^BOCC Luma sync: Error for /);
+    assert.ok(calls[0].body.message.startsWith("Luma refused the import"));
+    assert.equal(calls[0].body.click, `https://716coffee.club/admin/events/${T}/`);
+
+    // Done never pushes.
+    const d = await quiet(() => post({ action: "done", date: T, attendeeId: a.id }, { env, fetch: f }));
+    assert.equal(d.response.status, 303);
+    assert.equal(calls.length, 1, "Done sends no push");
+
+    // A failing push is logged, the Error is still saved and the page still redirects.
+    await person({ checkins: [T] });
+    const failing = async () => { throw new TypeError("network down"); };
+    const e = await quiet(() => post({ action: "error", date: T, note: "second try failed" }, { env, fetch: failing }));
+    assert.equal(e.response.status, 303);
+    assert.deepEqual([(await syncRow(T)).status, (await syncRow(T)).note], ["error", "second try failed"]);
+
+    // No topic: nothing sent, nothing thrown.
+    const g = async () => { throw new Error("must not be called"); };
+    const n = await quiet(() => post({ action: "error", date: T, note: "no topic" }, { env: {}, fetch: g }));
+    assert.equal(n.response.status, 303);
+    assert.equal((await syncRow(T)).note, "no topic");
+  });
 });
 
 // ── 3. Over HTTP, through astro dev ─────────────────────────────────────────
