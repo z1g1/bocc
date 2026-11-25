@@ -65,6 +65,14 @@ same button works in production. Locally, `netlify dev` followed by
 
 The Click link uses existing variables: Netlify's own `URL` / site URL, and `BETTER_AUTH_URL`.
 
+The same topic also gets the **Luma sync Error** push (spec #70, ticket #74;
+`src/lib/admin/luma-sync-alert.mjs`). The admin app's server-rendered function sends it when
+a Luma sync is set to Error on `/admin/luma-sync/next/`, so the variable must reach that
+function too (Netlify's default "all scopes" does this). Its title names the Event date, the
+body carries the note, and Click opens `/admin/events/<date>/` on `BETTER_AUTH_URL`. A failed
+push is logged as `[luma-sync] … Error push failed` and the Error stays saved. Deploy
+previews never push.
+
 ## Before you start
 
 - [ ] `cd backend && npm test`, `npm run test:db` (needs Docker) and `npm run build` pass on

@@ -69,11 +69,11 @@ export function nextTuesday(today) {
 }
 
 /** "Tue Nov 24" (ASCII, for the title). */
-const shortDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+export const shortDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
   timeZone: "UTC", weekday: "short", month: "short", day: "numeric",
 }).replace(",", "");
 /** "Tuesday, November 24, 2026". */
-const longDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
+export const longDate = (date) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", {
   timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric",
 });
 
