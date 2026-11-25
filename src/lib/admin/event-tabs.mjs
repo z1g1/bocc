@@ -29,7 +29,7 @@ export const ACTION_TABS = Object.freeze({
   social_plan: "social", social_video: "social", social_thumbnail: "social", social_media_post: "social",
   linkedin_create: "info", linkedin_publish: "info", linkedin_allow_retry: "info",
   linkedin_cancel_done: "info",
-  report: "post",
+  report: "post", luma_sync_done: "post",
 });
 
 /** The tab each media route's redirect anchor lives on (src/lib/admin/media-http.mjs). */
