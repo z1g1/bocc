@@ -1,7 +1,7 @@
 // Every /api/admin/* path no other route matches: a plain JSON 404, never an HTML page
 // (without this, an unknown path would get the public site's prerendered 404). On
-// demand, so the middleware's guard runs first: signed out -> 401, no role -> 403, social -> 403
-// (its allowlist, roles.mjs SOCIAL_PATHS).
+// demand, so the middleware's guard runs first: signed out -> 401, no role -> 403, a non-admin role -> 403
+// (its allowlist, roles.mjs ROLE_PATHS).
 // Astro ranks a rest parameter below every static or named route, so this never
 // shadows a real admin API.
 import type { APIRoute } from "astro";

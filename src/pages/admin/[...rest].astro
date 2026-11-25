@@ -2,7 +2,7 @@
 // Every /admin/* path no other route matches: the themed admin 404 ("Out of Coffee",
 // linking to /admin/), not the public site's 404 (a prerendered page that links to the
 // public home). On demand, so the middleware's guard runs first: signed out -> 302 to
-// /login/, no role -> 403, the social role -> 403 (its allowlist, roles.mjs SOCIAL_PATHS), which keeps unknown admin paths from being probed.
+// /login/, no role -> 403, a non-admin role -> 403 (its allowlist, roles.mjs ROLE_PATHS), which keeps unknown admin paths from being probed.
 // Astro ranks a rest parameter below every static or named route, so this never
 // shadows a real admin page. The plain-text 404 is swapped for the themed page by
 // src/middleware.ts (GET/HEAD), with the private headers.
