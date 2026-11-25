@@ -26,7 +26,7 @@
 //   ?tab=post    Post Event: the after-event report (it replaces the Google Form), the
 //                Luma sync (LumaSyncSection, ADR 0014, #75: status, Error note, everyone
 //                who joined the Email list at the Event, and the Admin's "Mark Done
-//                (handled by hand)", action luma_sync_done; 409 for a Cancelled,
+//                (handled by hand)", action luma_sync_done, for the people it listed; 409 for a Cancelled,
 //                Upcoming or pre-launch Event, 404 when the date is not an Event) and
 //                the photos (EventMedia, ADR 0010: Sign-in board, Photos from Event)
 // The tabs are plain links and only the current tab is rendered, so they work without
@@ -94,7 +94,8 @@ const NOTICES: Record<string, string> = {
   unchanged: "Nothing changed.",
 };
 const LINKEDIN_ACTIONS = new Set(["linkedin_create", "linkedin_publish", "linkedin_allow_retry"]);
-const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>) => Promise<{ changed: boolean; eventCreated?: boolean }>> = {
+// `form` is the whole posted FormData, for the one field that repeats (luma_sync_done's attendeeId).
+const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, string>, form: FormData) => Promise<{ changed: boolean; eventCreated?: boolean }>> = {
   save: ev.saveEvent,
   report: ev.submitReport,
   link: (actor, d, input) => el.setLink(actor, d, input.platform, input),
@@ -104,15 +105,13 @@ const ACTIONS: Record<string, (actor: string, d: string, input: Record<string, s
   social_thumbnail: (actor, d, input) => so.setThumbnail(actor, d, input.mediaId ?? ""),
   social_media_post: (actor, d, input) => so.saveSocialMediaPost(actor, d, input.channel, input),
   linkedin_cancel_done: async (actor, d) => (await import("../../../lib/linkedin/linkedin.mjs")).markCancelledOnLinkedIn(actor, d),
-  // The Admin's manual Done: everyone still in the sync's list is marked On Luma.
-  luma_sync_done: async (actor, d) => {
-    const ls = await import("../../../lib/admin/luma-sync.mjs");
-    try {
-      await ls.markDone(actor, d);
-    } catch (err: any) {
-      if (!(err instanceof ls.NotFoundError)) throw err;
-      throw Object.assign(new ev.ValidationError({ date: err.message }), { status: 404 });
-    }
+  // The Admin's manual Done: the people the section listed (its attendeeId fields) are
+  // marked On Luma, as on /admin/luma-sync/next/; anyone who joined since stays To do.
+  // Not an Event: NotFoundError, a 404 ValidationError, rendered like any refused save.
+  luma_sync_done: async (actor, d, _input, form) => {
+    const { markDone } = await import("../../../lib/admin/luma-sync.mjs");
+    const attendeeIds = form.getAll("attendeeId").filter((v): v is string => typeof v === "string");
+    await markDone(actor, d, { attendeeIds });
     return { changed: true };
   },
 };
@@ -185,7 +184,7 @@ if (Astro.request.method === "POST") {
   const values: Record<string, string> = {};
   for (const [k, v] of data) if (typeof v === "string") values[k] = v;
   try {
-    const { changed, eventCreated } = await run(user!.id, date, values);
+    const { changed, eventCreated } = await run(user!.id, date, values, data);
     if (changed && !NO_PURGE.has(action) && (!SOCIAL.has(action) || eventCreated)) await purge();
     const anchor = ANCHORS[action] ?? (SOCIAL.has(action) ? "#social" : "");
     return Astro.redirect(`/admin/events/${date}/?tab=${ACTION_TABS[action]}&notice=${changed ? DONE[action] : "unchanged"}${anchor}`, 303);
@@ -264,12 +263,16 @@ const linkedInListing = links.linkedin_event?.url ?? null;
 const linkedInOpen = !linkedInListing || Boolean(linkedInResult)
   || (Astro.url.searchParams.get("notice") ?? "").startsWith("linkedin_");
 const statusLabel = STATUS_LABELS[event.status] ?? "Scheduled";
-// The Luma sync, read only for the Post Event tab.
-const lumaRules = await import("../../../lib/admin/luma-sync-rules.mjs");
-const lumaLaunch = lumaRules.lumaSyncLaunchDate();
-const lumaSync = tab === "post"
-  ? await (await import("../../../lib/admin/luma-sync.mjs")).getLumaSync(pool, date, { launch: lumaLaunch })
-  : null;
+// The Luma sync, loaded and read only for the Post Event tab.
+let lumaSync: any = null;
+let lumaLaunch = "";
+if (tab === "post") {
+  const [{ lumaSyncLaunchDate }, { getLumaSync }] = await Promise.all([
+    import("../../../lib/admin/luma-sync-rules.mjs"), import("../../../lib/admin/luma-sync.mjs"),
+  ]);
+  lumaLaunch = lumaSyncLaunchDate();
+  lumaSync = await getLumaSync(pool, date, { launch: lumaLaunch });
+}
 ---
 <Admin title={`Event ${date}`} user={user} roles={roles}>
   <p><a href="/admin/events/">← Events</a></p>

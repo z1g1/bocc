@@ -18,6 +18,7 @@
 
 import { withAudit } from "./db.mjs";
 import { NotFoundError, isUuid } from "./attendees.mjs";
+import { shortDay } from "./format.mjs";
 
 const SUBSCRIBERS_SQL = `
   select a.id, a.name, a.business_name as "businessName", a.email, a.created_at as "createdAt",
@@ -37,11 +38,10 @@ export async function listSubscribers(db) {
 }
 
 // "2026-11-30" -> "Nov 30, 2026" (a calendar day, no timezone shift).
-const sinceFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
 
 /** "On Luma since Nov 30, 2026", "Before launch" or "Not yet". */
 export function onLumaLabel({ onLumaSince, onLumaBeforeLaunch }) {
-  if (onLumaSince) return `On Luma since ${sinceFmt.format(new Date(`${onLumaSince}T00:00:00Z`))}`;
+  if (onLumaSince) return `On Luma since ${shortDay(onLumaSince)}`;
   return onLumaBeforeLaunch ? "Before launch" : "Not yet";
 }
 

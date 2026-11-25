@@ -8,7 +8,7 @@ import { BASE_PATHS, EMAIL_PATHS, ROLE_PATHS, SOCIAL_PATHS, mayReach } from "../
 // (the same shape as the real email role's EMAIL_PATHS).
 const TEST_PATHS = Object.freeze({
   social: SOCIAL_PATHS,
-  email: Object.freeze([...BASE_PATHS, /^\/admin\/luma-sync(\/|$)/, /^\/api\/admin\/luma-sync(\/|$)/]),
+  email: Object.freeze([...BASE_PATHS, /^\/admin\/luma-sync(\/|$)/]),
 });
 
 describe("per-role path allowlists", () => {
@@ -22,7 +22,7 @@ describe("per-role path allowlists", () => {
 
   test("a user with two non-admin roles reaches the union of both allowlists", () => {
     const social = ["/admin/social/next/", "/api/admin/social/next"];
-    const email = ["/admin/luma-sync/next/", "/api/admin/luma-sync/done"];
+    const email = ["/admin/luma-sync/", "/admin/luma-sync/next/"];
     const base = ["/admin/", "/admin/account/", "/api/admin/me"];
     const neither = ["/admin/events/", "/admin/email-list/", "/api/admin/email-list.csv", "/admin/attendees/", "/admin/users/"];
 

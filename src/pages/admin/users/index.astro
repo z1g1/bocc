@@ -17,7 +17,6 @@ Astro.response.status = result.status;
 
 const { users, notice, error, form } = result;
 const { user, roles = [] } = Astro.locals;
-const ROLE_NAMES = ROLES;
 const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "America/New_York" });
 ---
 <Admin title="Users" user={user} roles={roles}>
@@ -35,7 +34,7 @@ const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "A
           <span>Roles: {u.roles.length > 0 ? u.roles.join(", ") : <span class="muted">none (sees nothing)</span>}</span>
         </p>
         <div class="row">
-          {ROLE_NAMES.map((r) => (
+          {ROLES.map((r) => (
             <form method="post">
               <input type="hidden" name="userId" value={u.id}>
               <input type="hidden" name="role" value={r}>
@@ -71,7 +70,7 @@ const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "A
     <input id="new-password" name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password" required>
     <label for="new-role">Role</label>
     <select id="new-role" name="role">
-      {ROLE_NAMES.map((r) => <option value={r} selected={form.role === r}>{r}</option>)}
+      {ROLES.map((r) => <option value={r} selected={form.role === r}>{r}</option>)}
     </select>
     <button type="submit">Create user</button>
   </form>

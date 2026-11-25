@@ -5,6 +5,7 @@
 //   LUMA_SYNC_STATUSES, LUMA_SYNC_STATUS_LABELS   todo | nothing_to_add | done | error
 //   displayedStatus({ stored, people, cancelled }) -> the status to show and act on
 //   isUnfinished(status)                           -> To do or Error (what /next hands out)
+//   lumaSyncStatus({ stored, people, cancelled })  -> { status, statusLabel, unfinished }: both of the above
 //   lumaSyncLaunchDate(env)                        -> "YYYY-MM-DD", the first Event with a sync
 //   LUMA_PEOPLE_URL                                the Luma calendar's people page
 //   NOTE_MAX, errorNoteProblem(note)               -> null when the trimmed note is fine, else the message
@@ -61,6 +62,18 @@ export function displayedStatus({ stored = null, people, cancelled = false }) {
 
 /** To do or Error: what /admin/luma-sync/next/ hands out. */
 export const isUnfinished = (status) => status === "todo" || status === "error";
+
+/**
+ * The displayed status with its label and whether it is unfinished, from the stored
+ * status, the number of people still to add and whether the Event was Cancelled. The
+ * one place luma-sync.mjs turns those three into a status (getLumaSync, findNextLumaSync).
+ * @param {{ stored?: string | null, people: number, cancelled?: boolean }} s
+ * @returns {{ status: "todo" | "nothing_to_add" | "done" | "error", statusLabel: string, unfinished: boolean }}
+ */
+export function lumaSyncStatus(s) {
+  const status = displayedStatus(s);
+  return { status, statusLabel: LUMA_SYNC_STATUS_LABELS[status], unfinished: isUnfinished(status) };
+}
 
 /**
  * What is wrong with an Error note (required, at most NOTE_MAX characters once

@@ -26,8 +26,8 @@ if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const PAGE = "/admin/luma-sync/next/";
-const lp = await import("../../../lib/admin/luma-sync-pages.mjs");
-const ls = await import("../../../lib/admin/luma-sync.mjs");
+const { handleLumaSyncPost, noticeText } = await import("../../../lib/admin/luma-sync-pages.mjs");
+const { findNextLumaSync } = await import("../../../lib/admin/luma-sync.mjs");
 const { pool } = await import("../../../lib/admin/db.mjs");
 
 let errors: Record<string, string> = {};
@@ -35,7 +35,7 @@ let posted: { action: string; values: Record<string, string> } | null = null;
 if (Astro.request.method === "POST") {
   const refused = checkOrigin(Astro.request);
   if (refused) return refused;
-  const r: any = await lp.handleLumaSyncPost(Astro.request, user!.id, PAGE);
+  const r: any = await handleLumaSyncPost(Astro.request, user!.id, PAGE);
   if (r.response) return r.response;
   errors = r.errors;
   posted = r.posted;
@@ -44,11 +44,14 @@ if (Astro.request.method === "POST") {
   return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, POST" } });
 }
 
-const pick: any = await ls.findNextLumaSync(pool);
+const pick: any = await findNextLumaSync(pool);
 const sync = pick.state === "sync" ? pick.sync : null;
-const notice = posted ? null : lp.noticeText(Astro.url.searchParams);
+const notice = posted ? null : noticeText(Astro.url.searchParams);
 // The agent just marked this same sync Error: it is handed out again (an Admin follows
-// up, or the next run retries), so this run stops here instead of looping on it.
+// up, or the next run retries), so this run stops here instead of looping on it. The
+// oldest unfinished sync always comes first, so an Error that keeps coming back blocks
+// every newer week until an Admin marks it Done (on the Admin event page). The ntfy push
+// on each Error (luma-sync-alert.mjs) is what tells someone (ADR 0014, Consequences).
 const justErrored = !posted && sync?.status === "error" && Astro.url.searchParams.get("notice") === "error"
   && Astro.url.searchParams.get("date") === sync.date;
 const noteValue = posted?.action === "error" ? posted.values.note : "";

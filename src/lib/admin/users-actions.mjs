@@ -23,6 +23,7 @@
 
 import { ROLES, requireRole } from "./roles.mjs";
 import { checkOrigin } from "./csrf.mjs";
+import { plainText } from "./headers.mjs";
 import { log } from "../telemetry.mjs";
 
 /** Fixed notices for the redirect after a change (?done=…); nothing user-supplied is echoed. */
@@ -45,12 +46,6 @@ class UserActionError extends Error {
   }
 }
 const fail = (status, message) => { throw new UserActionError(status, message); };
-
-const plain = (status, text) =>
-  new Response(text, {
-    status,
-    headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
-  });
 
 const field = (form, name) => {
   const v = form.get(name);
@@ -229,10 +224,10 @@ export async function usersPage(request, locals, opts = {}) {
     try {
       data = await request.formData();
     } catch {
-      return { response: plain(400, "Bad request") };
+      return { response: plainText(400, "Bad request") };
     }
     const action = ACTIONS[field(data, "action")];
-    if (!action) return { response: plain(400, "Bad request: unknown action") };
+    if (!action) return { response: plainText(400, "Bad request: unknown action") };
     try {
       const done = await action(data, locals.user.id);
       return {
