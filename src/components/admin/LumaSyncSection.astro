@@ -1,0 +1,83 @@
+---
+// The Luma sync section on the Admin event page's Post Event tab (ADR 0014, spec #70,
+// ticket #75). `sync` is getLumaSync() (src/lib/admin/luma-sync.mjs) for the page's date.
+//   <LumaSyncSection sync={sync} launch="2026-12-01" />
+//
+// Shows the displayed status (and the Error note), then everyone who joined the Email
+// list at this Event with Date added and On Luma, including people already On Luma.
+// The "Mark Done (handled by hand)" form posts `action=luma_sync_done` back to the event
+// page, which calls markDone() for everyone still listed (audited as the Admin) and
+// 303s to ?tab=post. Only for a past or today's Event whose sync is To do or Error: a
+// Cancelled Event is Nothing to add, an Upcoming one read-only.
+import { onLumaLabel } from "../../lib/admin/email-list.mjs";
+import { easternDateTime } from "../../lib/admin/format.mjs";
+
+interface Props {
+  sync: any;
+  /** The first Event with a Luma sync, YYYY-MM-DD. */
+  launch: string;
+}
+const { sync, launch } = Astro.props;
+const canMarkDone = sync.applies && !sync.upcoming && !sync.cancelled && sync.unfinished;
+const n = sync.people.length;
+---
+<section id="luma-sync" aria-labelledby="h-luma-sync">
+  <h2 id="h-luma-sync">Luma sync</h2>
+  {!sync.isEvent ? (
+    <p class="muted" id="luma-sync-none">There is no Event on this date, so no Luma sync.</p>
+  ) : !sync.applies ? (
+    <p class="muted" id="luma-sync-none">No Luma sync: Events before {launch} don't have one.</p>
+  ) : (
+    <>
+      <p>
+        Status: <strong id="luma-sync-status" data-status={sync.status}>{sync.statusLabel}</strong>
+        {sync.cancelled && <span class="muted"> (the Event was Cancelled)</span>}
+        {sync.upcoming && <span class="muted" id="luma-sync-readonly"> (the Event hasn't happened yet: read-only)</span>}
+        {sync.stored?.updatedAt && <span class="muted"> · last marked {easternDateTime(sync.stored.updatedAt)}</span>}
+      </p>
+      {sync.status === "error" && sync.note && (
+        <div class="luma-error" role="alert">
+          <p><strong>Error note</strong></p>
+          <pre id="luma-sync-note">{sync.note}</pre>
+        </div>
+      )}
+    </>
+  )}
+
+  {sync.isEvent && (sync.joined.length === 0 ? (
+    <p class="muted" id="luma-sync-empty">Nobody joined the Email list at this Event.</p>
+  ) : (
+    <table class="data" id="luma-sync-people">
+      <thead><tr><th>Name</th><th>Email</th><th>Date added</th><th>On Luma</th></tr></thead>
+      <tbody>
+        {sync.joined.map((p: any) => (
+          <tr data-attendee={p.id}>
+            <td><a href={`/admin/attendees/${p.id}/`}>{p.name}</a></td>
+            <td>{p.email}</td>
+            <td>{p.dateAdded}</td>
+            <td>{onLumaLabel(p)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ))}
+
+  {canMarkDone && (
+    <form method="post" id="form-luma-sync-done" class="luma-done">
+      <input type="hidden" name="action" value="luma_sync_done">
+      <p class="muted">
+        If you added {n === 1 ? "this person" : n === 0 ? "everyone" : `these ${n} people`} to Luma yourself (or sorted out the Error),
+        mark the sync Done. {n > 0 && <>Everyone still Not yet is marked On Luma.</>}
+      </p>
+      <button type="submit" id="button-luma-sync-done">Mark Done (handled by hand)</button>
+    </form>
+  )}
+</section>
+
+<style>
+  .luma-error { margin: 0.75rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--err); border-left-width: 4px; border-radius: 6px; max-width: 40rem; }
+  .luma-error p { margin: 0; }
+  .luma-error pre { white-space: pre-wrap; margin: 0.25rem 0 0; font: inherit; }
+  .luma-done { margin-top: 0.75rem; }
+  #luma-sync-people { margin-top: 0.5rem; }
+</style>
