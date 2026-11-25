@@ -95,11 +95,11 @@
 //       always has its events row, so a holiday-week plan is the override and counts):
 //       { state: "verify", order, todo, allDone } or { state: "nothing", message, nextPublish }.
 //
-// Errors: ValidationError (400; .errors is { field: message }), ConflictError (409)
-// from ./events.mjs, NotFoundError (404) from here.
+// Errors: ValidationError (400; .errors is { field: message }), ConflictError (409) and
+// NotFoundError (404) from ./events.mjs (NotFoundError is re-exported here).
 
 import { withAudit, writeAudit } from "./db.mjs";
-import { ConflictError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
+import { ConflictError, NotFoundError, nextTuesday, parseDate, todayEastern, ValidationError } from "./events.mjs";
 import { isUuid } from "./attendees.mjs";
 import { isHolidayWeek } from "../holiday-weeks.mjs";
 import { getEventImage, PICK_EVENTS } from "./event-image.mjs";
@@ -269,9 +269,7 @@ export function validateSocialMediaPostInput(channel, input) {
   return { caption, firstComment };
 }
 
-export class NotFoundError extends ValidationError {
-  status = 404;
-}
+export { NotFoundError };
 
 function checkDate(date) {
   if (!parseDate(date)) throw new ValidationError({ date: "Not a date (YYYY-MM-DD)." });

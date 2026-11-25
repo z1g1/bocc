@@ -13,7 +13,7 @@
 //   noticeText(params) -> the message for ?notice=… after the redirect, or null
 
 import { ValidationError } from "./events.mjs";
-import { markDone, markError, NotFoundError } from "./luma-sync.mjs";
+import { markDone, markError } from "./luma-sync.mjs";
 import { pushLumaSyncError } from "./luma-sync-alert.mjs";
 
 const plain = (status, text) =>
@@ -56,7 +56,6 @@ export async function handleLumaSyncPost(request, userId, page, options = {}) {
     return { response: plain(400, "Bad Request: unknown action") };
   } catch (err) {
     if (err instanceof ValidationError) return { status: err.status, errors: err.errors, posted: { action, values } };
-    if (err instanceof NotFoundError) return { status: 404, errors: { date: err.message }, posted: { action, values } };
     throw err;
   }
 }

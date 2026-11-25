@@ -15,16 +15,17 @@
 //       -> { date, people, attendeeIds, before }
 //       The sync becomes Done and everyone in its live list is On Luma as of `now`.
 //       attendeeIds (optional): only those of them still in the list (the people the
-//       agent saw and added); someone who joined since stays, so the sync shows To do.
+//       page showed: the agent's /admin/luma-sync/next/ and the Admin event page both
+//       send them); someone who joined since stays, so the sync shows To do.
 //       Audit: luma_sync.done { people, attendeeIds, before }.
 //   markError(actor, date, note, { now?, today?, launch? })
 //       -> { date, note, people, before }   (the push, #74, goes out after this returns)
 //       Audit: luma_sync.error { people, note, before }.
 //   `before` is the stored status before the write (null: no row yet). The luma_syncs
 //   row (and the events row it needs) is created by the first write.
-//   Errors: ValidationError 400 (bad date, Error without a note), NotFoundError 404 (no
-//   Event on that date), ConflictError 409 (a Cancelled Event, an Upcoming one, or one
-//   before launch).
+//   Errors (all ValidationErrors from ./events.mjs, with .errors and .status): 400 (bad
+//   date, Error without a note), NotFoundError 404 (no Event on that date, errors.date),
+//   ConflictError 409 (a Cancelled Event, an Upcoming one, or one before launch).
 //
 // LumaSync: {
 //   date, applies (an Event from launch up to any date: it has a Luma sync),
@@ -45,8 +46,7 @@
 // (../holiday-weeks.mjs: a holiday Tuesday without a row is not an Event).
 
 import { withAudit } from "./db.mjs";
-import { CANCELLED, ConflictError, ValidationError, parseDate, todayEastern } from "./events.mjs";
-import { NotFoundError } from "./attendees.mjs";
+import { CANCELLED, ConflictError, NotFoundError, ValidationError, parseDate, todayEastern } from "./events.mjs";
 import { HOLIDAY_BREAK_LABEL, isHolidayWeek } from "../holiday-weeks.mjs";
 import {
   LUMA_SYNC_STATUS_LABELS, displayedStatus, errorNoteProblem, isUnfinished, lumaSyncLaunchDate,
@@ -174,7 +174,7 @@ async function lockSync(client, date, opts) {
   const { today, launch } = opts;
   const { rows: [ev] } = await client.query("select status from public.events where event_date = $1::date", [date]);
   const sync0 = shape({ date, eventStatus: ev?.status ?? null, hasRow: false, stored: null, people: [], joined: [], today, launch });
-  if (!sync0.isEvent) throw new NotFoundError(`There is no Event on ${date}.`);
+  if (!sync0.isEvent) throw new NotFoundError({ date: `There is no Event on ${date}.` });
   if (sync0.beforeLaunch) throw new ConflictError({ date: `Events before ${launch} have no Luma sync.` });
   if (sync0.upcoming) throw new ConflictError({ date: `The Event on ${date} hasn't happened yet.` });
   if (sync0.cancelled) throw new ConflictError({ date: `The Event on ${date} was Cancelled: its Luma sync is Nothing to add.` });

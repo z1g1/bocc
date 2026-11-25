@@ -4,8 +4,8 @@
 //     Date added and On Luma), Cancelled (Nothing to add, no button), Upcoming (read-only),
 //     Error (its note), before launch and a date that isn't an Event
 //   - the manual Done: Origin-checked, admin only (social and email refused), audited as
-//     the Admin, marks the people On Luma, 303 to ?tab=post; refused (409) for Cancelled
-//     and Upcoming Events
+//     the Admin, marks the people the section listed On Luma (a late joiner stays To do),
+//     303 to ?tab=post; refused (409) for Cancelled and Upcoming Events
 // Dates: a random run of Tuesdays in 2017-2019 (launch 2016-01-05), so other test files'
 // data and a re-run against a database left up don't interfere; Upcoming from 2045.
 import { after, before, describe, test } from "node:test";
@@ -47,7 +47,7 @@ function tuesdays(start, span, weeks) {
     if (!run.some(isHolidayWeek)) return run;
   }
 }
-const [T, C, E] = tuesdays("2017-01-03", 150, 3);
+const [T, C, E, L] = tuesdays("2017-01-03", 150, 4);
 const [U] = tuesdays("2045-01-03", 200, 1);
 const PRE = tuesdays("2015-01-06", 40, 1)[0];
 
@@ -123,6 +123,9 @@ describe("the Luma sync section on the Admin event page", { timeout: 300_000 }, 
   };
   const row = (h, id) => new RegExp(`<tr data-attendee="${id}">([\\s\\S]*?)</tr>`).exec(h)?.[1] ?? null;
   const DONE = { action: "luma_sync_done" };
+  // The section's Done form as a browser would post it: the action plus the attendeeIds it lists.
+  const shownIds = (h) => [...h.matchAll(/<input type="hidden" name="attendeeId" value="([^"]+)">/g)].map((m) => m[1]);
+  const doneForm = (h) => [["action", "luma_sync_done"], ...shownIds(h).map((id) => ["attendeeId", id])];
 
   test("To do: everyone who joined, On Luma or not; the manual Done is Origin-checked, admin only, audited, PRG to ?tab=post", async () => {
     const p1 = await person({ checkins: [T], name: "Zed <b>First</b>" });
@@ -141,6 +144,7 @@ describe("the Luma sync section on the Admin event page", { timeout: 300_000 }, 
     assert.ok(row(h, already.id).includes("<td>Before launch</td>"));
     assert.match(row(h, recorded.id), /<td>On Luma since [^<]+<\/td>/);
     assert.ok(h.includes('<button type="submit" id="button-luma-sync-done">Mark Done (handled by hand)</button>'));
+    assert.deepEqual(shownIds(h), [p1.id, p2.id], "the form carries the people still to add, in check-in order");
     assert.ok(!(await get(T, "info")).includes('id="h-luma-sync"'), "only on the Post Event tab");
 
     // Refusals: no change at all.
@@ -154,7 +158,7 @@ describe("the Luma sync section on the Admin event page", { timeout: 300_000 }, 
     assert.equal(await syncRow(T), null);
     assert.equal(await onLuma(p1.id), null);
 
-    const res = await req(page(T), { cookie: admin.cookie, method: "POST", form: DONE });
+    const res = await req(page(T), { cookie: admin.cookie, method: "POST", form: doneForm(h) });
     assert.equal(res.status, 303);
     assert.equal(res.headers.get("location"), `${page(T)}?tab=post&notice=luma_sync_done#luma-sync`);
     assert.deepEqual(await syncRow(T), { status: "done", note: null, updated_by: admin.user.id });
@@ -182,10 +186,29 @@ describe("the Luma sync section on the Admin event page", { timeout: 300_000 }, 
     assert.ok(h.includes('data-status="error">Error</strong>'));
     assert.ok(h.includes(`<pre id="luma-sync-note">${p.email} &lt;missing&gt;</pre>`));
     assert.ok(h.includes('id="form-luma-sync-done"'));
-    assert.equal((await req(page(E), { cookie: admin.cookie, method: "POST", form: DONE })).status, 303);
+    assert.equal((await req(page(E), { cookie: admin.cookie, method: "POST", form: doneForm(h) })).status, 303);
     assert.equal((await syncRow(E)).status, "done");
     assert.ok(await onLuma(p.id));
     assert.ok(!(await get(E)).includes('id="luma-sync-note"'), "the note shows only while Error");
+  });
+
+  test("a late joiner: the manual Done marks only the people the section showed; the newcomer keeps it To do", async () => {
+    const shown = await person({ checkins: [L] });
+    const h = await get(L);
+    assert.deepEqual(shownIds(h), [shown.id]);
+    const late = await person({ checkins: [L] }); // checks in after the Admin opened the page
+
+    const res = await req(page(L), { cookie: admin.cookie, method: "POST", form: doneForm(h) });
+    assert.equal(res.status, 303);
+    assert.ok(await onLuma(shown.id), "the person the section showed is On Luma");
+    assert.equal(await onLuma(late.id), null, "the late joiner was never shown, so isn't marked");
+    assert.equal((await syncRow(L)).status, "done", "stored Done");
+    const [audit] = await audits(L);
+    assert.deepEqual([audit.details.people, audit.details.attendeeIds], [1, [shown.id]]);
+
+    const back = await get(L);
+    assert.ok(back.includes('data-status="todo">To do</strong>'), "the late joiner reopens it");
+    assert.deepEqual(shownIds(back), [late.id]);
   });
 
   test("Cancelled: Nothing to add, still lists who joined, no button, Done refused", async () => {
