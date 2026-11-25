@@ -63,6 +63,10 @@ subscription, which BOCC doesn't have. So the adding has to happen in Luma's web
 
 - Ticking the box at a *later* Check-in still doesn't opt anyone in, because
   `findOrCreateAttendee` ignores it for existing Attendees. This is deliberate for now.
+- After the agent marks Error, `/admin/luma-sync/next` tells it to stop the run, and the
+  next run starts again from the oldest unfinished sync. So an Error that keeps coming back
+  blocks every newer week until an Admin marks it Done. The ntfy push on each Error is
+  what surfaces it.
 - Missed runs are silent by design. The Admin event page and "Not yet" on the Email list are
   how someone would notice.
 - As with ADR 0011, the agent is exposed to anything planted in the Luma pages it reads.

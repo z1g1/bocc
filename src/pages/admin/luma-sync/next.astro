@@ -48,7 +48,10 @@ const pick: any = await findNextLumaSync(pool);
 const sync = pick.state === "sync" ? pick.sync : null;
 const notice = posted ? null : noticeText(Astro.url.searchParams);
 // The agent just marked this same sync Error: it is handed out again (an Admin follows
-// up, or the next run retries), so this run stops here instead of looping on it.
+// up, or the next run retries), so this run stops here instead of looping on it. The
+// oldest unfinished sync always comes first, so an Error that keeps coming back blocks
+// every newer week until an Admin marks it Done (on the Admin event page). The ntfy push
+// on each Error (luma-sync-alert.mjs) is what tells someone (ADR 0014, Consequences).
 const justErrored = !posted && sync?.status === "error" && Astro.url.searchParams.get("notice") === "error"
   && Astro.url.searchParams.get("date") === sync.date;
 const noteValue = posted?.action === "error" ? posted.values.note : "";
