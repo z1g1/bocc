@@ -1,18 +1,25 @@
 // The email list for /admin/email-list/ (admin only; the CALLER checks requireRole and,
 // for the export and opt-out POSTs, checkOrigin). Parameterized SQL only.
 //
-//   listSubscribers(db)                    -> [{ id, name, businessName, email, createdAt }]
+//   listSubscribers(db)                    -> [{ id, name, businessName, email, createdAt,
+//                                              onLumaSince, onLumaBeforeLaunch }]
+//   onLumaLabel(s) / onLumaCsv(s)          -> the On Luma state for the page / the CSV
 //   csvCell(value) / toCsv(header, rows)   -> CSV text (RFC 4180, CRLF, formula-safe)
 //   exportEmailList(actorUserId)           -> { csv, rowCount }  (audited, one transaction)
 //   optOut(actorUserId, attendeeId)        -> { wasOptedIn }     (audited, one transaction)
 //
 // Subscribers: ok_to_email = true and not a debug (test) attendee.
+// On Luma (ADR 0014): onLumaSince is the Eastern date the app recorded them On Luma
+// ("YYYY-MM-DD") or null; onLumaBeforeLaunch marks those on the list at launch.
+// Neither = Not yet.
 
 import { withAudit } from "./db.mjs";
 import { NotFoundError, isUuid } from "./attendees.mjs";
 
 const SUBSCRIBERS_SQL = `
-  select a.id, a.name, a.business_name as "businessName", a.email, a.created_at as "createdAt"
+  select a.id, a.name, a.business_name as "businessName", a.email, a.created_at as "createdAt",
+         to_char(a.on_luma_at at time zone 'America/New_York', 'YYYY-MM-DD') as "onLumaSince",
+         a.on_luma_before_launch as "onLumaBeforeLaunch"
     from public.attendees a
    where a.ok_to_email = true and a.debug = false
    order by lower(a.name), a.email`;
@@ -20,6 +27,21 @@ const SUBSCRIBERS_SQL = `
 export async function listSubscribers(db) {
   const { rows } = await db.query(SUBSCRIBERS_SQL);
   return rows;
+}
+
+// "2026-11-30" -> "Nov 30, 2026" (a calendar day, no timezone shift).
+const sinceFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
+
+/** "On Luma since Nov 30, 2026", "Before launch" or "Not yet". */
+export function onLumaLabel({ onLumaSince, onLumaBeforeLaunch }) {
+  if (onLumaSince) return `On Luma since ${sinceFmt.format(new Date(`${onLumaSince}T00:00:00Z`))}`;
+  return onLumaBeforeLaunch ? "Before launch" : "Not yet";
+}
+
+/** The CSV on_luma cell: an ISO date, "before_launch" or empty. */
+export function onLumaCsv({ onLumaSince, onLumaBeforeLaunch }) {
+  if (onLumaSince) return onLumaSince;
+  return onLumaBeforeLaunch ? "before_launch" : "";
 }
 
 // A spreadsheet treats a cell starting with = + - @ (or a tab / CR before one) as a
@@ -39,7 +61,7 @@ export function toCsv(header, rows) {
   return [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
 
-export const CSV_HEADER = Object.freeze(["email", "name", "business_name"]);
+export const CSV_HEADER = Object.freeze(["email", "name", "business_name", "on_luma"]);
 
 /**
  * Build the CSV and write its audit row (who, when, how many rows) in ONE
@@ -53,7 +75,7 @@ export async function exportEmailList(actorUserId) {
     (rs) => ({ action: "email_list.export", targetTable: "attendees", details: { rowCount: rs.length } }),
   );
   return {
-    csv: toCsv([...CSV_HEADER], rows.map((r) => [r.email, r.name, r.businessName])),
+    csv: toCsv([...CSV_HEADER], rows.map((r) => [r.email, r.name, r.businessName, onLumaCsv(r)])),
     rowCount: rows.length,
   };
 }

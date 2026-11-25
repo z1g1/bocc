@@ -4,7 +4,7 @@
 // answers 303 to a GET. All logic, the Origin check and the audit rows are in
 // src/lib/admin/users-actions.mjs.
 import Admin from "../../../layouts/Admin.astro";
-import { requireRole } from "../../../lib/admin/roles.mjs";
+import { ROLES, requireRole } from "../../../lib/admin/roles.mjs";
 export const prerender = false;
 
 const denied = requireRole(Astro.locals, "admin");
@@ -17,7 +17,7 @@ Astro.response.status = result.status;
 
 const { users, notice, error, form } = result;
 const { user, roles = [] } = Astro.locals;
-const ROLE_NAMES = ["admin", "social"];
+const ROLE_NAMES = ROLES;
 const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: "America/New_York" });
 ---
 <Admin title="Users" user={user} roles={roles}>

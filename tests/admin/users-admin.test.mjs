@@ -13,6 +13,7 @@ const { createUser, grantRole, getUserRoles } = await import("../../src/lib/admi
 const { guardRequest } = await import("../../src/lib/admin/guard.mjs");
 const { usersPage } = await import("../../src/lib/admin/users-actions.mjs");
 const { checkOrigin } = await import("../../src/lib/admin/csrf.mjs");
+const { mayReach, ROLES } = await import("../../src/lib/admin/roles.mjs");
 
 const PASSWORD = "correct horse battery staple";
 let owner;
@@ -240,6 +241,46 @@ describe("roles", () => {
     const gone = await serve({ method: "POST", cookie, body: { action: "grant", userId: "no-such-user", role: "social" } });
     assert.equal(gone.status, 404);
     assert.equal((await serve({ method: "POST", cookie, body: { action: "delete", userId: target.id } })).response.status, 400);
+  });
+
+  test("the email role is granted and revoked like the others, and listed on the page", async () => {
+    const { user: actor, cookie } = await signedIn(["admin"]);
+    const target = await makeUser(["social"]);
+    const post = (action) => serve({ method: "POST", cookie, body: { action, userId: target.id, role: "email" } });
+
+    assert.equal((await post("grant")).response.headers.get("location"), "/admin/users/?done=granted");
+    assert.deepEqual(await getUserRoles(pool, target.id), ["email", "social"]);
+    const page = await serve({ cookie });
+    assert.ok(page.users.find((u) => u.id === target.id).roles.includes("email"));
+    assert.equal((await post("revoke")).response.headers.get("location"), "/admin/users/?done=revoked");
+    assert.deepEqual(await getUserRoles(pool, target.id), ["social"]);
+    assert.deepEqual(await auditFor(target.id, null).then((rows) => rows.filter((r) => r.details.role === "email")), [
+      { actor_user_id: actor.id, action: "user_role.grant", target_table: "user_roles", details: { role: "email" } },
+      { actor_user_id: actor.id, action: "user_role.revoke", target_table: "user_roles", details: { role: "email" } },
+    ]);
+
+    const email = `${unique("em")}@example.com`;
+    const created = await serve({ method: "POST", cookie, body: { action: "create", email, name: "Email Only", password: PASSWORD, role: "email" } });
+    assert.equal(created.response.status, 303);
+    const { rows: [u] } = await owner.query(`select id from auth."user" where email = $1`, [email]);
+    assert.deepEqual(await getUserRoles(pool, u.id), ["email"]);
+  });
+
+  test("a user holding only email is refused every admin page (no allowlist yet)", async () => {
+    const { cookie } = await signedIn(["email"]);
+    const paths = ["/admin/", "/admin/account/", "/admin/users/", "/admin/events/", "/admin/email-list/",
+      "/admin/attendees/", "/admin/checkins/", "/admin/streaks/", "/admin/social/next/", "/admin/social/verify/",
+      "/api/admin/me", "/api/admin/social/next", "/api/admin/email-list.csv"];
+    for (const p of paths) {
+      const url = new URL(`${BASE_URL}${p}`);
+      const g = await guardRequest(url, new Headers({ cookie }));
+      assert.equal(g.response?.status, 403, p);
+    }
+    // The social role keeps its allowlist when it also holds email.
+    assert.equal(mayReach(["social", "email"], "/admin/social/next/"), true);
+    assert.equal(mayReach(["social", "email"], "/admin/email-list/"), false);
+    assert.equal(mayReach(["email"], "/admin/"), false);
+    assert.ok(ROLES.includes("email"));
   });
 
   describe("last-admin guard", () => {

@@ -24,8 +24,11 @@
 // (ADR 0008/0011: the account the Chrome tasks use must never reach personal data).
 // A new social page goes in SOCIAL_PATHS AND names "social" in its requireRole().
 
+// The email role (ADR 0014, the Luma sync Chrome task) has no allowlist yet: until its
+// pages land, mayReach() refuses it everywhere, like a role with an empty allowlist.
+
 /** Every role public.user_roles accepts (its CHECK constraint). */
-export const ROLES = Object.freeze(["admin", "social"]);
+export const ROLES = Object.freeze(["admin", "social", "email"]);
 
 /**
  * @param {{ roles?: string[] }} locals
@@ -74,7 +77,8 @@ export const SOCIAL_PATHS = Object.freeze([
 
 /**
  * May a user holding `roles` reach the protected `path` at all? admin: everything;
- * social: SOCIAL_PATHS only; no role: nothing. The route's requireRole() still runs.
+ * social: SOCIAL_PATHS only; email (no allowlist yet) or no role: nothing. The route's
+ * requireRole() still runs.
  * @param {string[]} roles
  * @param {string} path  a URL pathname
  */

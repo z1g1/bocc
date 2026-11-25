@@ -11,7 +11,7 @@ if (denied) return denied;
 
 const { user, roles = [] } = Astro.locals;
 const { pool } = await import("../../../lib/admin/db.mjs");
-const { listSubscribers } = await import("../../../lib/admin/email-list.mjs");
+const { listSubscribers, onLumaLabel } = await import("../../../lib/admin/email-list.mjs");
 const subscribers = await listSubscribers(pool);
 const notice = Astro.url.searchParams.get("notice");
 ---
@@ -28,13 +28,14 @@ const notice = Astro.url.searchParams.get("notice");
   {subscribers.length > 0 && (
     <div class="scroll">
       <table class="data">
-        <thead><tr><th>Name</th><th>Business</th><th>Email</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Business</th><th>Email</th><th>On Luma</th><th></th></tr></thead>
         <tbody>
           {subscribers.map((s: any) => (
             <tr>
               <td><a href={`/admin/attendees/${s.id}/`}>{s.name}</a></td>
               <td>{s.businessName}</td>
               <td>{s.email}</td>
+              <td>{onLumaLabel(s)}</td>
               <td>
                 <form method="post" action="/api/admin/email-list/opt-out" class="inline">
                   <input type="hidden" name="attendeeId" value={s.id}>
